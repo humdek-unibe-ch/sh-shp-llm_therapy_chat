@@ -1,0 +1,158 @@
+<?php
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
+?>
+<?php
+
+/**
+ * Therapy Chat Lookup Constants
+ * 
+ * Defines type codes for all lookup values used by the therapy chat plugin.
+ * These correspond to entries in the `lookups` table.
+ * 
+ * @package LLM Therapy Chat Plugin
+ */
+
+// =====================================================
+// LOOKUP TYPE CODES
+// =====================================================
+
+/** Chat mode type code */
+define('THERAPY_LOOKUP_CHAT_MODES', 'therapyChatModes');
+
+/** Conversation status type code */
+define('THERAPY_LOOKUP_CONVERSATION_STATUS', 'therapyConversationStatus');
+
+/** Risk level type code */
+define('THERAPY_LOOKUP_RISK_LEVELS', 'therapyRiskLevels');
+
+/** Tag urgency type code */
+define('THERAPY_LOOKUP_TAG_URGENCY', 'therapyTagUrgency');
+
+/** Alert type type code */
+define('THERAPY_LOOKUP_ALERT_TYPES', 'therapyAlertTypes');
+
+/** Alert severity type code */
+define('THERAPY_LOOKUP_ALERT_SEVERITY', 'therapyAlertSeverity');
+
+// =====================================================
+// CHAT MODE VALUES (lookup_code)
+// =====================================================
+
+/** AI responds with therapist oversight */
+define('THERAPY_MODE_AI_HYBRID', 'ai_hybrid');
+
+/** Only human therapist responds */
+define('THERAPY_MODE_HUMAN_ONLY', 'human_only');
+
+// =====================================================
+// CONVERSATION STATUS VALUES (lookup_code)
+// =====================================================
+
+/** Active conversation */
+define('THERAPY_STATUS_ACTIVE', 'active');
+
+/** Paused conversation */
+define('THERAPY_STATUS_PAUSED', 'paused');
+
+/** Closed conversation */
+define('THERAPY_STATUS_CLOSED', 'closed');
+
+// =====================================================
+// RISK LEVEL VALUES (lookup_code)
+// =====================================================
+
+/** Low risk - normal activity */
+define('THERAPY_RISK_LOW', 'low');
+
+/** Medium risk - requires attention */
+define('THERAPY_RISK_MEDIUM', 'medium');
+
+/** High risk - needs review */
+define('THERAPY_RISK_HIGH', 'high');
+
+/** Critical risk - immediate attention */
+define('THERAPY_RISK_CRITICAL', 'critical');
+
+// =====================================================
+// TAG URGENCY VALUES (lookup_code)
+// =====================================================
+
+/** Normal urgency tag */
+define('THERAPY_URGENCY_NORMAL', 'normal');
+
+/** Urgent tag - needs attention soon */
+define('THERAPY_URGENCY_URGENT', 'urgent');
+
+/** Emergency tag - immediate attention */
+define('THERAPY_URGENCY_EMERGENCY', 'emergency');
+
+// =====================================================
+// ALERT TYPE VALUES (lookup_code)
+// =====================================================
+
+/** Danger keywords detected in message */
+define('THERAPY_ALERT_DANGER', 'danger_detected');
+
+/** Therapist was tagged by subject */
+define('THERAPY_ALERT_TAG', 'tag_received');
+
+/** Unusual high message activity */
+define('THERAPY_ALERT_HIGH_ACTIVITY', 'high_activity');
+
+/** Extended silence from subject */
+define('THERAPY_ALERT_INACTIVITY', 'inactivity');
+
+/** New message received */
+define('THERAPY_ALERT_NEW_MESSAGE', 'new_message');
+
+// =====================================================
+// ALERT SEVERITY VALUES (lookup_code)
+// =====================================================
+
+/** Informational alert */
+define('THERAPY_SEVERITY_INFO', 'info');
+
+/** Warning - needs attention */
+define('THERAPY_SEVERITY_WARNING', 'warning');
+
+/** Critical - urgent attention */
+define('THERAPY_SEVERITY_CRITICAL', 'critical');
+
+/** Emergency - immediate action required */
+define('THERAPY_SEVERITY_EMERGENCY', 'emergency');
+
+// =====================================================
+// VALID VALUE ARRAYS (for validation)
+// =====================================================
+
+/** Valid chat modes */
+define('THERAPY_VALID_MODES', [THERAPY_MODE_AI_HYBRID, THERAPY_MODE_HUMAN_ONLY]);
+
+/** Valid conversation statuses */
+define('THERAPY_VALID_STATUSES', [THERAPY_STATUS_ACTIVE, THERAPY_STATUS_PAUSED, THERAPY_STATUS_CLOSED]);
+
+/** Valid risk levels */
+define('THERAPY_VALID_RISK_LEVELS', [THERAPY_RISK_LOW, THERAPY_RISK_MEDIUM, THERAPY_RISK_HIGH, THERAPY_RISK_CRITICAL]);
+
+/** Valid tag urgencies */
+define('THERAPY_VALID_URGENCIES', [THERAPY_URGENCY_NORMAL, THERAPY_URGENCY_URGENT, THERAPY_URGENCY_EMERGENCY]);
+
+/** Valid alert types */
+define('THERAPY_VALID_ALERT_TYPES', [
+    THERAPY_ALERT_DANGER,
+    THERAPY_ALERT_TAG,
+    THERAPY_ALERT_HIGH_ACTIVITY,
+    THERAPY_ALERT_INACTIVITY,
+    THERAPY_ALERT_NEW_MESSAGE
+]);
+
+/** Valid alert severities */
+define('THERAPY_VALID_SEVERITIES', [
+    THERAPY_SEVERITY_INFO,
+    THERAPY_SEVERITY_WARNING,
+    THERAPY_SEVERITY_CRITICAL,
+    THERAPY_SEVERITY_EMERGENCY
+]);
+?>

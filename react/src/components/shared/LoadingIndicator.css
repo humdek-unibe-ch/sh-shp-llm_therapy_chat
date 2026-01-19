@@ -1,0 +1,50 @@
+/**
+ * Loading Indicator Styles
+ * =========================
+ */
+
+.therapy-loading-indicator {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 1rem;
+  background: rgba(0, 0, 0, 0.05);
+  border-radius: 1rem;
+  width: fit-content;
+  margin: 0.5rem 0;
+}
+
+.therapy-loading-dots {
+  display: flex;
+  gap: 0.25rem;
+}
+
+.therapy-loading-dots .dot {
+  width: 6px;
+  height: 6px;
+  background-color: #007bff;
+  border-radius: 50%;
+  animation: therapy-bounce 1.4s ease-in-out infinite;
+}
+
+.therapy-loading-dots .dot:nth-child(2) {
+  animation-delay: 0.2s;
+}
+
+.therapy-loading-dots .dot:nth-child(3) {
+  animation-delay: 0.4s;
+}
+
+@keyframes therapy-bounce {
+  0%, 60%, 100% {
+    transform: translateY(0);
+  }
+  30% {
+    transform: translateY(-6px);
+  }
+}
+
+.therapy-loading-text {
+  font-size: 0.85rem;
+  color: #6c757d;
+}

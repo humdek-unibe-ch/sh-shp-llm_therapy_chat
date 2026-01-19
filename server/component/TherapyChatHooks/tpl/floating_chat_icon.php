@@ -1,0 +1,58 @@
+<?php
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
+
+/**
+ * Floating Chat Icon Template
+ *
+ * Template for the therapy chat floating icon with badge.
+ * Variables available:
+ * - $chatUrl: URL for the chat link
+ * - $iconTitle: Title attribute for the link
+ * - $icon: FontAwesome icon class
+ * - $badgeHtml: HTML for the notification badge
+ * - $positionCss: CSS for positioning
+ */
+?>
+<!-- Therapy Chat Floating Icon -->
+<a href="<?php echo $chatUrl; ?>" class="therapy-chat-icon" title="<?php echo $iconTitle; ?>">
+    <i class="fas <?php echo $icon; ?>"></i>
+    <?php echo $badgeHtml; ?>
+</a>
+<style>
+    .therapy-chat-icon {
+        position: fixed;
+        <?php echo $positionCss; ?>
+        z-index: 1000;
+        width: 50px;
+        height: 50px;
+        border-radius: 50%;
+        background: var(--primary, #007bff);
+        color: white;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 1.5rem;
+        box-shadow: 0 2px 10px rgba(0,0,0,0.2);
+        text-decoration: none;
+        transition: transform 0.2s, box-shadow 0.2s;
+    }
+    .therapy-chat-icon:hover {
+        transform: scale(1.1);
+        box-shadow: 0 4px 15px rgba(0,0,0,0.3);
+        color: white;
+        text-decoration: none;
+    }
+    .therapy-chat-badge {
+        position: absolute;
+        top: -5px;
+        right: -5px;
+        font-size: 0.7rem;
+        min-width: 18px;
+        height: 18px;
+        line-height: 18px;
+        border-radius: 50%;
+        text-align: center;
+    }
+</style>

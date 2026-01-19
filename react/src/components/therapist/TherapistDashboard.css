@@ -1,0 +1,74 @@
+/**
+ * Therapist Dashboard Styles
+ * ===========================
+ */
+
+.therapist-dashboard {
+  min-height: calc(100vh - 200px);
+}
+
+.therapist-conversation-list {
+  max-height: 500px;
+  overflow-y: auto;
+}
+
+.therapist-conversation-list .list-group-item {
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.therapist-conversation-list .list-group-item:hover:not(.active) {
+  background-color: #f8f9fa;
+}
+
+.therapist-notes-list {
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+.therapist-note-item {
+  background-color: #fffde7;
+  border-left: 3px solid #ffc107;
+  border-radius: 0.25rem;
+}
+
+/* Gap utilities for older Bootstrap */
+.gap-1 > * + * {
+  margin-left: 0.25rem;
+}
+
+.gap-2 > * + * {
+  margin-left: 0.5rem;
+}
+
+.gap-3 > * + * {
+  margin-left: 1rem;
+}
+
+.gap-4 > * + * {
+  margin-left: 1.5rem;
+}
+
+.d-flex.gap-1,
+.d-flex.gap-2,
+.d-flex.gap-3,
+.d-flex.gap-4 {
+  flex-wrap: wrap;
+}
+
+/* Responsive */
+@media (max-width: 991px) {
+  .therapist-dashboard {
+    min-height: auto;
+  }
+
+  .therapist-conversation-list {
+    max-height: 300px;
+  }
+}
+
+@media (max-width: 767px) {
+  .therapist-dashboard .row > [class^="col"] {
+    margin-bottom: 1rem;
+  }
+}

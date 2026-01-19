@@ -1,0 +1,24 @@
+{
+  "name": "sh-shp-llm_therapy_chat",
+  "version": "1.0.0",
+  "description": "SelfHelp LLM Therapy Chat Plugin",
+  "main": "gulpfile.js",
+  "scripts": {
+    "build": "cd gulp && gulp",
+    "watch": "cd gulp && gulp watch",
+    "css": "cd gulp && gulp css",
+    "js": "cd gulp && gulp js",
+    "react-install": "cd gulp && gulp react-install",
+    "react-build": "cd gulp && gulp react-build",
+    "react-watch": "cd gulp && gulp watch-react"
+  },
+  "devDependencies": {
+    "gulp": "^4.0.2",
+    "gulp-concat": "^2.6.1",
+    "gulp-uglify": "^3.0.2",
+    "gulp-clean-css": "^4.3.0",
+    "gulp-rename": "^2.0.0"
+  },
+  "author": "SelfHelp Team",
+  "license": "MPL-2.0"
+}
