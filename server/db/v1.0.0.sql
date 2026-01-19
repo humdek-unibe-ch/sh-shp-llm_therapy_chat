@@ -474,4 +474,4 @@ VALUES
 (@id_page_therapy_chat_config, get_field_id('therapy_chat_default_mode'), '0000000001', 'ai_hybrid'),
 (@id_page_therapy_chat_config, get_field_id('therapy_chat_polling_interval'), '0000000001', '3'),
 (@id_page_therapy_chat_config, get_field_id('therapy_chat_enable_tagging'), '0000000001', '1'),
-(@id_page_therapy_chat_config, get_field_id('therapy_tag_reasons'), '0000000001', '[{"key":"overwhelmed","label":"I am feeling overwhelmed","urgency":"normal"},{"key":"need_talk","label":"I need to talk soon","urgency":"urgent"},{"key":"urgent","label":"This feels urgent","urgency":"urgent"},{"key":"emergency","label":"Emergency - please respond immediately","urgency":"emergency"}]');
+(@id_page_therapy_chat_config, get_field_id('therapy_tag_reasons'), '0000000002', '[{"key":"overwhelmed","label":"I am feeling overwhelmed","urgency":"normal"},{"key":"need_talk","label":"I need to talk soon","urgency":"urgent"},{"key":"urgent","label":"This feels urgent","urgency":"urgent"},{"key":"emergency","label":"Emergency - please respond immediately","urgency":"emergency"}]');
