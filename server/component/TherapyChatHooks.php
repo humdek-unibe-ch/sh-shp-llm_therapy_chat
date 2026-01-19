@@ -144,6 +144,117 @@ class TherapyChatHooks extends BaseHooks
         return $this->returnSelectPageField($args, 1);
     }
 
+    /**
+     * Get floating button position options from lookups
+     *
+     * @return array Array of position options for select fields
+     */
+    public function getFloatingButtonPositionOptions()
+    {
+        try {
+            // Get floating button position lookups
+            $lookups = $this->db->query_db(
+                "SELECT id, lookup_code, lookup_value FROM lookups WHERE type_code = :type_code ORDER BY lookup_value",
+                array(
+                    ':type_code' => THERAPY_LOOKUP_FLOATING_BUTTON_POSITIONS
+                )
+            );
+
+            $options = [];
+            foreach ($lookups as $lookup) {
+                $options[] = [
+                    'value' => $lookup['lookup_code'],
+                    'text' => $lookup['lookup_value']
+                ];
+            }
+
+            return $options;
+        } catch (Exception $e) {
+            // Return default options on error
+            return [
+                ['value' => 'bottom-right', 'text' => 'Bottom Right'],
+                ['value' => 'bottom-left', 'text' => 'Bottom Left'],
+                ['value' => 'top-right', 'text' => 'Top Right'],
+                ['value' => 'top-left', 'text' => 'Top Left']
+            ];
+        }
+    }
+
+    /**
+     * Output select field for floating button position
+     * @param string $value Value of the field
+     * @param string $name The name of the field
+     * @param int $disabled 0 or 1 - If the field is in edit mode or view mode (disabled)
+     * @return object Return instance of BaseStyleComponent -> select style
+     */
+    private function outputSelectFloatingPositionField($value, $name, $disabled)
+    {
+        return new BaseStyleComponent("select", array(
+            "value" => $value,
+            "name" => $name,
+            "live_search" => false,
+            "is_required" => 0,
+            "disabled" => $disabled,
+            "items" => $this->getFloatingButtonPositionOptions()
+        ));
+    }
+
+    /**
+     * Return a BaseStyleComponent object for select-floating-position field
+     * @param object $args Params passed to the method
+     * @param int $disabled 0 or 1 - If the field is in edit mode or view mode (disabled)
+     * @return object Return a BaseStyleComponent object
+     */
+    private function returnSelectFloatingPositionField($args, $disabled)
+    {
+        $field = $this->get_param_by_name($args, 'field');
+        if(!$field['content']) {
+            $field['content'] = 'bottom-right'; // Default value
+        }
+        $res = $this->execute_private_method($args);
+
+        if ($field['name'] == 'therapy_chat_floating_position') {
+            $field_name_prefix = "fields[" . $field['name'] . "][" . $field['id_language'] . "]" . "[" . $field['id_gender'] . "]";
+            $selectField = $this->outputSelectFloatingPositionField($field['content'], $field_name_prefix . "[content]", $disabled);
+
+            if ($selectField && $res) {
+                $children = $res->get_view()->get_children();
+                $children[] = $selectField;
+                $res->get_view()->set_children($children);
+            }
+        }
+
+        return $res;
+    }
+
+    /**
+     * Output floating button position field in edit mode
+     *
+     * Hook: field-select-floating-position-edit
+     * Triggered: CmsView::create_field_form_item
+     *
+     * @param array $args Hook arguments containing field data
+     * @return object BaseStyleComponent object
+     */
+    public function outputFieldSelectFloatingPositionEdit($args)
+    {
+        return $this->returnSelectFloatingPositionField($args, 0);
+    }
+
+    /**
+     * Output floating button position field in view mode
+     *
+     * Hook: field-select-floating-position-view
+     * Triggered: CmsView::create_field_item
+     *
+     * @param array $args Hook arguments containing field data
+     * @return object BaseStyleComponent object
+     */
+    public function outputFieldSelectFloatingPositionView($args)
+    {
+        return $this->returnSelectFloatingPositionField($args, 1);
+    }
+
 
     /**
      * Output floating therapy chat icon next to user profile

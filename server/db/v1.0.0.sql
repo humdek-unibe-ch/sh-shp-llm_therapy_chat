@@ -89,6 +89,13 @@ INSERT IGNORE INTO lookups (type_code, lookup_code, lookup_value, lookup_descrip
 ('therapyAlertSeverity', 'critical', 'Critical', 'Critical - urgent attention required'),
 ('therapyAlertSeverity', 'emergency', 'Emergency', 'Emergency - immediate action required');
 
+-- Floating Button Positions
+INSERT IGNORE INTO lookups (type_code, lookup_code, lookup_value, lookup_description) VALUES
+('floatingButtonPositions', 'bottom-right', 'Bottom Right', 'Display floating button in bottom right corner'),
+('floatingButtonPositions', 'bottom-left', 'Bottom Left', 'Display floating button in bottom left corner'),
+('floatingButtonPositions', 'top-right', 'Top Right', 'Display floating button in top right corner'),
+('floatingButtonPositions', 'top-left', 'Top Left', 'Display floating button in top left corner');
+
 -- =====================================================
 -- PAGE TYPE FOR MODULE CONFIGURATION
 -- =====================================================
@@ -106,11 +113,11 @@ INSERT IGNORE INTO `fields` (`id`, `name`, `id_type`, `display`) VALUES
 (NULL, 'therapy_chat_therapist_page', get_field_type_id('select-page'), '0'),
 (NULL, 'therapy_chat_floating_icon', get_field_type_id('text'), '0'),
 (NULL, 'therapy_chat_floating_label', get_field_type_id('text'), '1'),
-(NULL, 'therapy_chat_floating_position', get_field_type_id('select-floating-button-position'), '0'),
+(NULL, 'therapy_chat_floating_position', get_field_type_id('select'), '0'),
 (NULL, 'therapy_chat_default_mode', get_field_type_id('select'), '0'),
 (NULL, 'therapy_chat_polling_interval', get_field_type_id('number'), '0'),
 (NULL, 'therapy_chat_enable_tagging', get_field_type_id('checkbox'), '0'),
-(NULL, 'therapy_tag_reasons', get_field_type_id('textarea'), '0');
+(NULL, 'therapy_tag_reasons', get_field_type_id('json'), '0');
 
 -- Link fields to page type
 INSERT IGNORE INTO `pageType_fields` (`id_pageType`, `id_fields`, `default_value`, `help`) VALUES
@@ -132,7 +139,7 @@ VALUES
 ((SELECT id FROM pageType WHERE `name` = 'sh_module_llm_therapy_chat'), get_field_id('therapy_chat_therapist_page'), (SELECT id FROM pages WHERE keyword = 'therapyChatTherapist'), 'Page ID for therapist dashboard'),
 ((SELECT id FROM pageType WHERE `name` = 'sh_module_llm_therapy_chat'), get_field_id('therapy_chat_floating_icon'), 'fa-comments', 'Font Awesome icon class for the floating button'),
 ((SELECT id FROM pageType WHERE `name` = 'sh_module_llm_therapy_chat'), get_field_id('therapy_chat_floating_label'), '', 'Optional text label for the floating button'),
-((SELECT id FROM pageType WHERE `name` = 'sh_module_llm_therapy_chat'), get_field_id('therapy_chat_floating_position'), 'bottom-right', 'Position of the floating button'),
+((SELECT id FROM pageType WHERE `name` = 'sh_module_llm_therapy_chat'), get_field_id('therapy_chat_floating_position'), 'bottom-right', 'Position of the floating button: bottom-right, bottom-left, top-right, top-left'),
 ((SELECT id FROM pageType WHERE `name` = 'sh_module_llm_therapy_chat'), get_field_id('therapy_chat_default_mode'), 'ai_hybrid', 'Default chat mode: ai_hybrid (AI responds, therapist can join) or human_only (therapist only)'),
 ((SELECT id FROM pageType WHERE `name` = 'sh_module_llm_therapy_chat'), get_field_id('therapy_chat_polling_interval'), '3', 'Polling interval in seconds for message updates'),
 ((SELECT id FROM pageType WHERE `name` = 'sh_module_llm_therapy_chat'), get_field_id('therapy_chat_enable_tagging'), '1', 'Enable @mention tagging for therapists'),
@@ -441,6 +448,13 @@ VALUES ((SELECT id FROM lookups WHERE lookup_code = 'hook_overwrite_return'), 'f
 
 INSERT IGNORE INTO `hooks` (`id_hookTypes`, `name`, `description`, `class`, `function`, `exec_class`, `exec_function`, `priority`)
 VALUES ((SELECT id FROM lookups WHERE lookup_code = 'hook_overwrite_return'), 'field-select-page-view', 'Output select page field - view mode', 'CmsView', 'create_field_item', 'TherapyChatHooks', 'outputFieldSelectPageView', 5);
+
+-- Register hooks for select-floating-position field type
+INSERT IGNORE INTO `hooks` (`id_hookTypes`, `name`, `description`, `class`, `function`, `exec_class`, `exec_function`, `priority`)
+VALUES ((SELECT id FROM lookups WHERE lookup_code = 'hook_overwrite_return'), 'field-select-floating-position-edit', 'Output select floating position field - edit mode', 'CmsView', 'create_field_form_item', 'TherapyChatHooks', 'outputFieldSelectFloatingPositionEdit', 5);
+
+INSERT IGNORE INTO `hooks` (`id_hookTypes`, `name`, `description`, `class`, `function`, `exec_class`, `exec_function`, `priority`)
+VALUES ((SELECT id FROM lookups WHERE lookup_code = 'hook_overwrite_return'), 'field-select-floating-position-view', 'Output select floating position field - view mode', 'CmsView', 'create_field_item', 'TherapyChatHooks', 'outputFieldSelectFloatingPositionView', 5);
 
 -- =====================================================
 -- TRANSACTION LOGGING

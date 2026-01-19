@@ -123,6 +123,9 @@ define('THERAPY_SEVERITY_CRITICAL', 'critical');
 /** Emergency - immediate action required */
 define('THERAPY_SEVERITY_EMERGENCY', 'emergency');
 
+/** Floating button position type code */
+define('THERAPY_LOOKUP_FLOATING_BUTTON_POSITIONS', 'floatingButtonPositions');
+
 // =====================================================
 // VALID VALUE ARRAYS (for validation)
 // =====================================================
