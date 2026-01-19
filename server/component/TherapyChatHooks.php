@@ -309,7 +309,7 @@ class TherapyChatHooks extends BaseHooks
 
         // Prepare template variables
         $badgeClass = $unreadCount > 0 ? 'badge-danger' : 'badge-secondary';
-        $badgeHtml = $unreadCount > 0 ? "<span class=\"badge $badgeClass therapy-chat-badge\">$unreadCount</span>" : '';
+        $badgeHtml = $unreadCount > 0 ? "<span class=\"badge $badgeClass badge-pill position-absolute therapy-chat-badge\">$unreadCount</span>" : '';
         $positionCss = $this->getPositionCss($position);
 
         // Include the template
@@ -352,7 +352,7 @@ class TherapyChatHooks extends BaseHooks
             try {
                 $pageInfo = $this->db->fetch_page_info_by_id($pageId);
                 if ($pageInfo && isset($pageInfo['url'])) {
-                    return '/' . $pageInfo['url'];
+                    return BASE_PATH . '/' . $pageInfo['url'];
                 }
             } catch (Exception $e) {
                 // Fall back to keyword if page ID lookup fails
@@ -360,7 +360,7 @@ class TherapyChatHooks extends BaseHooks
         }
 
         // Fallback to keyword-based URL
-        return '/' . $fallbackKeyword;
+        return BASE_PATH . '/' . $fallbackKeyword;
     }
 
     /**

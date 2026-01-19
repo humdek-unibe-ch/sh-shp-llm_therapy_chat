@@ -16,43 +16,24 @@
  */
 ?>
 <!-- Therapy Chat Floating Icon -->
-<a href="<?php echo $chatUrl; ?>" class="therapy-chat-icon" title="<?php echo $iconTitle; ?>">
+<a href="<?php echo $chatUrl; ?>" class="position-fixed d-flex align-items-center justify-content-center bg-primary text-white rounded-circle shadow therapy-chat-icon" style="width: 50px; height: 50px; font-size: 1.5rem; z-index: 1000; text-decoration: none; transition: transform 0.2s, box-shadow 0.2s; <?php echo $positionCss; ?>" title="<?php echo $iconTitle; ?>">
     <i class="fas <?php echo $icon; ?>"></i>
     <?php echo $badgeHtml; ?>
 </a>
 <style>
-    .therapy-chat-icon {
-        position: fixed;
-        <?php echo $positionCss; ?>
-        z-index: 1000;
-        width: 50px;
-        height: 50px;
-        border-radius: 50%;
-        background: var(--primary, #007bff);
-        color: white;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        font-size: 1.5rem;
-        box-shadow: 0 2px 10px rgba(0,0,0,0.2);
-        text-decoration: none;
-        transition: transform 0.2s, box-shadow 0.2s;
-    }
     .therapy-chat-icon:hover {
         transform: scale(1.1);
-        box-shadow: 0 4px 15px rgba(0,0,0,0.3);
-        color: white;
-        text-decoration: none;
+        box-shadow: 0 0.25rem 0.5rem rgba(0,0,0,0.3) !important;
+        color: white !important;
+        text-decoration: none !important;
     }
     .therapy-chat-badge {
-        position: absolute;
         top: -5px;
         right: -5px;
         font-size: 0.7rem;
         min-width: 18px;
         height: 18px;
         line-height: 18px;
-        border-radius: 50%;
         text-align: center;
     }
 </style>
