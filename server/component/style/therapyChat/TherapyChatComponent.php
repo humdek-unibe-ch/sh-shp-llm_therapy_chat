@@ -29,29 +29,21 @@ require_once __DIR__ . "/TherapyChatController.php";
 
 class TherapyChatComponent extends BaseComponent
 {
-    /** @var TherapyChatModel */
-    protected $model;
-
-    /** @var TherapyChatView */
-    protected $view;
-
-    /** @var TherapyChatController */
-    protected $controller;
-
     /**
      * Constructor
      *
-     * @param object $services SelfHelp services container
-     * @param int $id_section Section ID
-     * @param array $params URL parameters
+     * @param object $services
+     * @param int $id
+     * @param array $params
+     * @param number $id_page
+     * @param array $entry_record
      */
-    public function __construct($services, $id_section, $params = array())
+    public function __construct($services, $id, $params = array(), $id_page = -1, $entry_record = array())
     {
-        parent::__construct($services, $id_section, $params);
-        
-        $this->model = new TherapyChatModel($services, $id_section, $params);
-        $this->controller = new TherapyChatController($services, $this->model);
-        $this->view = new TherapyChatView($services, $this->model);
+        $model = new TherapyChatModel($services, $id, $params, $id_page, $entry_record);
+        $controller = new TherapyChatController($model);
+        $view = new TherapyChatView($model, $controller);
+        parent::__construct($model, $view, $controller);
     }
 
     /**

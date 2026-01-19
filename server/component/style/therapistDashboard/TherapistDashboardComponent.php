@@ -27,29 +27,21 @@ require_once __DIR__ . "/TherapistDashboardController.php";
 
 class TherapistDashboardComponent extends BaseComponent
 {
-    /** @var TherapistDashboardModel */
-    protected $model;
-
-    /** @var TherapistDashboardView */
-    protected $view;
-
-    /** @var TherapistDashboardController */
-    protected $controller;
-
     /**
      * Constructor
      *
      * @param object $services
-     * @param int $id_section
+     * @param int $id
      * @param array $params
+     * @param number $id_page
+     * @param array $entry_record
      */
-    public function __construct($services, $id_section, $params = array())
+    public function __construct($services, $id, $params = array(), $id_page = -1, $entry_record = array())
     {
-        parent::__construct($services, $id_section, $params);
-        
-        $this->model = new TherapistDashboardModel($services, $id_section, $params);
-        $this->controller = new TherapistDashboardController($services, $this->model);
-        $this->view = new TherapistDashboardView($services, $this->model);
+        $model = new TherapistDashboardModel($services, $id, $params, $id_page, $entry_record);
+        $controller = new TherapistDashboardController($model);
+        $view = new TherapistDashboardView($model, $controller);
+        parent::__construct($model, $view, $controller);
     }
 
     /**

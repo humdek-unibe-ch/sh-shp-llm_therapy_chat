@@ -10,12 +10,12 @@ require_once __DIR__ . "/../../../constants/TherapyLookups.php";
 
 /**
  * Therapist Dashboard Model
- * 
+ *
  * Data model for the therapist dashboard.
- * 
+ *
  * @package LLM Therapy Chat Plugin
  */
-class TherapistDashboardModel extends BaseModel
+class TherapistDashboardModel extends StyleModel
 {
     /** @var TherapyTaggingService */
     private $therapyService;
@@ -33,12 +33,14 @@ class TherapistDashboardModel extends BaseModel
      * Constructor
      *
      * @param object $services
-     * @param int $sectionId
+     * @param int $id
      * @param array $params
+     * @param number $id_page
+     * @param array $entry_record
      */
-    public function __construct($services, $sectionId, $params = array())
+    public function __construct($services, $id, $params = array(), $id_page = -1, $entry_record = array())
     {
-        parent::__construct($services, $sectionId, $params);
+        parent::__construct($services, $id, $params, $id_page, $entry_record);
 
         $this->therapyService = new TherapyTaggingService($services);
         $this->userId = $_SESSION['id_user'] ?? null;

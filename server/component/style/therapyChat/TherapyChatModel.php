@@ -22,13 +22,13 @@ if (file_exists($llmContextServicePath)) {
 
 /**
  * Therapy Chat Model
- * 
+ *
  * Data model for the subject chat interface.
  * Wraps therapy services and provides CMS field access.
- * 
+ *
  * @package LLM Therapy Chat Plugin
  */
-class TherapyChatModel extends BaseModel
+class TherapyChatModel extends StyleModel
 {
     /** @var TherapyTaggingService */
     private $therapyService;
@@ -49,12 +49,14 @@ class TherapyChatModel extends BaseModel
      * Constructor
      *
      * @param object $services
-     * @param int $sectionId
+     * @param int $id
      * @param array $params
+     * @param number $id_page
+     * @param array $entry_record
      */
-    public function __construct($services, $sectionId, $params = array())
+    public function __construct($services, $id, $params = array(), $id_page = -1, $entry_record = array())
     {
-        parent::__construct($services, $sectionId, $params);
+        parent::__construct($services, $id, $params, $id_page, $entry_record);
 
         $this->therapyService = new TherapyTaggingService($services);
         $this->userId = $_SESSION['id_user'] ?? null;
@@ -115,8 +117,8 @@ class TherapyChatModel extends BaseModel
             return null;
         }
 
-        $mode = $this->getFieldValue('therapy_chat_default_mode') ?: THERAPY_MODE_AI_HYBRID;
-        $model = $this->getFieldValue('llm_model');
+        $mode = $this->get_db_field('therapy_chat_default_mode', THERAPY_MODE_AI_HYBRID);
+        $model = $this->get_db_field('llm_model', '');
 
         $this->conversation = $this->therapyService->getOrCreateTherapyConversation(
             $this->userId,
@@ -174,16 +176,6 @@ class TherapyChatModel extends BaseModel
         return $this->section_id;
     }
 
-    /**
-     * Get field value from CMS
-     *
-     * @param string $fieldName
-     * @return mixed
-     */
-    public function getFieldValue($fieldName)
-    {
-        return $this->db->get_field_value($this->section_id, $fieldName);
-    }
 
     /**
      * Check if danger detection is enabled
@@ -192,7 +184,7 @@ class TherapyChatModel extends BaseModel
      */
     public function isDangerDetectionEnabled()
     {
-        return (bool)$this->getFieldValue('enable_danger_detection');
+        return (bool)$this->get_db_field('enable_danger_detection', '0');
     }
 
     /**
@@ -202,7 +194,7 @@ class TherapyChatModel extends BaseModel
      */
     public function getDangerKeywords()
     {
-        return $this->getFieldValue('danger_keywords') ?? '';
+        return $this->get_db_field('danger_keywords', '');
     }
 
     /**
@@ -212,7 +204,7 @@ class TherapyChatModel extends BaseModel
      */
     public function getDangerNotificationEmails()
     {
-        $emails = $this->getFieldValue('danger_notification_emails');
+        $emails = $this->get_db_field('danger_notification_emails', '');
         if (empty($emails)) {
             return array();
         }
@@ -229,8 +221,8 @@ class TherapyChatModel extends BaseModel
      */
     public function getDangerBlockedMessage()
     {
-        return $this->getFieldValue('danger_blocked_message') ?? 
-               'I noticed some concerning content. Please consider reaching out to a trusted person or crisis hotline.';
+        return $this->get_db_field('danger_blocked_message',
+               'I noticed some concerning content. Please consider reaching out to a trusted person or crisis hotline.');
     }
 
     /**
@@ -240,7 +232,7 @@ class TherapyChatModel extends BaseModel
      */
     public function isTaggingEnabled()
     {
-        return (bool)$this->getFieldValue('therapy_chat_enable_tagging');
+        return (bool)$this->get_db_field('therapy_chat_enable_tagging', '0');
     }
 
     /**
@@ -250,7 +242,7 @@ class TherapyChatModel extends BaseModel
      */
     public function getPollingInterval()
     {
-        return (int)($this->getFieldValue('therapy_chat_polling_interval') ?? 3);
+        return (int)$this->get_db_field('therapy_chat_polling_interval', '3');
     }
 
     /**
@@ -260,7 +252,7 @@ class TherapyChatModel extends BaseModel
      */
     public function getConversationContext()
     {
-        return $this->getFieldValue('conversation_context') ?? '';
+        return $this->get_db_field('conversation_context', '');
     }
 
     /**
@@ -270,7 +262,7 @@ class TherapyChatModel extends BaseModel
      */
     public function getLlmModel()
     {
-        return $this->getFieldValue('llm_model') ?? '';
+        return $this->get_db_field('llm_model', '');
     }
 
     /**
@@ -280,7 +272,7 @@ class TherapyChatModel extends BaseModel
      */
     public function getLlmTemperature()
     {
-        return (float)($this->getFieldValue('llm_temperature') ?? 1);
+        return (float)$this->get_db_field('llm_temperature', '1');
     }
 
     /**
@@ -290,7 +282,7 @@ class TherapyChatModel extends BaseModel
      */
     public function getLlmMaxTokens()
     {
-        return (int)($this->getFieldValue('llm_max_tokens') ?? 2048);
+        return (int)$this->get_db_field('llm_max_tokens', '2048');
     }
 
     /* Label Getters **********************************************************/
@@ -303,17 +295,17 @@ class TherapyChatModel extends BaseModel
     public function getLabels()
     {
         return array(
-            'ai_label' => $this->getFieldValue('therapy_ai_label') ?? 'AI Assistant',
-            'therapist_label' => $this->getFieldValue('therapy_therapist_label') ?? 'Therapist',
-            'tag_button_label' => $this->getFieldValue('therapy_tag_button_label') ?? 'Tag Therapist',
+            'ai_label' => $this->get_db_field('therapy_ai_label', 'AI Assistant'),
+            'therapist_label' => $this->get_db_field('therapy_therapist_label', 'Therapist'),
+            'tag_button_label' => $this->get_db_field('therapy_tag_button_label', 'Tag Therapist'),
             'tag_reasons' => $this->getTagReasons(),
-            'empty_message' => $this->getFieldValue('therapy_empty_message') ?? 'No messages yet. Start the conversation!',
-            'ai_thinking' => $this->getFieldValue('therapy_ai_thinking_text') ?? 'AI is thinking...',
-            'mode_ai' => $this->getFieldValue('therapy_mode_indicator_ai') ?? 'AI-assisted chat',
-            'mode_human' => $this->getFieldValue('therapy_mode_indicator_human') ?? 'Therapist-only mode',
-            'send_button' => $this->getFieldValue('submit_button_label') ?? 'Send',
-            'placeholder' => $this->getFieldValue('message_placeholder') ?? 'Type your message...',
-            'loading' => $this->getFieldValue('loading_text') ?? 'Loading...'
+            'empty_message' => $this->get_db_field('therapy_empty_message', 'No messages yet. Start the conversation!'),
+            'ai_thinking' => $this->get_db_field('therapy_ai_thinking_text', 'AI is thinking...'),
+            'mode_ai' => $this->get_db_field('therapy_mode_indicator_ai', 'AI-assisted chat'),
+            'mode_human' => $this->get_db_field('therapy_mode_indicator_human', 'Therapist-only mode'),
+            'send_button' => $this->get_db_field('submit_button_label', 'Send'),
+            'placeholder' => $this->get_db_field('message_placeholder', 'Type your message...'),
+            'loading' => $this->get_db_field('loading_text', 'Loading...')
         );
     }
 
@@ -324,7 +316,7 @@ class TherapyChatModel extends BaseModel
      */
     public function getTagReasons()
     {
-        $jsonConfig = $this->getFieldValue('therapy_tag_reasons');
+        $jsonConfig = $this->get_db_field('therapy_tag_reasons', '');
         return $this->therapyService->parseTagReasons($jsonConfig);
     }
 
@@ -379,24 +371,14 @@ class TherapyChatModel extends BaseModel
      */
     private function getDefaultGroupId()
     {
-        // Try to get from module configuration
-        $configPage = $this->db->fetch_page_id_by_keyword('sh_module_llm_therapy_chat');
-        
-        if ($configPage) {
-            $groupId = $this->db->get_field_value($configPage, 'therapy_chat_subject_group');
-            if ($groupId) {
-                return $groupId;
-            }
-        }
-
         // Try to find first group the user belongs to that has therapy chat access
-        $sql = "SELECT ug.id_groups 
-                FROM users_groups ug 
+        $sql = "SELECT ug.id_groups
+                FROM users_groups ug
                 WHERE ug.id_users = :uid
                 LIMIT 1";
-        
+
         $result = $this->db->query_db_first($sql, array(':uid' => $this->userId));
-        
+
         return $result ? $result['id_groups'] : null;
     }
 }
