@@ -43,7 +43,7 @@ DROP PROCEDURE check_llm_dependency;
 -- Add select-page field type
 -- =====================================================
 
-INSERT IGNORE INTO fieldType (`name`, `description`) VALUES ('select-page', 'Select Page - Dropdown for selecting pages');
+INSERT IGNORE INTO fieldType (`name`, `position`) VALUES ('select-page', 10);
 
 -- =====================================================
 -- LOOKUP ENTRIES
@@ -117,26 +117,15 @@ INSERT IGNORE INTO `fields` (`id`, `name`, `id_type`, `display`) VALUES
 (NULL, 'therapy_chat_default_mode', get_field_type_id('select'), '0'),
 (NULL, 'therapy_chat_polling_interval', get_field_type_id('number'), '0'),
 (NULL, 'therapy_chat_enable_tagging', get_field_type_id('checkbox'), '0'),
-(NULL, 'therapy_tag_reasons', get_field_type_id('json'), '0');
+(NULL, 'therapy_tag_reasons', get_field_type_id('json'), '1');
 
 -- Link fields to page type
 INSERT IGNORE INTO `pageType_fields` (`id_pageType`, `id_fields`, `default_value`, `help`) VALUES
 ((SELECT id FROM pageType WHERE `name` = 'sh_module_llm_therapy_chat'), get_field_id('title'), 'LLM Therapy Chat Configuration', 'Page title'),
 ((SELECT id FROM pageType WHERE `name` = 'sh_module_llm_therapy_chat'), get_field_id('therapy_chat_subject_group'), (SELECT id FROM `groups` WHERE `name` = 'subject' LIMIT 1), 'Select the group that contains subjects (patients)'),
-((SELECT id FROM pageType WHERE `name` = 'sh_module_llm_therapy_chat'), get_field_id('therapy_chat_therapist_group'), (SELECT id FROM `groups` WHERE `name` = 'therapist' LIMIT 1), 'Select the group that contains therapists');
-
--- Set default values for configuration page fields
-INSERT IGNORE INTO `pages_fields` (`id_pages`, `id_fields`, `default_value`, `help`) VALUES
-(@id_page_therapy_chat_config, get_field_id('therapy_chat_subject_group'), (SELECT id FROM `groups` WHERE `name` = 'subject' LIMIT 1), 'Select the group that contains subjects (patients)'),
-(@id_page_therapy_chat_config, get_field_id('therapy_chat_therapist_group'), (SELECT id FROM `groups` WHERE `name` = 'therapist' LIMIT 1), 'Select the group that contains therapists');
-
--- Add page translations for configuration fields
-INSERT IGNORE INTO `pages_fields_translation` (`id_pages`, `id_fields`, `id_languages`, `content`)
-VALUES
-(@id_page_therapy_chat_config, get_field_id('therapy_chat_subject_group'), '0000000001', (SELECT id FROM `groups` WHERE `name` = 'subject' LIMIT 1)),
-(@id_page_therapy_chat_config, get_field_id('therapy_chat_therapist_group'), '0000000001', (SELECT id FROM `groups` WHERE `name` = 'therapist' LIMIT 1)),
-((SELECT id FROM pageType WHERE `name` = 'sh_module_llm_therapy_chat'), get_field_id('therapy_chat_subject_page'), (SELECT id FROM pages WHERE keyword = 'therapyChatSubject'), 'Page ID for subject/patient chat interface'),
-((SELECT id FROM pageType WHERE `name` = 'sh_module_llm_therapy_chat'), get_field_id('therapy_chat_therapist_page'), (SELECT id FROM pages WHERE keyword = 'therapyChatTherapist'), 'Page ID for therapist dashboard'),
+((SELECT id FROM pageType WHERE `name` = 'sh_module_llm_therapy_chat'), get_field_id('therapy_chat_therapist_group'), (SELECT id FROM `groups` WHERE `name` = 'therapist' LIMIT 1), 'Select the group that contains therapists'),
+((SELECT id FROM pageType WHERE `name` = 'sh_module_llm_therapy_chat'), get_field_id('therapy_chat_subject_page'), NULL, 'Page ID for subject/patient chat interface'),
+((SELECT id FROM pageType WHERE `name` = 'sh_module_llm_therapy_chat'), get_field_id('therapy_chat_therapist_page'), NULL, 'Page ID for therapist dashboard'),
 ((SELECT id FROM pageType WHERE `name` = 'sh_module_llm_therapy_chat'), get_field_id('therapy_chat_floating_icon'), 'fa-comments', 'Font Awesome icon class for the floating button'),
 ((SELECT id FROM pageType WHERE `name` = 'sh_module_llm_therapy_chat'), get_field_id('therapy_chat_floating_label'), '', 'Optional text label for the floating button'),
 ((SELECT id FROM pageType WHERE `name` = 'sh_module_llm_therapy_chat'), get_field_id('therapy_chat_floating_position'), 'bottom-right', 'Position of the floating button: bottom-right, bottom-left, top-right, top-left'),
@@ -144,6 +133,11 @@ VALUES
 ((SELECT id FROM pageType WHERE `name` = 'sh_module_llm_therapy_chat'), get_field_id('therapy_chat_polling_interval'), '3', 'Polling interval in seconds for message updates'),
 ((SELECT id FROM pageType WHERE `name` = 'sh_module_llm_therapy_chat'), get_field_id('therapy_chat_enable_tagging'), '1', 'Enable @mention tagging for therapists'),
 ((SELECT id FROM pageType WHERE `name` = 'sh_module_llm_therapy_chat'), get_field_id('therapy_tag_reasons'), '[{"key":"overwhelmed","label":"I am feeling overwhelmed","urgency":"normal"},{"key":"need_talk","label":"I need to talk soon","urgency":"urgent"},{"key":"urgent","label":"This feels urgent","urgency":"urgent"},{"key":"emergency","label":"Emergency - please respond immediately","urgency":"emergency"}]', 'JSON array of tag reasons. Each item has: key (unique identifier), label (displayed text), urgency (normal/urgent/emergency). Use @ to tag therapist, # to select reason.');
+
+-- Set default values for configuration page fields
+INSERT IGNORE INTO `pages_fields` (`id_pages`, `id_fields`, `default_value`, `help`) VALUES
+(@id_page_therapy_chat_config, get_field_id('therapy_chat_subject_group'), (SELECT id FROM `groups` WHERE `name` = 'subject' LIMIT 1), 'Select the group that contains subjects (patients)'),
+(@id_page_therapy_chat_config, get_field_id('therapy_chat_therapist_group'), (SELECT id FROM `groups` WHERE `name` = 'therapist' LIMIT 1), 'Select the group that contains therapists');
 
 -- =====================================================
 -- CREATE CONFIGURATION PAGE
@@ -435,6 +429,10 @@ INSERT IGNORE INTO pages_sections (id_pages, id_Sections, position) VALUES((SELE
 INSERT IGNORE INTO sections_hierarchy (parent, child, position) VALUES((SELECT id FROM sections WHERE name = 'therapyChatTherapist-container'), (SELECT id FROM sections WHERE `name` = 'therapyChatTherapist-dashboard'), 1);
 
 -- =====================================================
+-- UPDATE PAGETYPE DEFAULT VALUES WITH CREATED PAGES
+-- =====================================================
+
+-- =====================================================
 -- HOOKS REGISTRATION
 -- =====================================================
 
@@ -462,3 +460,18 @@ VALUES ((SELECT id FROM lookups WHERE lookup_code = 'hook_overwrite_return'), 'f
 
 INSERT IGNORE INTO lookups (type_code, lookup_code, lookup_value, lookup_description)
 VALUES ('transactionBy', 'by_therapy_chat_plugin', 'By Therapy Chat Plugin', 'Actions performed by the LLM Therapy Chat plugin');
+
+-- Add page translations for configuration fields
+INSERT IGNORE INTO `pages_fields_translation` (`id_pages`, `id_fields`, `id_languages`, `content`)
+VALUES
+(@id_page_therapy_chat_config, get_field_id('therapy_chat_subject_group'), '0000000001', (SELECT id FROM `groups` WHERE `name` = 'subject' LIMIT 1)),
+(@id_page_therapy_chat_config, get_field_id('therapy_chat_therapist_group'), '0000000001', (SELECT id FROM `groups` WHERE `name` = 'therapist' LIMIT 1)),
+(@id_page_therapy_chat_config, get_field_id('therapy_chat_subject_page'), '0000000001', (SELECT id FROM pages WHERE keyword = 'therapyChatSubject')),
+(@id_page_therapy_chat_config, get_field_id('therapy_chat_therapist_page'), '0000000001', (SELECT id FROM pages WHERE keyword = 'therapyChatTherapist')),
+(@id_page_therapy_chat_config, get_field_id('therapy_chat_floating_icon'), '0000000001', 'fa-comments'),
+(@id_page_therapy_chat_config, get_field_id('therapy_chat_floating_label'), '0000000001', ''),
+(@id_page_therapy_chat_config, get_field_id('therapy_chat_floating_position'), '0000000001', 'bottom-right'),
+(@id_page_therapy_chat_config, get_field_id('therapy_chat_default_mode'), '0000000001', 'ai_hybrid'),
+(@id_page_therapy_chat_config, get_field_id('therapy_chat_polling_interval'), '0000000001', '3'),
+(@id_page_therapy_chat_config, get_field_id('therapy_chat_enable_tagging'), '0000000001', '1'),
+(@id_page_therapy_chat_config, get_field_id('therapy_tag_reasons'), '0000000001', '[{"key":"overwhelmed","label":"I am feeling overwhelmed","urgency":"normal"},{"key":"need_talk","label":"I need to talk soon","urgency":"urgent"},{"key":"urgent","label":"This feels urgent","urgency":"urgent"},{"key":"emergency","label":"Emergency - please respond immediately","urgency":"emergency"}]');

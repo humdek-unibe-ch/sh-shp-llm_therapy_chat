@@ -286,8 +286,8 @@ class TherapyChatHooks extends BaseHooks
         $therapistPageId = $this->getConfigValue('therapy_chat_therapist_page');
 
         // Resolve page IDs to URLs with fallbacks
-        $subjectPageUrl = $this->getPageUrl($subjectPageId, 'therapyChatSubject');
-        $therapistPageUrl = $this->getPageUrl($therapistPageId, 'therapyChatTherapist');
+        $subjectPageUrl = $this->getPageUrl($subjectPageId, 'home');
+        $therapistPageUrl = $this->getPageUrl($therapistPageId, 'home');
 
         // Get unread count and determine URL
         if ($isTherapist && (!$isSubject || $isTherapist)) {
