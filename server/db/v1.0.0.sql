@@ -40,10 +40,11 @@ DROP PROCEDURE check_llm_dependency;
 
 -- =====================================================
 -- FIELD TYPES
--- Add select-page field type
+-- Add select-page and select-floating-position field types
 -- =====================================================
 
 INSERT IGNORE INTO fieldType (`name`, `position`) VALUES ('select-page', 10);
+INSERT IGNORE INTO fieldType (`name`, `position`) VALUES ('select-floating-position', 11);
 
 -- =====================================================
 -- LOOKUP ENTRIES
@@ -113,7 +114,7 @@ INSERT IGNORE INTO `fields` (`id`, `name`, `id_type`, `display`) VALUES
 (NULL, 'therapy_chat_therapist_page', get_field_type_id('select-page'), '0'),
 (NULL, 'therapy_chat_floating_icon', get_field_type_id('text'), '0'),
 (NULL, 'therapy_chat_floating_label', get_field_type_id('text'), '1'),
-(NULL, 'therapy_chat_floating_position', get_field_type_id('select'), '0'),
+(NULL, 'therapy_chat_floating_position', get_field_type_id('select-floating-position'), '0'),
 (NULL, 'therapy_chat_default_mode', get_field_type_id('select'), '0'),
 (NULL, 'therapy_chat_polling_interval', get_field_type_id('number'), '0'),
 (NULL, 'therapy_chat_enable_tagging', get_field_type_id('checkbox'), '0'),

@@ -311,6 +311,7 @@ class TherapyChatHooks extends BaseHooks
         // Get icon configuration from module settings
         $icon = $this->getConfigValue('therapy_chat_floating_icon', 'fa-comments');
         $position = $this->getConfigValue('therapy_chat_floating_position', 'bottom-right');
+        $label = $this->getConfigValue('therapy_chat_floating_label', '');
 
         // Prepare template variables
         $badgeClass = $unreadCount > 0 ? 'badge-danger' : 'badge-secondary';
