@@ -251,7 +251,8 @@ class TherapyTaggingService extends TherapyAlertService
         $params = $conversationIds;
         $params[] = $therapistId;
 
-        return $this->db->query_db($sql, $params);
+        $result = $this->db->query_db($sql, $params);
+        return $result !== false ? $result : array();
     }
 
     /**
@@ -267,7 +268,8 @@ class TherapyTaggingService extends TherapyAlertService
                 WHERE conversation_id = :cid
                 ORDER BY created_at DESC";
 
-        return $this->db->query_db($sql, array(':cid' => $conversationId));
+        $result = $this->db->query_db($sql, array(':cid' => $conversationId));
+        return $result !== false ? $result : array();
     }
 
     /* Tag Management *********************************************************/

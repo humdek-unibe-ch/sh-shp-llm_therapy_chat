@@ -223,7 +223,8 @@ class TherapyChatService extends LlmService
                     vtc.updated_at DESC
                   LIMIT " . (int)$limit . " OFFSET " . (int)$offset;
 
-        return $this->db->query_db($sql, $params);
+        $result = $this->db->query_db($sql, $params);
+        return $result !== false ? $result : array();
     }
 
     /* Access Control *********************************************************/
