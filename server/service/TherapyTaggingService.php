@@ -236,10 +236,11 @@ class TherapyTaggingService extends TherapyAlertService
         $conversationIds = array_column($conversations, 'id_llmConversations');
         $placeholders = implode(',', array_fill(0, count($conversationIds), '?'));
 
-        $sql = "SELECT vtt.*, lc.id_users as subject_id, u.name as subject_name, u.code as subject_code
+        $sql = "SELECT vtt.*, lc.id_users as subject_id, u.name as subject_name, vc.code as subject_code
                 FROM view_therapyTags vtt
                 INNER JOIN llmConversations lc ON lc.id = vtt.conversation_id
                 INNER JOIN users u ON u.id = lc.id_users
+                LEFT JOIN validation_codes vc ON vc.id_users = u.id
                 WHERE vtt.conversation_id IN ($placeholders)
                 AND vtt.id_users = ?
                 AND vtt.acknowledged = 0
