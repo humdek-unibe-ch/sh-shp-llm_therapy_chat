@@ -282,6 +282,21 @@ class TherapyChatHooks extends BaseHooks
         $isSubject = $this->taggingService->isSubject($userId);
         $isTherapist = $this->taggingService->isTherapist($userId);
 
+        // Additional check: verify user is in the configured therapy chat groups
+        $subjectGroupId = $this->getConfigValue('therapy_chat_subject_group');
+        $therapistGroupId = $this->getConfigValue('therapy_chat_therapist_group');
+
+        $isInSubjectGroup = $subjectGroupId && $this->isUserInGroup($userId, $subjectGroupId);
+        $isInTherapistGroup = $therapistGroupId && $this->isUserInGroup($userId, $therapistGroupId);
+
+        // User must be both tagged as subject/therapist AND be in the corresponding configured group
+        if (!$isSubject || !$isInSubjectGroup) {
+            $isSubject = false;
+        }
+        if (!$isTherapist || !$isInTherapistGroup) {
+            $isTherapist = false;
+        }
+
         if (!$isSubject && !$isTherapist) {
             return;
         }
@@ -415,6 +430,25 @@ class TherapyChatHooks extends BaseHooks
             );
         } catch (Exception $e) {
             // If there's any error checking the router, default to not CMS
+            return false;
+        }
+    }
+
+    /**
+     * Check if a user is in a specific group
+     *
+     * @param int $userId The user ID to check
+     * @param int $groupId The group ID to check membership in
+     * @return bool True if user is in the group, false otherwise
+     */
+    private function isUserInGroup($userId, $groupId)
+    {
+        try {
+            $sql = "SELECT COUNT(*) as count FROM users_groups WHERE id_users = ? AND id_groups = ?";
+            $result = $this->db->query_db_first($sql, [$userId, $groupId]);
+            return $result['count'] > 0;
+        } catch (Exception $e) {
+            // If there's any error checking group membership, default to false
             return false;
         }
     }

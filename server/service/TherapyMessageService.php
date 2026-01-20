@@ -261,7 +261,7 @@ class TherapyMessageService extends TherapyChatService
         
         $result = $this->db->query_db_first($sql, array(
             ':uid' => $userId,
-            ':active' => self::STATUS_ACTIVE
+            ':active' => THERAPY_STATUS_ACTIVE
         ));
 
         return intval($result['cnt'] ?? 0);
