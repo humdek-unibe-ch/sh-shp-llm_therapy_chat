@@ -175,32 +175,98 @@ export interface TherapyChatLabels {
  * UI Labels for TherapistDashboard
  */
 export interface TherapistDashboardLabels {
+  // Headings
   title: string;
   conversationsHeading: string;
   alertsHeading: string;
   notesHeading: string;
+  statsHeading: string;
+  riskHeading: string;
+  
+  // Empty states
   noConversations: string;
   noAlerts: string;
   selectConversation: string;
+  
+  // Input labels
   sendPlaceholder: string;
   sendButton: string;
   addNotePlaceholder: string;
   addNoteButton: string;
-  disableAI: string;
-  enableAI: string;
+  loading: string;
+  
+  // Message labels
+  aiLabel: string;
+  therapistLabel: string;
+  subjectLabel: string;
+  
+  // Risk labels
   riskLow: string;
   riskMedium: string;
   riskHigh: string;
   riskCritical: string;
+  
+  // Status labels
   statusActive: string;
   statusPaused: string;
   statusClosed: string;
+  
+  // AI control labels
+  disableAI: string;
+  enableAI: string;
+  aiModeIndicator: string;
+  humanModeIndicator: string;
+  
+  // Action buttons
   acknowledge: string;
+  dismiss: string;
   viewInLlm: string;
-  loading: string;
-  aiLabel: string;
-  therapistLabel: string;
-  subjectLabel: string;
+  joinConversation: string;
+  leaveConversation: string;
+  
+  // Statistics labels
+  statPatients: string;
+  statActive: string;
+  statCritical: string;
+  statAlerts: string;
+  statTags: string;
+  
+  // Filter labels
+  filterAll: string;
+  filterActive: string;
+  filterCritical: string;
+  filterUnread: string;
+  filterTagged: string;
+  
+  // Intervention messages
+  interventionMessage: string;
+  aiPausedNotice: string;
+  aiResumedNotice: string;
+}
+
+/**
+ * Feature toggles for TherapistDashboard
+ */
+export interface TherapistDashboardFeatures {
+  showRiskColumn: boolean;
+  showStatusColumn: boolean;
+  showAlertsPanel: boolean;
+  showNotesPanel: boolean;
+  showStatsHeader: boolean;
+  enableAiToggle: boolean;
+  enableRiskControl: boolean;
+  enableStatusControl: boolean;
+  enableNotes: boolean;
+  enableInvisibleMode: boolean;
+}
+
+/**
+ * Notification settings for TherapistDashboard
+ */
+export interface TherapistDashboardNotifications {
+  notifyOnTag: boolean;
+  notifyOnDanger: boolean;
+  notifyOnCritical: boolean;
 }
 
 /**
@@ -233,6 +299,10 @@ export interface TherapistDashboardConfig {
   selectedSubjectId?: number | null;
   stats: DashboardStats;
   pollingInterval: number;
+  messagesPerPage: number;
+  conversationsPerPage: number;
+  features: TherapistDashboardFeatures;
+  notifications: TherapistDashboardNotifications;
   labels: TherapistDashboardLabels;
 }
 

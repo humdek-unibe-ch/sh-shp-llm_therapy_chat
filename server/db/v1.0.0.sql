@@ -351,11 +351,11 @@ INSERT IGNORE INTO `styles` (`name`, `id_type`, `id_group`, `description`)
 VALUES ('therapistDashboard', (SELECT id FROM styleType WHERE `name` = 'component'), (SELECT id FROM styleGroup WHERE `name` = 'intern'), 'Therapist dashboard for managing therapy conversations');
 
 -- =====================================================
--- STYLE FIELDS FOR therapyChat
+-- STYLE FIELDS FOR therapyChat AND therapistDashboard
 -- Reuses many fields from llmChat, adds therapy-specific ones
 -- =====================================================
 
--- Add therapy-specific label fields
+-- Add therapy-specific label fields for Subject Chat
 INSERT IGNORE INTO `fields` (`id`, `name`, `id_type`, `display`) VALUES
 (NULL, 'therapy_ai_label', get_field_type_id('text'), '1'),
 (NULL, 'therapy_therapist_label', get_field_type_id('text'), '1'),
@@ -365,10 +365,109 @@ INSERT IGNORE INTO `fields` (`id`, `name`, `id_type`, `display`) VALUES
 (NULL, 'therapy_mode_indicator_ai', get_field_type_id('text'), '1'),
 (NULL, 'therapy_mode_indicator_human', get_field_type_id('text'), '1');
 
+-- =====================================================
+-- FIELDS FOR therapistDashboard
+-- Comprehensive dashboard configuration for therapists
+-- =====================================================
+
+-- Dashboard UI labels and headings
+INSERT IGNORE INTO `fields` (`id`, `name`, `id_type`, `display`) VALUES
+(NULL, 'dashboard_conversations_heading', get_field_type_id('text'), '1'),
+(NULL, 'dashboard_alerts_heading', get_field_type_id('text'), '1'),
+(NULL, 'dashboard_notes_heading', get_field_type_id('text'), '1'),
+(NULL, 'dashboard_stats_heading', get_field_type_id('text'), '1'),
+(NULL, 'dashboard_no_conversations', get_field_type_id('text'), '1'),
+(NULL, 'dashboard_no_alerts', get_field_type_id('text'), '1'),
+(NULL, 'dashboard_select_conversation', get_field_type_id('text'), '1'),
+(NULL, 'dashboard_send_placeholder', get_field_type_id('text'), '1'),
+(NULL, 'dashboard_send_button', get_field_type_id('text'), '1'),
+(NULL, 'dashboard_add_note_placeholder', get_field_type_id('text'), '1'),
+(NULL, 'dashboard_add_note_button', get_field_type_id('text'), '1'),
+(NULL, 'dashboard_loading_text', get_field_type_id('text'), '1'),
+(NULL, 'dashboard_ai_label', get_field_type_id('text'), '1'),
+(NULL, 'dashboard_therapist_label', get_field_type_id('text'), '1'),
+(NULL, 'dashboard_subject_label', get_field_type_id('text'), '1');
+
+-- Risk level labels
+INSERT IGNORE INTO `fields` (`id`, `name`, `id_type`, `display`) VALUES
+(NULL, 'dashboard_risk_heading', get_field_type_id('text'), '1'),
+(NULL, 'dashboard_risk_low', get_field_type_id('text'), '1'),
+(NULL, 'dashboard_risk_medium', get_field_type_id('text'), '1'),
+(NULL, 'dashboard_risk_high', get_field_type_id('text'), '1'),
+(NULL, 'dashboard_risk_critical', get_field_type_id('text'), '1');
+
+-- Status labels
+INSERT IGNORE INTO `fields` (`id`, `name`, `id_type`, `display`) VALUES
+(NULL, 'dashboard_status_active', get_field_type_id('text'), '1'),
+(NULL, 'dashboard_status_paused', get_field_type_id('text'), '1'),
+(NULL, 'dashboard_status_closed', get_field_type_id('text'), '1');
+
+-- AI control labels
+INSERT IGNORE INTO `fields` (`id`, `name`, `id_type`, `display`) VALUES
+(NULL, 'dashboard_disable_ai', get_field_type_id('text'), '1'),
+(NULL, 'dashboard_enable_ai', get_field_type_id('text'), '1'),
+(NULL, 'dashboard_ai_mode_indicator', get_field_type_id('text'), '1'),
+(NULL, 'dashboard_human_mode_indicator', get_field_type_id('text'), '1');
+
+-- Action labels
+INSERT IGNORE INTO `fields` (`id`, `name`, `id_type`, `display`) VALUES
+(NULL, 'dashboard_acknowledge_button', get_field_type_id('text'), '1'),
+(NULL, 'dashboard_dismiss_button', get_field_type_id('text'), '1'),
+(NULL, 'dashboard_view_llm_button', get_field_type_id('text'), '1'),
+(NULL, 'dashboard_join_conversation', get_field_type_id('text'), '1'),
+(NULL, 'dashboard_leave_conversation', get_field_type_id('text'), '1');
+
+-- Statistics labels
+INSERT IGNORE INTO `fields` (`id`, `name`, `id_type`, `display`) VALUES
+(NULL, 'dashboard_stat_patients', get_field_type_id('text'), '1'),
+(NULL, 'dashboard_stat_active', get_field_type_id('text'), '1'),
+(NULL, 'dashboard_stat_critical', get_field_type_id('text'), '1'),
+(NULL, 'dashboard_stat_alerts', get_field_type_id('text'), '1'),
+(NULL, 'dashboard_stat_tags', get_field_type_id('text'), '1');
+
+-- Dashboard functional settings
+INSERT IGNORE INTO `fields` (`id`, `name`, `id_type`, `display`) VALUES
+(NULL, 'dashboard_polling_interval', get_field_type_id('number'), '0'),
+(NULL, 'dashboard_show_risk_column', get_field_type_id('checkbox'), '0'),
+(NULL, 'dashboard_show_status_column', get_field_type_id('checkbox'), '0'),
+(NULL, 'dashboard_show_alerts_panel', get_field_type_id('checkbox'), '0'),
+(NULL, 'dashboard_show_notes_panel', get_field_type_id('checkbox'), '0'),
+(NULL, 'dashboard_show_stats_header', get_field_type_id('checkbox'), '0'),
+(NULL, 'dashboard_enable_ai_toggle', get_field_type_id('checkbox'), '0'),
+(NULL, 'dashboard_enable_risk_control', get_field_type_id('checkbox'), '0'),
+(NULL, 'dashboard_enable_status_control', get_field_type_id('checkbox'), '0'),
+(NULL, 'dashboard_enable_notes', get_field_type_id('checkbox'), '0'),
+(NULL, 'dashboard_enable_invisible_mode', get_field_type_id('checkbox'), '0'),
+(NULL, 'dashboard_messages_per_page', get_field_type_id('number'), '0'),
+(NULL, 'dashboard_conversations_per_page', get_field_type_id('number'), '0');
+
+-- Filter labels
+INSERT IGNORE INTO `fields` (`id`, `name`, `id_type`, `display`) VALUES
+(NULL, 'dashboard_filter_all', get_field_type_id('text'), '1'),
+(NULL, 'dashboard_filter_active', get_field_type_id('text'), '1'),
+(NULL, 'dashboard_filter_critical', get_field_type_id('text'), '1'),
+(NULL, 'dashboard_filter_unread', get_field_type_id('text'), '1'),
+(NULL, 'dashboard_filter_tagged', get_field_type_id('text'), '1');
+
+-- Notification settings (for email alerts)
+INSERT IGNORE INTO `fields` (`id`, `name`, `id_type`, `display`) VALUES
+(NULL, 'dashboard_notify_on_tag', get_field_type_id('checkbox'), '0'),
+(NULL, 'dashboard_notify_on_danger', get_field_type_id('checkbox'), '0'),
+(NULL, 'dashboard_notify_on_critical', get_field_type_id('checkbox'), '0'),
+(NULL, 'dashboard_notify_email_subject', get_field_type_id('text'), '1'),
+(NULL, 'dashboard_notify_email_template', get_field_type_id('markdown'), '1');
+
+-- Intervention messages
+INSERT IGNORE INTO `fields` (`id`, `name`, `id_type`, `display`) VALUES
+(NULL, 'dashboard_intervention_message', get_field_type_id('text'), '1'),
+(NULL, 'dashboard_ai_paused_notice', get_field_type_id('text'), '1'),
+(NULL, 'dashboard_ai_resumed_notice', get_field_type_id('text'), '1');
+
 INSERT IGNORE INTO `styles_fields` (`id_styles`, `id_fields`, `default_value`, `help`) VALUES
 -- Inherit core fields from llmChat pattern
 (get_style_id('therapyChat'), get_field_id('css'), NULL, 'CSS classes for the chat container'),
 (get_style_id('therapyChat'), get_field_id('css_mobile'), NULL, 'CSS classes for mobile view'),
+(get_style_id('therapyChat'), get_field_id('debug'), '0', 'Enable debug mode for the section'),
 (get_style_id('therapyChat'), get_field_id('therapy_chat_default_mode'), 'ai_hybrid', 'Default chat mode for this instance'),
 (get_style_id('therapyChat'), get_field_id('therapy_chat_enable_tagging'), '1', 'Enable @mention tagging'),
 (get_style_id('therapyChat'), get_field_id('therapy_chat_polling_interval'), '3', 'Message polling interval in seconds'),
@@ -397,6 +496,106 @@ INSERT IGNORE INTO `styles_fields` (`id_styles`, `id_fields`, `default_value`, `
 (get_style_id('therapyChat'), get_field_id('submit_button_label'), 'Send', 'Send button label'),
 (get_style_id('therapyChat'), get_field_id('message_placeholder'), 'Type your message...', 'Input placeholder'),
 (get_style_id('therapyChat'), get_field_id('loading_text'), 'Loading...', 'Loading text');
+
+-- =====================================================
+-- STYLE FIELDS FOR therapistDashboard
+-- Comprehensive dashboard configuration for therapist monitoring
+-- =====================================================
+
+INSERT IGNORE INTO `styles_fields` (`id_styles`, `id_fields`, `default_value`, `help`) VALUES
+-- Core CSS
+(get_style_id('therapistDashboard'), get_field_id('css'), NULL, 'CSS classes for the dashboard container'),
+(get_style_id('therapistDashboard'), get_field_id('css_mobile'), NULL, 'CSS classes for mobile view'),
+
+(get_style_id('therapistDashboard'), get_field_id('debug'), '0', 'Enable debug mode for the section'),
+
+-- Dashboard UI labels and headings
+(get_style_id('therapistDashboard'), get_field_id('title'), 'Therapist Dashboard', 'Main dashboard title'),
+(get_style_id('therapistDashboard'), get_field_id('dashboard_conversations_heading'), 'Patient Conversations', 'Heading for conversations list'),
+(get_style_id('therapistDashboard'), get_field_id('dashboard_alerts_heading'), 'Alerts', 'Heading for alerts panel'),
+(get_style_id('therapistDashboard'), get_field_id('dashboard_notes_heading'), 'Clinical Notes', 'Heading for notes section'),
+(get_style_id('therapistDashboard'), get_field_id('dashboard_stats_heading'), 'Overview', 'Heading for statistics header'),
+(get_style_id('therapistDashboard'), get_field_id('dashboard_no_conversations'), 'No patient conversations found.', 'Message when no conversations exist'),
+(get_style_id('therapistDashboard'), get_field_id('dashboard_no_alerts'), 'No alerts at this time.', 'Message when no alerts exist'),
+(get_style_id('therapistDashboard'), get_field_id('dashboard_select_conversation'), 'Select a patient conversation to view messages and respond.', 'Message when no conversation selected'),
+
+-- Input labels
+(get_style_id('therapistDashboard'), get_field_id('dashboard_send_placeholder'), 'Type your response to the patient...', 'Placeholder for message input'),
+(get_style_id('therapistDashboard'), get_field_id('dashboard_send_button'), 'Send Response', 'Label for send button'),
+(get_style_id('therapistDashboard'), get_field_id('dashboard_add_note_placeholder'), 'Add a clinical note (not visible to patient)...', 'Placeholder for note input'),
+(get_style_id('therapistDashboard'), get_field_id('dashboard_add_note_button'), 'Add Note', 'Label for add note button'),
+(get_style_id('therapistDashboard'), get_field_id('dashboard_loading_text'), 'Loading...', 'Loading indicator text'),
+
+-- Message labels
+(get_style_id('therapistDashboard'), get_field_id('dashboard_ai_label'), 'AI Assistant', 'Label for AI-generated messages'),
+(get_style_id('therapistDashboard'), get_field_id('dashboard_therapist_label'), 'Therapist', 'Label for therapist messages'),
+(get_style_id('therapistDashboard'), get_field_id('dashboard_subject_label'), 'Patient', 'Label for patient messages'),
+
+-- Risk level labels
+(get_style_id('therapistDashboard'), get_field_id('dashboard_risk_heading'), 'Risk Level', 'Heading for risk control section'),
+(get_style_id('therapistDashboard'), get_field_id('dashboard_risk_low'), 'Low', 'Label for low risk level'),
+(get_style_id('therapistDashboard'), get_field_id('dashboard_risk_medium'), 'Medium', 'Label for medium risk level'),
+(get_style_id('therapistDashboard'), get_field_id('dashboard_risk_high'), 'High', 'Label for high risk level'),
+(get_style_id('therapistDashboard'), get_field_id('dashboard_risk_critical'), 'Critical', 'Label for critical risk level'),
+
+-- Status labels
+(get_style_id('therapistDashboard'), get_field_id('dashboard_status_active'), 'Active', 'Label for active status'),
+(get_style_id('therapistDashboard'), get_field_id('dashboard_status_paused'), 'Paused', 'Label for paused status'),
+(get_style_id('therapistDashboard'), get_field_id('dashboard_status_closed'), 'Closed', 'Label for closed status'),
+
+-- AI control labels
+(get_style_id('therapistDashboard'), get_field_id('dashboard_disable_ai'), 'Pause AI', 'Button label to disable AI responses'),
+(get_style_id('therapistDashboard'), get_field_id('dashboard_enable_ai'), 'Resume AI', 'Button label to enable AI responses'),
+(get_style_id('therapistDashboard'), get_field_id('dashboard_ai_mode_indicator'), 'AI-assisted mode', 'Indicator when AI is active'),
+(get_style_id('therapistDashboard'), get_field_id('dashboard_human_mode_indicator'), 'Therapist-only mode', 'Indicator when AI is paused'),
+
+-- Action button labels
+(get_style_id('therapistDashboard'), get_field_id('dashboard_acknowledge_button'), 'Acknowledge', 'Button to acknowledge a tag'),
+(get_style_id('therapistDashboard'), get_field_id('dashboard_dismiss_button'), 'Dismiss', 'Button to dismiss an alert'),
+(get_style_id('therapistDashboard'), get_field_id('dashboard_view_llm_button'), 'View in LLM Console', 'Button to open conversation in LLM console'),
+(get_style_id('therapistDashboard'), get_field_id('dashboard_join_conversation'), 'Join Conversation', 'Button to actively join a conversation'),
+(get_style_id('therapistDashboard'), get_field_id('dashboard_leave_conversation'), 'Leave Conversation', 'Button to exit therapist-only mode'),
+
+-- Statistics labels
+(get_style_id('therapistDashboard'), get_field_id('dashboard_stat_patients'), 'Patients', 'Label for total patients stat'),
+(get_style_id('therapistDashboard'), get_field_id('dashboard_stat_active'), 'Active', 'Label for active conversations stat'),
+(get_style_id('therapistDashboard'), get_field_id('dashboard_stat_critical'), 'Critical', 'Label for critical risk stat'),
+(get_style_id('therapistDashboard'), get_field_id('dashboard_stat_alerts'), 'Alerts', 'Label for alerts count stat'),
+(get_style_id('therapistDashboard'), get_field_id('dashboard_stat_tags'), 'Tags', 'Label for tags count stat'),
+
+-- Functional settings
+(get_style_id('therapistDashboard'), get_field_id('dashboard_polling_interval'), '5', 'Polling interval in seconds for dashboard updates'),
+(get_style_id('therapistDashboard'), get_field_id('dashboard_show_risk_column'), '1', 'Show risk level in conversation list'),
+(get_style_id('therapistDashboard'), get_field_id('dashboard_show_status_column'), '1', 'Show status in conversation list'),
+(get_style_id('therapistDashboard'), get_field_id('dashboard_show_alerts_panel'), '1', 'Show alerts panel in dashboard'),
+(get_style_id('therapistDashboard'), get_field_id('dashboard_show_notes_panel'), '1', 'Show clinical notes panel'),
+(get_style_id('therapistDashboard'), get_field_id('dashboard_show_stats_header'), '1', 'Show statistics in header'),
+(get_style_id('therapistDashboard'), get_field_id('dashboard_enable_ai_toggle'), '1', 'Allow therapist to toggle AI on/off'),
+(get_style_id('therapistDashboard'), get_field_id('dashboard_enable_risk_control'), '1', 'Allow therapist to change risk level'),
+(get_style_id('therapistDashboard'), get_field_id('dashboard_enable_status_control'), '1', 'Allow therapist to change conversation status'),
+(get_style_id('therapistDashboard'), get_field_id('dashboard_enable_notes'), '1', 'Allow therapist to add clinical notes'),
+(get_style_id('therapistDashboard'), get_field_id('dashboard_enable_invisible_mode'), '1', 'Allow therapist to observe without patient knowing'),
+(get_style_id('therapistDashboard'), get_field_id('dashboard_messages_per_page'), '50', 'Number of messages to load per page'),
+(get_style_id('therapistDashboard'), get_field_id('dashboard_conversations_per_page'), '20', 'Number of conversations to show in list'),
+
+-- Filter labels
+(get_style_id('therapistDashboard'), get_field_id('dashboard_filter_all'), 'All', 'Label for all filter'),
+(get_style_id('therapistDashboard'), get_field_id('dashboard_filter_active'), 'Active', 'Label for active filter'),
+(get_style_id('therapistDashboard'), get_field_id('dashboard_filter_critical'), 'Critical', 'Label for critical filter'),
+(get_style_id('therapistDashboard'), get_field_id('dashboard_filter_unread'), 'Unread', 'Label for unread filter'),
+(get_style_id('therapistDashboard'), get_field_id('dashboard_filter_tagged'), 'Tagged', 'Label for tagged filter'),
+
+-- Notification settings
+(get_style_id('therapistDashboard'), get_field_id('dashboard_notify_on_tag'), '1', 'Send email when therapist is tagged'),
+(get_style_id('therapistDashboard'), get_field_id('dashboard_notify_on_danger'), '1', 'Send email when danger keywords detected'),
+(get_style_id('therapistDashboard'), get_field_id('dashboard_notify_on_critical'), '1', 'Send email when conversation marked critical'),
+(get_style_id('therapistDashboard'), get_field_id('dashboard_notify_email_subject'), '[Therapy Chat] Alert: {{alert_type}}', 'Email subject template for notifications'),
+(get_style_id('therapistDashboard'), get_field_id('dashboard_notify_email_template'), 'A new alert has been triggered:\n\n**Patient:** {{subject_name}} ({{subject_code}})\n**Type:** {{alert_type}}\n**Severity:** {{severity}}\n**Message:** {{message}}\n\nPlease review in the dashboard.', 'Email body template for notifications'),
+
+-- Intervention messages
+(get_style_id('therapistDashboard'), get_field_id('dashboard_intervention_message'), 'Your therapist has joined the conversation.', 'Message shown to patient when therapist joins'),
+(get_style_id('therapistDashboard'), get_field_id('dashboard_ai_paused_notice'), 'AI responses have been paused. Your therapist will respond directly.', 'Message when AI is paused'),
+(get_style_id('therapistDashboard'), get_field_id('dashboard_ai_resumed_notice'), 'AI-assisted support has been resumed.', 'Message when AI is resumed');
 
 -- =====================================================
 -- PAGES FOR SUBJECT AND THERAPIST

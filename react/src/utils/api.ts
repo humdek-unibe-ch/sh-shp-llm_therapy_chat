@@ -200,6 +200,18 @@ export const therapistDashboardApi = {
   },
 
   /**
+   * Set conversation status
+   */
+  setStatus: (sectionId: number, conversationId: number | string, status: string): Promise<{ success: boolean; status: string }> => {
+    return postForm(buildUrl(sectionId, 'set_status'), {
+      section_id: sectionId,
+      action: 'set_status',
+      conversation_id: conversationId,
+      status,
+    });
+  },
+
+  /**
    * Add note
    */
   addNote: (sectionId: number, conversationId: number | string, content: string): Promise<{ success: boolean; note_id: number }> => {

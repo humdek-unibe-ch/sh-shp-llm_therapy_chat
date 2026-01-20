@@ -13,21 +13,24 @@ interface MessageInputProps {
   onSend: (message: string) => void;
   disabled?: boolean;
   placeholder?: string;
-  labels: TherapyChatLabels | TherapistDashboardLabels;
+  buttonLabel?: string;
+  labels?: TherapyChatLabels | TherapistDashboardLabels;
 }
 
 export const MessageInput: React.FC<MessageInputProps> = ({
   onSend,
   disabled = false,
   placeholder,
+  buttonLabel,
   labels,
 }) => {
   const [message, setMessage] = useState('');
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const labelsTyped = labels as TherapyChatLabels & TherapistDashboardLabels;
+  const labelsTyped = labels as (TherapyChatLabels & TherapistDashboardLabels) | undefined;
 
-  const defaultPlaceholder = labelsTyped.placeholder || labelsTyped.sendPlaceholder || 'Type your message...';
-  const sendLabel = labelsTyped.send_button || labelsTyped.sendButton || 'Send';
+  // Support both direct props and labels object
+  const defaultPlaceholder = placeholder || labelsTyped?.placeholder || labelsTyped?.sendPlaceholder || 'Type your message...';
+  const sendLabel = buttonLabel || labelsTyped?.send_button || labelsTyped?.sendButton || 'Send';
 
   /**
    * Handle form submission

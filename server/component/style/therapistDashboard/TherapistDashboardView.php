@@ -97,6 +97,23 @@ class TherapistDashboardView extends StyleView
     {
         $stats = $this->model->getStats();
         
+        // Get field values from component configuration
+        $getField = function($name, $default = '') {
+            $value = $this->model->get_db_field($name);
+            return $value !== null && $value !== '' ? $value : $default;
+        };
+
+        // Get boolean field
+        $getBoolField = function($name, $default = true) use ($getField) {
+            $value = $getField($name, $default ? '1' : '0');
+            return $value === '1' || $value === 1 || $value === true;
+        };
+
+        // Get number field
+        $getNumField = function($name, $default = 0) use ($getField) {
+            return intval($getField($name, $default));
+        };
+        
         return json_encode([
             // Core identifiers
             'userId' => $this->model->getUserId(),
@@ -107,37 +124,101 @@ class TherapistDashboardView extends StyleView
             // Stats
             'stats' => $stats,
             
-            // Polling configuration
-            'pollingInterval' => 5000, // 5 seconds for dashboard
+            // Configuration settings
+            'pollingInterval' => $getNumField('dashboard_polling_interval', 5) * 1000, // Convert to milliseconds
+            'messagesPerPage' => $getNumField('dashboard_messages_per_page', 50),
+            'conversationsPerPage' => $getNumField('dashboard_conversations_per_page', 20),
+            
+            // Feature toggles
+            'features' => [
+                'showRiskColumn' => $getBoolField('dashboard_show_risk_column', true),
+                'showStatusColumn' => $getBoolField('dashboard_show_status_column', true),
+                'showAlertsPanel' => $getBoolField('dashboard_show_alerts_panel', true),
+                'showNotesPanel' => $getBoolField('dashboard_show_notes_panel', true),
+                'showStatsHeader' => $getBoolField('dashboard_show_stats_header', true),
+                'enableAiToggle' => $getBoolField('dashboard_enable_ai_toggle', true),
+                'enableRiskControl' => $getBoolField('dashboard_enable_risk_control', true),
+                'enableStatusControl' => $getBoolField('dashboard_enable_status_control', true),
+                'enableNotes' => $getBoolField('dashboard_enable_notes', true),
+                'enableInvisibleMode' => $getBoolField('dashboard_enable_invisible_mode', true),
+            ],
+            
+            // Notification settings
+            'notifications' => [
+                'notifyOnTag' => $getBoolField('dashboard_notify_on_tag', true),
+                'notifyOnDanger' => $getBoolField('dashboard_notify_on_danger', true),
+                'notifyOnCritical' => $getBoolField('dashboard_notify_on_critical', true),
+            ],
             
             // UI Labels
             'labels' => [
-                'title' => 'Therapist Dashboard',
-                'conversationsHeading' => 'Patient Conversations',
-                'alertsHeading' => 'Alerts',
-                'notesHeading' => 'Notes',
-                'noConversations' => 'No conversations found.',
-                'noAlerts' => 'No alerts.',
-                'selectConversation' => 'Select a conversation to view messages.',
-                'sendPlaceholder' => 'Type your response...',
-                'sendButton' => 'Send',
-                'addNotePlaceholder' => 'Add a note...',
-                'addNoteButton' => 'Add Note',
-                'disableAI' => 'Disable AI',
-                'enableAI' => 'Enable AI',
-                'riskLow' => 'Low Risk',
-                'riskMedium' => 'Medium Risk',
-                'riskHigh' => 'High Risk',
-                'riskCritical' => 'Critical',
-                'statusActive' => 'Active',
-                'statusPaused' => 'Paused',
-                'statusClosed' => 'Closed',
-                'acknowledge' => 'Acknowledge',
-                'viewInLlm' => 'View in LLM Console',
-                'loading' => 'Loading...',
-                'aiLabel' => 'AI Assistant',
-                'therapistLabel' => 'Therapist',
-                'subjectLabel' => 'Patient'
+                // Headings
+                'title' => $getField('title', 'Therapist Dashboard'),
+                'conversationsHeading' => $getField('dashboard_conversations_heading', 'Patient Conversations'),
+                'alertsHeading' => $getField('dashboard_alerts_heading', 'Alerts'),
+                'notesHeading' => $getField('dashboard_notes_heading', 'Clinical Notes'),
+                'statsHeading' => $getField('dashboard_stats_heading', 'Overview'),
+                'riskHeading' => $getField('dashboard_risk_heading', 'Risk Level'),
+                
+                // Empty states
+                'noConversations' => $getField('dashboard_no_conversations', 'No patient conversations found.'),
+                'noAlerts' => $getField('dashboard_no_alerts', 'No alerts at this time.'),
+                'selectConversation' => $getField('dashboard_select_conversation', 'Select a patient conversation to view messages and respond.'),
+                
+                // Input labels
+                'sendPlaceholder' => $getField('dashboard_send_placeholder', 'Type your response to the patient...'),
+                'sendButton' => $getField('dashboard_send_button', 'Send Response'),
+                'addNotePlaceholder' => $getField('dashboard_add_note_placeholder', 'Add a clinical note (not visible to patient)...'),
+                'addNoteButton' => $getField('dashboard_add_note_button', 'Add Note'),
+                'loading' => $getField('dashboard_loading_text', 'Loading...'),
+                
+                // Message labels
+                'aiLabel' => $getField('dashboard_ai_label', 'AI Assistant'),
+                'therapistLabel' => $getField('dashboard_therapist_label', 'Therapist'),
+                'subjectLabel' => $getField('dashboard_subject_label', 'Patient'),
+                
+                // Risk labels
+                'riskLow' => $getField('dashboard_risk_low', 'Low'),
+                'riskMedium' => $getField('dashboard_risk_medium', 'Medium'),
+                'riskHigh' => $getField('dashboard_risk_high', 'High'),
+                'riskCritical' => $getField('dashboard_risk_critical', 'Critical'),
+                
+                // Status labels
+                'statusActive' => $getField('dashboard_status_active', 'Active'),
+                'statusPaused' => $getField('dashboard_status_paused', 'Paused'),
+                'statusClosed' => $getField('dashboard_status_closed', 'Closed'),
+                
+                // AI control labels
+                'disableAI' => $getField('dashboard_disable_ai', 'Pause AI'),
+                'enableAI' => $getField('dashboard_enable_ai', 'Resume AI'),
+                'aiModeIndicator' => $getField('dashboard_ai_mode_indicator', 'AI-assisted mode'),
+                'humanModeIndicator' => $getField('dashboard_human_mode_indicator', 'Therapist-only mode'),
+                
+                // Action buttons
+                'acknowledge' => $getField('dashboard_acknowledge_button', 'Acknowledge'),
+                'dismiss' => $getField('dashboard_dismiss_button', 'Dismiss'),
+                'viewInLlm' => $getField('dashboard_view_llm_button', 'View in LLM Console'),
+                'joinConversation' => $getField('dashboard_join_conversation', 'Join Conversation'),
+                'leaveConversation' => $getField('dashboard_leave_conversation', 'Leave Conversation'),
+                
+                // Statistics labels
+                'statPatients' => $getField('dashboard_stat_patients', 'Patients'),
+                'statActive' => $getField('dashboard_stat_active', 'Active'),
+                'statCritical' => $getField('dashboard_stat_critical', 'Critical'),
+                'statAlerts' => $getField('dashboard_stat_alerts', 'Alerts'),
+                'statTags' => $getField('dashboard_stat_tags', 'Tags'),
+                
+                // Filter labels
+                'filterAll' => $getField('dashboard_filter_all', 'All'),
+                'filterActive' => $getField('dashboard_filter_active', 'Active'),
+                'filterCritical' => $getField('dashboard_filter_critical', 'Critical'),
+                'filterUnread' => $getField('dashboard_filter_unread', 'Unread'),
+                'filterTagged' => $getField('dashboard_filter_tagged', 'Tagged'),
+                
+                // Intervention messages
+                'interventionMessage' => $getField('dashboard_intervention_message', 'Your therapist has joined the conversation.'),
+                'aiPausedNotice' => $getField('dashboard_ai_paused_notice', 'AI responses have been paused. Your therapist will respond directly.'),
+                'aiResumedNotice' => $getField('dashboard_ai_resumed_notice', 'AI-assisted support has been resumed.'),
             ]
         ]);
     }
