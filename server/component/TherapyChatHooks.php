@@ -268,8 +268,13 @@ class TherapyChatHooks extends BaseHooks
     public function outputTherapyChatIcon($args = null)
     {
         $userId = $_SESSION['id_user'] ?? null;
-        
+
         if (!$userId) {
+            return;
+        }
+
+        // Don't show floating chat icon in CMS admin area
+        if ($this->isCmsPage()) {
             return;
         }
 
@@ -381,6 +386,27 @@ class TherapyChatHooks extends BaseHooks
             case 'bottom-right':
             default:
                 return 'bottom: 20px; right: 20px;';
+        }
+    }
+
+    /**
+     * Check if the current page is a CMS admin page
+     *
+     * @return bool True if we're in CMS admin area, false otherwise
+     */
+    private function isCmsPage()
+    {
+        try {
+            $router = $this->services->get_router();
+            return ($router->is_active("cms")
+                || $router->is_active("cmsSelect")
+                || $router->is_active("cmsUpdate")
+                || $router->is_active("cmsInsert")
+                || $router->is_active("cmsDelete")
+            );
+        } catch (Exception $e) {
+            // If there's any error checking the router, default to not CMS
+            return false;
         }
     }
 }
