@@ -614,6 +614,12 @@ INSERT IGNORE INTO sections (id_styles, name) VALUES(get_style_id('therapyChat')
 INSERT IGNORE INTO pages_sections (id_pages, id_Sections, position) VALUES((SELECT id FROM pages WHERE keyword = 'therapyChatSubject'), (SELECT id FROM sections WHERE `name` = 'therapyChatSubject-container'), 1);
 INSERT IGNORE INTO sections_hierarchy (parent, child, position) VALUES((SELECT id FROM sections WHERE name = 'therapyChatSubject-container'), (SELECT id FROM sections WHERE `name` = 'therapyChatSubject-chat'), 1);
 
+-- Add title translations for subject chat page
+INSERT IGNORE INTO `pages_fields_translation` (`id_pages`, `id_fields`, `id_languages`, `content`)
+VALUES
+((SELECT id FROM pages WHERE keyword = 'therapyChatSubject'), get_field_id('title'), '0000000003', 'Therapy Chat'),
+((SELECT id FROM pages WHERE keyword = 'therapyChatSubject'), get_field_id('title'), '0000000002', 'Therapie-Chat');
+
 -- Therapist dashboard page
 INSERT IGNORE INTO pages (`id`, `keyword`, `url`, `protocol`, `id_actions`, `id_navigation_section`, `parent`, `is_headless`, `nav_position`, `footer_position`, `id_type`, `id_pageAccessTypes`) 
 VALUES (NULL, 'therapyChatTherapist', '/therapy-chat/therapist/[i:gid]?/[i:uid]?', 'GET|POST', '0000000003', NULL, NULL, '0', NULL, NULL, '0000000003', (SELECT id FROM lookups WHERE lookup_code = "mobile_and_web" LIMIT 0, 1));
@@ -627,6 +633,12 @@ INSERT IGNORE INTO sections (id_styles, name) VALUES(get_style_id('container'), 
 INSERT IGNORE INTO sections (id_styles, name) VALUES(get_style_id('therapistDashboard'), 'therapyChatTherapist-dashboard');
 INSERT IGNORE INTO pages_sections (id_pages, id_Sections, position) VALUES((SELECT id FROM pages WHERE keyword = 'therapyChatTherapist'), (SELECT id FROM sections WHERE `name` = 'therapyChatTherapist-container'), 1);
 INSERT IGNORE INTO sections_hierarchy (parent, child, position) VALUES((SELECT id FROM sections WHERE name = 'therapyChatTherapist-container'), (SELECT id FROM sections WHERE `name` = 'therapyChatTherapist-dashboard'), 1);
+
+-- Add title translations for therapist dashboard page
+INSERT IGNORE INTO `pages_fields_translation` (`id_pages`, `id_fields`, `id_languages`, `content`)
+VALUES
+((SELECT id FROM pages WHERE keyword = 'therapyChatTherapist'), get_field_id('title'), '0000000003', 'Therapist Dashboard'),
+((SELECT id FROM pages WHERE keyword = 'therapyChatTherapist'), get_field_id('title'), '0000000002', 'Therapeuten Dashboard');
 
 -- =====================================================
 -- UPDATE PAGETYPE DEFAULT VALUES WITH CREATED PAGES
