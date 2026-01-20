@@ -356,17 +356,25 @@ class TherapyChatHooks extends BaseHooks
     {
         if (!empty($pageId) && is_numeric($pageId)) {
             try {
-                $pageInfo = $this->db->fetch_page_info_by_id($pageId);
-                if ($pageInfo && isset($pageInfo['url'])) {
-                    return BASE_PATH . '/' . $pageInfo['url'];
+                // Get the page keyword from the page ID
+                $pageKeyword = $this->db->fetch_page_keyword_by_id($pageId);
+                if ($pageKeyword) {
+                    // Use router to generate URL for the page keyword
+                    $router = $this->services->get_router();
+                    $url = $router->get_link_url($pageKeyword);
+                    if (!empty($url)) {
+                        return $url;
+                    }
                 }
             } catch (Exception $e) {
                 // Fall back to keyword if page ID lookup fails
             }
         }
 
-        // Fallback to keyword-based URL
-        return BASE_PATH . '/' . $fallbackKeyword;
+        // Fallback to keyword-based URL using router
+        $router = $this->services->get_router();
+        $url = $router->get_link_url($fallbackKeyword);
+        return !empty($url) ? $url : BASE_PATH . '/' . $fallbackKeyword;
     }
 
     /**
