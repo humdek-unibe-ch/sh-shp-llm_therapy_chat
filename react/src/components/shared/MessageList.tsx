@@ -29,63 +29,88 @@ function formatTime(timestamp: string): string {
 }
 
 /**
- * Get sender label
+ * Get sender label - Consistent naming for each sender type
  */
-function getSenderLabel(message: Message, labels: TherapyChatLabels | TherapistDashboardLabels): string {
+function getSenderLabel(message: Message, labels: TherapyChatLabels | TherapistDashboardLabels, isTherapistView: boolean): string {
+  const labelsTyped = labels as TherapyChatLabels & TherapistDashboardLabels;
+  
+  // Use explicit label if provided
   if (message.label) {
     return message.label;
   }
 
-  const labelsTyped = labels as TherapyChatLabels & TherapistDashboardLabels;
-  
   switch (message.sender_type) {
     case 'ai':
       return labelsTyped.ai_label || labelsTyped.aiLabel || 'AI Assistant';
     case 'therapist':
-      return message.sender_name 
-        ? `${labelsTyped.therapist_label || labelsTyped.therapistLabel || 'Therapist'} (${message.sender_name})`
-        : labelsTyped.therapist_label || labelsTyped.therapistLabel || 'Therapist';
+      // In therapist view, show "You" for therapist messages
+      if (isTherapistView) {
+        return 'You';
+      }
+      return labelsTyped.therapist_label || labelsTyped.therapistLabel || 'Therapist';
     case 'subject':
+      // In subject view, show "You" for subject messages
+      if (!isTherapistView) {
+        return 'You';
+      }
       return message.sender_name || labelsTyped.subjectLabel || 'Patient';
     case 'system':
       return 'System';
     default:
-      return message.role === 'assistant' 
-        ? (labelsTyped.ai_label || labelsTyped.aiLabel || 'AI Assistant')
-        : 'You';
+      // Handle legacy role-based messages
+      if (message.role === 'assistant') {
+        return labelsTyped.ai_label || labelsTyped.aiLabel || 'AI Assistant';
+      }
+      // user role - show "You" consistently
+      return 'You';
   }
 }
 
 /**
  * Get message CSS class
+ * Note: For own messages, we use therapy-message-self which handles alignment (flex-end)
+ * For other people's messages, we use type-specific classes (ai, therapist, subject)
  */
 function getMessageClass(message: Message, isTherapistView: boolean): string {
   const classes = ['therapy-message'];
+
+  // Determine if this is the current user's own message
+  const isOwnMessage = isTherapistView 
+    ? message.sender_type === 'therapist' 
+    : message.sender_type === 'subject' || (message.role === 'user' && !message.sender_type);
 
   switch (message.sender_type) {
     case 'ai':
       classes.push('therapy-message-ai');
       break;
     case 'therapist':
-      classes.push('therapy-message-therapist');
-      if (isTherapistView) {
+      if (isOwnMessage) {
+        // Own message - right aligned, blue
         classes.push('therapy-message-self');
+      } else {
+        // Therapist message in subject view - left aligned, green
+        classes.push('therapy-message-therapist');
       }
       break;
     case 'subject':
-      classes.push('therapy-message-subject');
-      if (!isTherapistView) {
+      if (isOwnMessage) {
+        // Own message - right aligned, blue
         classes.push('therapy-message-self');
+      } else {
+        // Subject message in therapist view - left aligned, light blue
+        classes.push('therapy-message-subject');
       }
       break;
     case 'system':
       classes.push('therapy-message-system');
       break;
     default:
+      // Handle legacy role-based messages
       if (message.role === 'assistant') {
         classes.push('therapy-message-ai');
       } else if (message.role === 'user') {
-        classes.push(isTherapistView ? 'therapy-message-subject' : 'therapy-message-self');
+        // User's own message
+        classes.push('therapy-message-self');
       }
   }
 
@@ -138,7 +163,7 @@ export const MessageList: React.FC<MessageListProps> = ({
         <div key={message.id} className={getMessageClass(message, isTherapistView)}>
           <div className="therapy-message-header">
             <span className="therapy-message-sender">
-              {getSenderLabel(message, labels)}
+              {getSenderLabel(message, labels, isTherapistView)}
             </span>
             <span className="therapy-message-time">
               {formatTime(message.timestamp)}
