@@ -9,8 +9,8 @@ require_once __DIR__ . "/../../../service/TherapyMessageService.php";
 require_once __DIR__ . "/../../../constants/TherapyLookups.php";
 
 // Include LLM plugin services for danger detection - only if LLM plugin is available
-$llmDangerDetectionPath = __DIR__ . "/../../../../sh-shp-llm/server/service/LlmDangerDetectionService.php";
-$llmContextServicePath = __DIR__ . "/../../../../sh-shp-llm/server/service/LlmContextService.php";
+$llmDangerDetectionPath = __DIR__ . "/../../../../../sh-shp-llm/server/service/LlmDangerDetectionService.php";
+$llmContextServicePath = __DIR__ . "/../../../../../sh-shp-llm/server/service/LlmContextService.php";
 
 if (file_exists($llmDangerDetectionPath)) {
     require_once $llmDangerDetectionPath;

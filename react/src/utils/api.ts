@@ -100,6 +100,7 @@ async function request<T>(
 /**
  * Make POST request with form data
  * Uses window.location.pathname to post to the current page's controller
+ * POST requests should NOT include query parameters - they go in the form body
  */
 async function postForm<T>(
   _url: string, // Unused, we use window.location.pathname
@@ -113,10 +114,46 @@ async function postForm<T>(
     }
   });
 
-  return request<T>(window.location.pathname + window.location.search, {
+  // Use only the pathname for POST requests - don't include query string
+  // All parameters should be in the form body
+  const response = await fetch(window.location.pathname, {
     method: 'POST',
     body: formData,
+    headers: {
+      'Accept': 'application/json',
+      'X-Requested-With': 'XMLHttpRequest'
+    },
+    credentials: 'same-origin'
   });
+
+  // Get the response text first
+  const responseText = await response.text();
+  
+  // Try to parse as JSON
+  let responseData: T;
+  try {
+    responseData = JSON.parse(responseText);
+  } catch {
+    // If response contains HTML (PHP error), extract error message if possible
+    const htmlErrorMatch = responseText.match(/<b>([^<]+)<\/b>:\s*([^<]+)/);
+    const errorMessage = htmlErrorMatch 
+      ? `${htmlErrorMatch[1]}: ${htmlErrorMatch[2]}`.trim()
+      : 'Server returned an invalid response. Please try again.';
+    
+    console.error('API Error - Invalid JSON response:', responseText.substring(0, 500));
+    throw new Error(errorMessage);
+  }
+
+  if (!response.ok) {
+    const errorData = responseData as { error?: string; debug?: unknown };
+    const errorMessage = errorData.error || `HTTP error ${response.status}`;
+    if (errorData.debug) {
+      console.error('API Error debug info:', JSON.stringify(errorData.debug, null, 2));
+    }
+    throw new Error(errorMessage);
+  }
+
+  return responseData;
 }
 
 /**

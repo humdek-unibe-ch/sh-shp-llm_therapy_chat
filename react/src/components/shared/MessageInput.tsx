@@ -1,13 +1,13 @@
 /**
- * Message Input Component with Mentions Support
- * =============================================
+ * Message Input Component
+ * =======================
  * 
  * Input area for composing and sending messages.
- * Supports @mentions for therapists and #hashtags for topics.
+ * Uses a simple textarea for reliable form submission.
+ * Supports @therapist mention detection for tagging.
  */
 
-import React, { useState, useCallback, useRef } from 'react';
-import { MentionsInput, Mention, SuggestionDataItem } from 'react-mentions';
+import React, { useState, useCallback, useRef, useEffect } from 'react';
 import { Button } from 'react-bootstrap';
 import type { TherapyChatLabels, TherapistDashboardLabels, TagReason, TagUrgency } from '../../types';
 import './MessageInput.css';
@@ -22,33 +22,34 @@ interface MessageInputProps {
   onTagTherapist?: (reason?: string, urgency?: TagUrgency) => void;
 }
 
-// Default therapist mention data
-const therapistMentions: SuggestionDataItem[] = [
-  { id: 'therapist', display: 'Therapist' },
-];
-
 export const MessageInput: React.FC<MessageInputProps> = ({
   onSend,
   disabled = false,
   placeholder,
   buttonLabel,
   labels,
-  tagReasons = [],
+  tagReasons: _tagReasons = [],
   onTagTherapist,
 }) => {
   const [message, setMessage] = useState('');
-  const inputRef = useRef<HTMLTextAreaElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
   const labelsTyped = labels as (TherapyChatLabels & TherapistDashboardLabels) | undefined;
 
   // Support both direct props and labels object
-  const defaultPlaceholder = placeholder || labelsTyped?.placeholder || labelsTyped?.sendPlaceholder || 'Type your message... Use @ to tag therapist, # for topics';
+  const defaultPlaceholder = placeholder || labelsTyped?.placeholder || labelsTyped?.sendPlaceholder || 'Type your message...';
   const sendLabel = buttonLabel || labelsTyped?.send_button || labelsTyped?.sendButton || 'Send';
 
-  // Build topic suggestions from tag reasons
-  const topicMentions: SuggestionDataItem[] = tagReasons.map(reason => ({
-    id: reason.code,
-    display: reason.label,
-  }));
+  /**
+   * Auto-resize textarea
+   */
+  const adjustTextareaHeight = useCallback(() => {
+    const textarea = textareaRef.current;
+    if (textarea) {
+      textarea.style.height = 'auto';
+      const newHeight = Math.min(Math.max(textarea.scrollHeight, 44), 120);
+      textarea.style.height = `${newHeight}px`;
+    }
+  }, []);
 
   /**
    * Handle form submission
@@ -59,105 +60,59 @@ export const MessageInput: React.FC<MessageInputProps> = ({
     const trimmedMessage = message.trim();
     if (trimmedMessage && !disabled) {
       // Check if message contains @therapist mention
-      if (trimmedMessage.includes('@[Therapist](therapist)') && onTagTherapist) {
-        // Extract topic if present
-        const topicMatch = trimmedMessage.match(/#\[([^\]]+)\]\(([^)]+)\)/);
-        if (topicMatch) {
-          const topicCode = topicMatch[2];
-          const reason = tagReasons.find(r => r.code === topicCode);
-          onTagTherapist(topicCode, reason?.urgency || 'normal');
-        } else {
-          onTagTherapist();
-        }
+      if (trimmedMessage.toLowerCase().includes('@therapist') && onTagTherapist) {
+        onTagTherapist();
       }
       
-      // Convert mentions to readable format before sending
-      const readableMessage = message
-        .replace(/@\[([^\]]+)\]\([^)]+\)/g, '@$1')
-        .replace(/#\[([^\]]+)\]\([^)]+\)/g, '#$1')
-        .trim();
-      
-      onSend(readableMessage);
+      onSend(trimmedMessage);
       setMessage('');
+      
+      // Reset textarea height
+      if (textareaRef.current) {
+        textareaRef.current.style.height = 'auto';
+      }
     }
-  }, [message, disabled, onSend, onTagTherapist, tagReasons]);
+  }, [message, disabled, onSend, onTagTherapist]);
 
   /**
-   * Handle key press (Enter to send)
+   * Handle key press (Enter to send, Shift+Enter for new line)
    */
-  const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
+  const handleKeyDown = useCallback((e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
-      handleSubmit(e);
+      handleSubmit(e as unknown as React.FormEvent);
     }
   }, [handleSubmit]);
 
-  // Render the mentions input with all configured mention types
-  const renderMentionsInput = () => {
-    if (topicMentions.length > 0) {
-      return (
-        <MentionsInput
-          value={message}
-          onChange={(e) => setMessage(e.target.value)}
-          onKeyDown={handleKeyDown}
-          placeholder={defaultPlaceholder}
-          disabled={disabled}
-          className="therapy-mentions-input"
-          inputRef={inputRef}
-          a11ySuggestionsListLabel="Suggestions"
-          allowSuggestionsAboveCursor
-          forceSuggestionsAboveCursor
-        >
-          <Mention
-            trigger="@"
-            data={therapistMentions}
-            className="therapy-mention-therapist"
-            displayTransform={(_id, display) => `@${display}`}
-            markup="@[__display__](__id__)"
-            appendSpaceOnAdd
-          />
-          <Mention
-            trigger="#"
-            data={topicMentions}
-            className="therapy-mention-topic"
-            displayTransform={(_id, display) => `#${display}`}
-            markup="#[__display__](__id__)"
-            appendSpaceOnAdd
-          />
-        </MentionsInput>
-      );
-    }
+  /**
+   * Handle input change
+   */
+  const handleInputChange = useCallback((e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    setMessage(e.target.value);
+    adjustTextareaHeight();
+  }, [adjustTextareaHeight]);
 
-    // Only therapist mentions
-    return (
-      <MentionsInput
-        value={message}
-        onChange={(e) => setMessage(e.target.value)}
-        onKeyDown={handleKeyDown}
-        placeholder={defaultPlaceholder}
-        disabled={disabled}
-        className="therapy-mentions-input"
-        inputRef={inputRef}
-        a11ySuggestionsListLabel="Suggestions"
-        allowSuggestionsAboveCursor
-        forceSuggestionsAboveCursor
-      >
-        <Mention
-          trigger="@"
-          data={therapistMentions}
-          className="therapy-mention-therapist"
-          displayTransform={(_id, display) => `@${display}`}
-          markup="@[__display__](__id__)"
-          appendSpaceOnAdd
-        />
-      </MentionsInput>
-    );
-  };
+  // Adjust height when message changes externally
+  useEffect(() => {
+    adjustTextareaHeight();
+  }, [message, adjustTextareaHeight]);
 
   return (
     <form onSubmit={handleSubmit} className="therapy-message-input">
-      <div className="therapy-input-container">
-        {renderMentionsInput()}
+      <div className="therapy-input-container d-flex align-items-end">
+        <div className="flex-grow-1 mr-2">
+          <textarea
+            ref={textareaRef}
+            value={message}
+            onChange={handleInputChange}
+            onKeyDown={handleKeyDown}
+            placeholder={defaultPlaceholder}
+            disabled={disabled}
+            rows={1}
+            className="form-control therapy-textarea border-0"
+            style={{ resize: 'none', minHeight: '44px', maxHeight: '120px' }}
+          />
+        </div>
         
         <Button
           type="submit"

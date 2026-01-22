@@ -6,13 +6,15 @@
 <?php
 require_once __DIR__ . "/../../../../../../component/BaseController.php";
 require_once __DIR__ . "/../../../service/TherapyTaggingService.php";
+require_once __DIR__ . "/../../../service/TherapyAlertService.php";
+require_once __DIR__ . "/../../../service/TherapyMessageService.php";
 require_once __DIR__ . "/../../../constants/TherapyLookups.php";
 
 /**
  * Therapist Dashboard Controller
- * 
+ *
  * Handles API requests for the therapist dashboard.
- * 
+ *
  * API Actions:
  * - get_config: Get React configuration
  * - get_conversations: Get all conversations for therapist
@@ -26,13 +28,19 @@ require_once __DIR__ . "/../../../constants/TherapyLookups.php";
  * - mark_alert_read: Mark alert as read
  * - get_alerts: Get alerts for therapist
  * - get_stats: Get dashboard statistics
- * 
+ *
  * @package LLM Therapy Chat Plugin
  */
 class TherapistDashboardController extends BaseController
 {
     /** @var TherapyTaggingService */
-    private $therapy_service;
+    private $tagging_service;
+
+    /** @var TherapyAlertService */
+    private $alert_service;
+
+    /** @var TherapyMessageService */
+    private $message_service;
 
     /** @var string|null Current action being processed */
     private $current_action;
@@ -82,7 +90,9 @@ class TherapistDashboardController extends BaseController
     private function initializeServices()
     {
         $services = $this->model->get_services();
-        $this->therapy_service = new TherapyTaggingService($services);
+        $this->tagging_service = new TherapyTaggingService($services);
+        $this->alert_service = new TherapyAlertService($services);
+        $this->message_service = new TherapyMessageService($services);
     }
 
     /**
@@ -201,13 +211,13 @@ class TherapistDashboardController extends BaseController
         }
 
         // Verify access
-        if (!$this->therapy_service->canAccessTherapyConversation($user_id, $conversation_id)) {
+        if (!$this->alert_service->canAccessTherapyConversation($user_id, $conversation_id)) {
             $this->sendJsonResponse(['error' => 'Access denied'], 403);
             return;
         }
 
         try {
-            $result = $this->therapy_service->sendTherapyMessage(
+            $result = $this->message_service->sendTherapyMessage(
                 $conversation_id,
                 $user_id,
                 $message,
@@ -220,7 +230,7 @@ class TherapistDashboardController extends BaseController
             }
 
             // Update last seen
-            $this->therapy_service->updateLastSeen($conversation_id, 'therapist');
+            $this->alert_service->updateLastSeen($conversation_id, 'therapist');
 
             $this->sendJsonResponse([
                 'success' => true,
@@ -247,13 +257,13 @@ class TherapistDashboardController extends BaseController
             return;
         }
 
-        if (!$this->therapy_service->canAccessTherapyConversation($user_id, $conversation_id)) {
+        if (!$this->alert_service->canAccessTherapyConversation($user_id, $conversation_id)) {
             $this->sendJsonResponse(['error' => 'Access denied'], 403);
             return;
         }
 
         try {
-            $result = $this->therapy_service->setAIEnabled($conversation_id, $enabled);
+            $result = $this->alert_service->setAIEnabled($conversation_id, $enabled);
             $this->sendJsonResponse(['success' => $result, 'ai_enabled' => $enabled]);
 
         } catch (Exception $e) {
@@ -281,13 +291,13 @@ class TherapistDashboardController extends BaseController
             return;
         }
 
-        if (!$this->therapy_service->canAccessTherapyConversation($user_id, $conversation_id)) {
+        if (!$this->alert_service->canAccessTherapyConversation($user_id, $conversation_id)) {
             $this->sendJsonResponse(['error' => 'Access denied'], 403);
             return;
         }
 
         try {
-            $result = $this->therapy_service->updateRiskLevel($conversation_id, $risk_level);
+            $result = $this->alert_service->updateRiskLevel($conversation_id, $risk_level);
             $this->sendJsonResponse(['success' => $result, 'risk_level' => $risk_level]);
 
         } catch (Exception $e) {
@@ -310,7 +320,7 @@ class TherapistDashboardController extends BaseController
             return;
         }
 
-        if (!$this->therapy_service->canAccessTherapyConversation($user_id, $conversation_id)) {
+        if (!$this->alert_service->canAccessTherapyConversation($user_id, $conversation_id)) {
             $this->sendJsonResponse(['error' => 'Access denied'], 403);
             return;
         }
@@ -349,7 +359,7 @@ class TherapistDashboardController extends BaseController
         }
 
         try {
-            $result = $this->therapy_service->acknowledgeTag($tag_id, $user_id);
+            $result = $this->tagging_service->acknowledgeTag($tag_id, $user_id);
             $this->sendJsonResponse(['success' => $result]);
 
         } catch (Exception $e) {
@@ -372,7 +382,7 @@ class TherapistDashboardController extends BaseController
         }
 
         try {
-            $result = $this->therapy_service->markAlertRead($alert_id, $user_id);
+            $result = $this->alert_service->markAlertRead($alert_id, $user_id);
             $this->sendJsonResponse(['success' => $result]);
 
         } catch (Exception $e) {
@@ -390,7 +400,7 @@ class TherapistDashboardController extends BaseController
         $conversation_id = $_POST['conversation_id'] ?? null;
 
         try {
-            $result = $this->therapy_service->markAllAlertsRead($user_id, $conversation_id);
+            $result = $this->alert_service->markAllAlertsRead($user_id, $conversation_id);
             $this->sendJsonResponse(['success' => $result]);
 
         } catch (Exception $e) {
@@ -408,7 +418,7 @@ class TherapistDashboardController extends BaseController
         $this->validateTherapistOrFail();
 
         try {
-            $config = json_decode($this->model->get_view()->getReactConfig(), true);
+            $config = $this->model->getReactConfig();
             $this->sendJsonResponse(['config' => $config]);
         } catch (Exception $e) {
             $this->sendJsonResponse(['error' => $e->getMessage()], 500);
@@ -435,7 +445,7 @@ class TherapistDashboardController extends BaseController
                 $filters['group_id'] = (int)$_GET['group_id'];
             }
 
-            $conversations = $this->therapy_service->getTherapyConversationsByTherapist($user_id, $filters);
+            $conversations = $this->alert_service->getTherapyConversationsByTherapist($user_id, $filters);
 
             $this->sendJsonResponse(['conversations' => $conversations]);
 
@@ -458,26 +468,26 @@ class TherapistDashboardController extends BaseController
             return;
         }
 
-        if (!$this->therapy_service->canAccessTherapyConversation($user_id, $conversation_id)) {
+        if (!$this->alert_service->canAccessTherapyConversation($user_id, $conversation_id)) {
             $this->sendJsonResponse(['error' => 'Access denied'], 403);
             return;
         }
 
         try {
-            $conversation = $this->therapy_service->getTherapyConversation($conversation_id);
+            $conversation = $this->alert_service->getTherapyConversation($conversation_id);
             
             if (!$conversation) {
                 $this->sendJsonResponse(['error' => 'Conversation not found'], 404);
                 return;
             }
 
-            $messages = $this->therapy_service->getTherapyMessages($conversation_id);
+            $messages = $this->message_service->getTherapyMessages($conversation_id);
             $notes = $this->model->getNotes($conversation_id);
-            $tags = $this->therapy_service->getTagsForConversation($conversation_id);
-            $alerts = $this->therapy_service->getAlertsForConversation($conversation_id);
+            $tags = $this->tagging_service->getTagsForConversation($conversation_id);
+            $alerts = $this->alert_service->getAlertsForConversation($conversation_id);
 
             // Update last seen
-            $this->therapy_service->updateLastSeen($conversation_id, 'therapist');
+            $this->alert_service->updateLastSeen($conversation_id, 'therapist');
 
             $this->sendJsonResponse([
                 'conversation' => $conversation,
@@ -507,16 +517,16 @@ class TherapistDashboardController extends BaseController
             return;
         }
 
-        if (!$this->therapy_service->canAccessTherapyConversation($user_id, $conversation_id)) {
+        if (!$this->alert_service->canAccessTherapyConversation($user_id, $conversation_id)) {
             $this->sendJsonResponse(['error' => 'Access denied'], 403);
             return;
         }
 
         try {
-            $messages = $this->therapy_service->getTherapyMessages($conversation_id, 100, $after_id);
+            $messages = $this->message_service->getTherapyMessages($conversation_id, 100, $after_id);
             
             // Update last seen
-            $this->therapy_service->updateLastSeen($conversation_id, 'therapist');
+            $this->alert_service->updateLastSeen($conversation_id, 'therapist');
 
             $this->sendJsonResponse([
                 'messages' => $messages,
@@ -545,7 +555,7 @@ class TherapistDashboardController extends BaseController
                 $filters['alert_type'] = $_GET['alert_type'];
             }
 
-            $alerts = $this->therapy_service->getAlertsForTherapist($user_id, $filters);
+            $alerts = $this->alert_service->getAlertsForTherapist($user_id, $filters);
 
             $this->sendJsonResponse(['alerts' => $alerts]);
 
@@ -562,7 +572,7 @@ class TherapistDashboardController extends BaseController
         $user_id = $this->validateTherapistOrFail();
 
         try {
-            $tags = $this->therapy_service->getPendingTagsForTherapist($user_id);
+            $tags = $this->tagging_service->getPendingTagsForTherapist($user_id);
             $this->sendJsonResponse(['tags' => $tags]);
 
         } catch (Exception $e) {
@@ -578,7 +588,7 @@ class TherapistDashboardController extends BaseController
         $user_id = $this->validateTherapistOrFail();
 
         try {
-            $stats = $this->therapy_service->getTherapistStats($user_id);
+            $stats = $this->alert_service->getTherapistStats($user_id);
             $this->sendJsonResponse(['stats' => $stats]);
 
         } catch (Exception $e) {
@@ -600,7 +610,7 @@ class TherapistDashboardController extends BaseController
             return;
         }
 
-        if (!$this->therapy_service->canAccessTherapyConversation($user_id, $conversation_id)) {
+        if (!$this->alert_service->canAccessTherapyConversation($user_id, $conversation_id)) {
             $this->sendJsonResponse(['error' => 'Access denied'], 403);
             return;
         }
