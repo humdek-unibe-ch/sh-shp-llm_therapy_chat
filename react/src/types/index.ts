@@ -139,6 +139,24 @@ export interface TagReason {
 }
 
 /**
+ * Mention suggestion for @mentions
+ */
+export interface MentionSuggestion {
+  id: string | number;
+  display: string;
+  type?: 'therapist' | 'topic';
+}
+
+/**
+ * Topic for #hashtag mentions
+ */
+export interface Topic {
+  id: string;
+  name: string;
+  description?: string;
+}
+
+/**
  * Dashboard stats
  */
 export interface DashboardStats {
@@ -273,6 +291,7 @@ export interface TherapistDashboardNotifications {
  * TherapyChat configuration
  */
 export interface TherapyChatConfig {
+  baseUrl?: string;
   userId: number;
   sectionId: number;
   conversationId?: number | string | null;
@@ -293,6 +312,7 @@ export interface TherapyChatConfig {
  * TherapistDashboard configuration
  */
 export interface TherapistDashboardConfig {
+  baseUrl?: string;
   userId: number;
   sectionId: number;
   selectedGroupId?: number | null;

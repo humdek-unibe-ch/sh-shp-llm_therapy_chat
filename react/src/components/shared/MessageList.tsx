@@ -123,10 +123,10 @@ export const MessageList: React.FC<MessageListProps> = ({
 
   if (messages.length === 0) {
     return (
-      <div className="therapy-message-list d-flex align-items-center justify-content-center">
-        <div className="text-center text-muted">
-          <i className="fas fa-comments fa-3x mb-3 opacity-50"></i>
-          <p className="mb-0">{labelsTyped.empty_message || 'No messages yet.'}</p>
+      <div className="therapy-message-list">
+        <div className="therapy-message-list-empty">
+          <i className="fas fa-comments"></i>
+          <p>{labelsTyped.empty_message || 'No messages yet. Start the conversation!'}</p>
         </div>
       </div>
     );

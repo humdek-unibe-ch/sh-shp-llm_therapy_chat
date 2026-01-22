@@ -152,7 +152,7 @@ export const SubjectChat: React.FC<SubjectChatProps> = ({ config }) => {
 
         {/* Input Area */}
         <Card.Footer className="therapy-chat-footer bg-white border-top">
-          {/* Tagging Panel */}
+          {/* Tagging Panel - quick access buttons */}
           <TaggingPanel
             enabled={config.taggingEnabled}
             reasons={config.tagReasons}
@@ -160,11 +160,13 @@ export const SubjectChat: React.FC<SubjectChatProps> = ({ config }) => {
             buttonLabel={config.labels.tag_button_label}
           />
 
-          {/* Message Input */}
+          {/* Message Input with @mentions and #topics support */}
           <MessageInput
             onSend={sendMessage}
             disabled={isSending || isLoading}
             labels={config.labels}
+            tagReasons={config.tagReasons}
+            onTagTherapist={config.taggingEnabled ? (reason, urgency) => handleTag(reason, urgency) : undefined}
           />
         </Card.Footer>
       </Card>

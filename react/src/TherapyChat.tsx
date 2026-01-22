@@ -25,7 +25,7 @@ import 'bootstrap/dist/css/bootstrap.min.css';
 
 import { SubjectChat } from './components/subject/SubjectChat';
 import { TherapistDashboard } from './components/therapist/TherapistDashboard';
-import { therapyChatApi, therapistDashboardApi } from './utils/api';
+import { therapyChatApi, therapistDashboardApi, setApiBaseUrl } from './utils/api';
 import type { TherapyChatConfig, TherapistDashboardConfig } from './types';
 
 // Import styles
@@ -46,7 +46,14 @@ function parseSubjectConfig(container: HTMLElement): TherapyChatConfig | null {
   }
 
   try {
-    return JSON.parse(configData) as TherapyChatConfig;
+    const config = JSON.parse(configData) as TherapyChatConfig;
+    
+    // Set the base URL for API calls if provided
+    if (config.baseUrl) {
+      setApiBaseUrl(config.baseUrl);
+    }
+    
+    return config;
   } catch (e) {
     console.error('Therapy Chat: Failed to parse config:', e);
     return null;
@@ -62,7 +69,14 @@ function parseTherapistConfig(container: HTMLElement): TherapistDashboardConfig 
   }
 
   try {
-    return JSON.parse(configData) as TherapistDashboardConfig;
+    const config = JSON.parse(configData) as TherapistDashboardConfig;
+    
+    // Set the base URL for API calls if provided
+    if (config.baseUrl) {
+      setApiBaseUrl(config.baseUrl);
+    }
+    
+    return config;
   } catch (e) {
     console.error('Therapist Dashboard: Failed to parse config:', e);
     return null;

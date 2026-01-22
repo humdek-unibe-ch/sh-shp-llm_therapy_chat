@@ -5,7 +5,7 @@
 ?>
 <?php
 
-require_once __DIR__ . "/../../../service/TherapyTaggingService.php";
+require_once __DIR__ . "/../../../service/TherapyMessageService.php";
 require_once __DIR__ . "/../../../constants/TherapyLookups.php";
 
 // Include LLM plugin services for danger detection - only if LLM plugin is available
@@ -30,7 +30,7 @@ if (file_exists($llmContextServicePath)) {
  */
 class TherapyChatModel extends StyleModel
 {
-    /** @var TherapyTaggingService */
+    /** @var TherapyMessageService */
     private $therapyService;
 
     /** @var LlmDangerDetectionService|null */
@@ -58,7 +58,7 @@ class TherapyChatModel extends StyleModel
     {
         parent::__construct($services, $id, $params, $id_page, $entry_record);
 
-        $this->therapyService = new TherapyTaggingService($services);
+        $this->therapyService = new TherapyMessageService($services);
         $this->userId = $_SESSION['id_user'] ?? null;
         $this->groupId = $params['gid'] ?? null;
 
@@ -111,10 +111,14 @@ class TherapyChatModel extends StyleModel
         if (!$this->groupId) {
             // Try to get default group from config or first available
             $this->groupId = $this->getDefaultGroupId();
+            error_log("TherapyChatModel: Got default group ID: " . ($this->groupId ?: 'null'));
         }
 
         if (!$this->groupId) {
-            return null;
+            error_log("TherapyChatModel: No group ID available for user " . $this->userId . ", using default group 1");
+            // Use default group 1 if no group is assigned
+            // This allows basic functionality even without proper group assignment
+            $this->groupId = 1;
         }
 
         $mode = $this->get_db_field('therapy_chat_default_mode', THERAPY_MODE_AI_HYBRID);
@@ -325,7 +329,7 @@ class TherapyChatModel extends StyleModel
     /**
      * Get therapy service
      *
-     * @return TherapyTaggingService
+     * @return TherapyMessageService
      */
     public function getTherapyService()
     {
@@ -362,6 +366,116 @@ class TherapyChatModel extends StyleModel
         return $this->groupId;
     }
 
+    /* Configuration for React **************************************************/
+
+    /**
+     * Get React configuration as array
+     *
+     * @return array
+     */
+    public function getReactConfig()
+    {
+        // Don't auto-create conversation during config generation
+        // Let the React app handle conversation creation/loading
+        $conversation = null; // $this->getConversationIfExists();
+
+        // Get base URL for API calls
+        $baseUrl = $this->getBaseUrl();
+
+        return array(
+            // API configuration
+            'baseUrl' => $baseUrl,
+
+            // Core identifiers
+            'userId' => $this->getUserId(),
+            'sectionId' => $this->getSectionId(),
+            'conversationId' => null, // Always start with null, let React handle conversation loading
+            'groupId' => $this->getGroupId(),
+
+            // Conversation state - defaults
+            'conversationMode' => THERAPY_MODE_AI_HYBRID,
+            'aiEnabled' => true,
+            'riskLevel' => THERAPY_RISK_LOW,
+
+            // Feature flags
+            'isSubject' => $this->isSubject(),
+            'taggingEnabled' => $this->isTaggingEnabled(),
+            'dangerDetectionEnabled' => $this->isDangerDetectionEnabled(),
+
+            // Polling configuration
+            'pollingInterval' => $this->getPollingInterval() * 1000, // Convert to ms
+
+            // UI Labels
+            'labels' => $this->getLabels(),
+
+            // Tag reasons for quick selection
+            'tagReasons' => $this->getTagReasonsForReact(),
+
+            // LLM Configuration
+            'configuredModel' => $this->getLlmModel(),
+        );
+    }
+    
+    /**
+     * Get tag reasons formatted for React
+     *
+     * @return array
+     */
+    private function getTagReasonsForReact()
+    {
+        $labels = $this->getLabels();
+        $reasons = $labels['tag_reasons'] ?? array();
+        
+        if (empty($reasons)) {
+            return array(
+                array('code' => 'overwhelmed', 'label' => 'I am feeling overwhelmed', 'urgency' => THERAPY_URGENCY_NORMAL),
+                array('code' => 'need_talk', 'label' => 'I need to talk soon', 'urgency' => THERAPY_URGENCY_URGENT),
+                array('code' => 'urgent', 'label' => 'This feels urgent', 'urgency' => THERAPY_URGENCY_URGENT),
+                array('code' => 'emergency', 'label' => 'Emergency - please respond immediately', 'urgency' => THERAPY_URGENCY_EMERGENCY)
+            );
+        }
+        
+        // Ensure proper structure with 'code' instead of 'key'
+        return array_map(function($r) {
+            return array(
+                'code' => $r['key'] ?? $r['code'] ?? '',
+                'label' => $r['label'] ?? '',
+                'urgency' => $r['urgency'] ?? THERAPY_URGENCY_NORMAL
+            );
+        }, $reasons);
+    }
+    
+    /**
+     * Get the base URL for API calls
+     * 
+     * @return string Base URL including path to index.php
+     */
+    private function getBaseUrl()
+    {
+        // Get the current script path and extract the base
+        $scriptPath = $_SERVER['SCRIPT_NAME'] ?? '/index.php';
+        
+        // If we have a valid script path, extract the base directory
+        if (strpos($scriptPath, '/index.php') !== false) {
+            return $scriptPath;
+        }
+        
+        // Fallback to determining base from request URI
+        $requestUri = $_SERVER['REQUEST_URI'] ?? '';
+        $pathParts = explode('/', trim($requestUri, '/'));
+        
+        // Find where the app root is
+        $basePath = '';
+        foreach ($pathParts as $part) {
+            if ($part === 'therapy-chat' || $part === 'therapist-dashboard') {
+                break;
+            }
+            $basePath .= '/' . $part;
+        }
+        
+        return $basePath . '/index.php';
+    }
+
     /* Private Helpers ********************************************************/
 
     /**
@@ -371,15 +485,22 @@ class TherapyChatModel extends StyleModel
      */
     private function getDefaultGroupId()
     {
-        // Try to find first group the user belongs to that has therapy chat access
-        $sql = "SELECT ug.id_groups
+        // Try to find first group the user belongs to
+        $sql = "SELECT ug.id_groups, g.name as group_name
                 FROM users_groups ug
+                INNER JOIN `groups` g ON g.id = ug.id_groups
                 WHERE ug.id_users = :uid
                 LIMIT 1";
 
         $result = $this->db->query_db_first($sql, array(':uid' => $this->userId));
 
-        return $result ? $result['id_groups'] : null;
+        if ($result) {
+            error_log("TherapyChatModel: User {$this->userId} belongs to group {$result['id_groups']} ({$result['group_name']})");
+            return $result['id_groups'];
+        } else {
+            error_log("TherapyChatModel: User {$this->userId} is not assigned to any groups");
+            return null;
+        }
     }
 }
 ?>

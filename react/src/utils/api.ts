@@ -1,6 +1,10 @@
 /**
  * API Utilities for Therapy Chat
  * ===============================
+ * 
+ * Uses the same endpoint strategy as the sh-shp-llm plugin:
+ * - All requests go through the current page's controller
+ * - Uses window.location for URL construction (security through SelfHelp's ACL)
  */
 
 import type {
@@ -18,22 +22,34 @@ import type {
 } from '../types';
 
 /**
- * Build API URL with section ID
+ * Build URL with action parameter using current window.location
+ * This ensures requests go to the same page/controller that rendered the component
+ * 
+ * @param action - The action to append as query parameter
+ * @param extraParams - Additional query parameters
+ * @returns URL string with action parameter
  */
 function buildUrl(sectionId: number, action: string, params: Record<string, string | number | undefined> = {}): string {
-  const baseUrl = `/index.php`;
-  const searchParams = new URLSearchParams();
+  // Use the same page URL with action parameter - controller handles AJAX requests
+  const url = new URL(window.location.href);
   
-  searchParams.set('section_id', String(sectionId));
-  searchParams.set('action', action);
+  // Set required parameters
+  url.searchParams.set('section_id', String(sectionId));
+  url.searchParams.set('action', action);
   
+  // Add extra parameters
   Object.entries(params).forEach(([key, value]) => {
     if (value !== undefined) {
-      searchParams.set(key, String(value));
+      url.searchParams.set(key, String(value));
     }
   });
   
-  return `${baseUrl}?${searchParams.toString()}`;
+  return url.toString();
+}
+
+// Placeholder for compatibility
+export function setApiBaseUrl(_baseUrl: string): void {
+  // Not used - we use window.location directly
 }
 
 /**
@@ -51,19 +67,42 @@ async function request<T>(
     },
   });
 
-  if (!response.ok) {
-    const errorData = await response.json().catch(() => ({}));
-    throw new Error(errorData.error || `HTTP error ${response.status}`);
+  // Get the response text first
+  const responseText = await response.text();
+  
+  // Try to parse as JSON
+  let data: T;
+  try {
+    data = JSON.parse(responseText);
+  } catch {
+    // If response contains HTML (PHP error), extract error message if possible
+    const htmlErrorMatch = responseText.match(/<b>([^<]+)<\/b>:\s*([^<]+)/);
+    const errorMessage = htmlErrorMatch 
+      ? `${htmlErrorMatch[1]}: ${htmlErrorMatch[2]}`.trim()
+      : 'Server returned an invalid response. Please try again.';
+    
+    console.error('API Error - Invalid JSON response:', responseText.substring(0, 500));
+    throw new Error(errorMessage);
   }
 
-  return response.json();
+  if (!response.ok) {
+    const errorData = data as { error?: string; debug?: any };
+    const errorMessage = errorData.error || `HTTP error ${response.status}`;
+    if (errorData.debug) {
+      console.error('Access denied debug info:', JSON.stringify(errorData.debug, null, 2));
+    }
+    throw new Error(errorMessage);
+  }
+
+  return data;
 }
 
 /**
  * Make POST request with form data
+ * Uses window.location.pathname to post to the current page's controller
  */
 async function postForm<T>(
-  url: string,
+  _url: string, // Unused, we use window.location.pathname
   data: Record<string, string | number | boolean | undefined>
 ): Promise<T> {
   const formData = new FormData();
@@ -74,7 +113,7 @@ async function postForm<T>(
     }
   });
 
-  return request<T>(url, {
+  return request<T>(window.location.pathname + window.location.search, {
     method: 'POST',
     body: formData,
   });

@@ -92,58 +92,13 @@ class TherapyChatView extends StyleView
 
     /**
      * Get React configuration as JSON
+     * Delegates to the model for the actual config data
      *
      * @return string JSON encoded config
      */
     public function getReactConfig()
     {
-        $conversation = $this->model->getOrCreateConversation();
-        
-        return json_encode([
-            // Core identifiers
-            'userId' => $this->model->getUserId(),
-            'sectionId' => $this->model->getSectionId(),
-            'conversationId' => $conversation ? $conversation['id'] : null,
-            'groupId' => $this->model->getGroupId(),
-            
-            // Conversation state
-            'conversationMode' => $conversation ? $conversation['mode'] : THERAPY_MODE_AI_HYBRID,
-            'aiEnabled' => $conversation ? (bool)$conversation['ai_enabled'] : true,
-            'riskLevel' => $conversation ? $conversation['risk_level'] : THERAPY_RISK_LOW,
-            
-            // Feature flags
-            'isSubject' => $this->model->isSubject(),
-            'taggingEnabled' => $this->model->isTaggingEnabled(),
-            'dangerDetectionEnabled' => $this->model->isDangerDetectionEnabled(),
-            
-            // Polling configuration
-            'pollingInterval' => $this->model->getPollingInterval() * 1000, // Convert to ms
-            
-            // UI Labels
-            'labels' => $this->model->getLabels(),
-            
-            // Tag reasons for quick selection
-            'tagReasons' => $this->getTagReasons(),
-            
-            // LLM Configuration
-            'configuredModel' => $this->model->getLlmModel(),
-        ]);
-    }
-
-    /**
-     * Get predefined tag reasons
-     *
-     * @return array
-     */
-    private function getTagReasons()
-    {
-        $labels = $this->model->getLabels();
-        return $labels['tag_reasons'] ?? [
-            ['key' => 'overwhelmed', 'label' => 'I am feeling overwhelmed', 'urgency' => THERAPY_URGENCY_NORMAL],
-            ['key' => 'need_talk', 'label' => 'I need to talk soon', 'urgency' => THERAPY_URGENCY_URGENT],
-            ['key' => 'urgent', 'label' => 'This feels urgent', 'urgency' => THERAPY_URGENCY_URGENT],
-            ['key' => 'emergency', 'label' => 'Emergency - please respond immediately', 'urgency' => THERAPY_URGENCY_EMERGENCY]
-        ];
+        return json_encode($this->model->getReactConfig());
     }
 
 

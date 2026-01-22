@@ -109,18 +109,22 @@ class TherapyChatService extends LlmService
             'id_riskLevels' => $riskId
         );
 
+        error_log("TherapyChatService: Creating therapy metadata for LLM conversation $conversationId, group $groupId");
         $this->db->insert('therapyConversationMeta', $therapyData);
+        $therapyMetaId = $this->db->lastInsertId();
+        error_log("TherapyChatService: Created therapy metadata with ID $therapyMetaId");
 
         // Log transaction
         $this->logTransaction(
             transactionTypes_insert,
             'therapyConversationMeta',
-            $conversationId,
+            $therapyMetaId,
             $userId,
             'Therapy conversation created'
         );
 
-        return $this->getTherapyConversation($conversationId);
+        // Return the newly created therapy conversation from the view
+        return $this->getTherapyConversation($therapyMetaId);
     }
 
     /**
@@ -132,7 +136,7 @@ class TherapyChatService extends LlmService
      */
     public function getTherapyConversation($conversationId)
     {
-        $sql = "SELECT * FROM view_therapyConversations WHERE id_llmConversations = :id AND deleted = 0";
+        $sql = "SELECT * FROM view_therapyConversations WHERE id = :id AND deleted = 0";
         return $this->db->query_db_first($sql, array(':id' => $conversationId));
     }
 
@@ -245,17 +249,32 @@ class TherapyChatService extends LlmService
         }
 
         // Subject can access their own conversation
-        if ($conversation['id_users'] == $userId) {
+        $convUserId = (int)$conversation['id_users'];
+        $reqUserId = (int)$userId;
+        error_log("TherapyChat: Checking access - conv_user_id: $convUserId, req_user_id: $reqUserId, equal: " . ($convUserId === $reqUserId ? 'yes' : 'no'));
+
+        if ($convUserId === $reqUserId) {
+            error_log("TherapyChat: Access granted for user $userId to conversation {$conversation['id']}");
             return true;
         }
 
-        // Check if user is admin
-        if ($this->acl->is_user_of_group($userId, 'admin')) {
+        // Check if user is admin by checking access to admin pages
+        $adminPageId = $this->db->fetch_page_id_by_keyword('admin');
+        if ($adminPageId && $this->acl->has_access_select($userId, $adminPageId)) {
             return true;
+        }
+
+        // Check if user is therapist for this conversation's group
+        if ($this->isTherapist($userId)) {
+            return $this->isTherapistForGroup($userId, $conversation['id_groups']);
         }
 
         // Check if user is therapist with access to this group
-        return $this->isTherapistForGroup($userId, $conversation['id_groups']);
+        $result = $this->isTherapistForGroup($userId, $conversation['id_groups']);
+        if (!$result) {
+            error_log("TherapyChat: Access denied for user $userId to conversation {$conversation['id']} (owner: {$conversation['id_users']}, group: {$conversation['id_groups']})");
+        }
+        return $result;
     }
 
     /**
