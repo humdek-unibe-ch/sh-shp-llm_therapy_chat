@@ -280,6 +280,20 @@ The therapy plugin adds metadata but does not duplicate core functionality.
 3. **Audit Trail** - All actions logged to transactions table
 4. **Group-based Permissions** - Therapists only see patients in their groups
 
+## Documentation
+
+Comprehensive documentation is available in the `/doc` folder:
+
+| Document | Description |
+|----------|-------------|
+| [Developer Guide](./doc/DEVELOPER_GUIDE.md) | Technical documentation for developers |
+| [User Guide](./doc/USER_GUIDE.md) | Guide for therapists and clinic users |
+| [Admin Setup Guide](./doc/ADMIN_SETUP.md) | Administrator installation and configuration |
+| [Feature Roadmap](./doc/FEATURE_ROADMAP.md) | Implementation status and future TODOs |
+| [API Reference](./doc/api-reference.md) | API endpoint documentation |
+| [Architecture](./doc/architecture.md) | System architecture overview |
+| [Configuration](./doc/configuration.md) | Configuration options reference |
+
 ## Changelog
 
 See [CHANGELOG.md](./CHANGELOG.md) for version history.
