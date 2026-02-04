@@ -28,7 +28,7 @@ class TherapyMessageService extends TherapyChatService
     /** @var TherapyTaggingService */
     private $taggingService;
     /* Constants **************************************************************/
-    
+
     const SENDER_AI = 'ai';
     const SENDER_THERAPIST = 'therapist';
     const SENDER_SUBJECT = 'subject';
@@ -63,7 +63,7 @@ class TherapyMessageService extends TherapyChatService
     {
         // Get the therapy conversation
         $conversation = $this->getTherapyConversation($conversationId);
-        
+
         if (!$conversation) {
             return array('error' => 'Conversation not found');
         }
@@ -76,7 +76,7 @@ class TherapyMessageService extends TherapyChatService
 
         // Map sender type to LLM role
         $role = $this->mapSenderTypeToRole($senderType);
-        
+
         // Get model for therapist/AI messages
         $model = ($senderType === self::SENDER_AI) ? $conversation['model'] : null;
 
@@ -89,8 +89,13 @@ class TherapyMessageService extends TherapyChatService
             }
         }
 
-        // Store skipAI flag in sent context for frontend reference
-        $sentContext['therapy_skip_ai'] = $skipAI;
+        // Build sent context with sender type metadata
+        $sentContext = array(
+            'therapy_sender_type' => $senderType,
+            'therapy_sender_id' => $senderId,
+            'therapy_mode' => $conversation['mode'],
+            'therapy_skip_ai' => $skipAI
+        );
 
         if ($metadata) {
             $sentContext = array_merge($sentContext, $metadata);
@@ -99,7 +104,7 @@ class TherapyMessageService extends TherapyChatService
         // Use parent addMessage() to store in llmMessages
         // Note: addMessage expects the LLM conversation ID, not therapy meta ID
         $llmConversationId = $conversation['id_llmConversations'];
-        
+
         try {
             $messageId = $this->addMessage(
                 $llmConversationId,
@@ -152,7 +157,7 @@ class TherapyMessageService extends TherapyChatService
     public function processAIResponse($conversationId, $contextMessages, $model, $temperature = null, $maxTokens = null)
     {
         $conversation = $this->getTherapyConversation($conversationId);
-        
+
         if (!$conversation) {
             return array('error' => 'Conversation not found');
         }
@@ -164,7 +169,7 @@ class TherapyMessageService extends TherapyChatService
 
         // Get the LLM conversation ID
         $llmConversationId = $conversation['id_llmConversations'];
-        
+
         try {
             // Call LLM API using parent method
             $response = $this->callLlmApi($contextMessages, $model, $temperature, $maxTokens);
@@ -216,7 +221,7 @@ class TherapyMessageService extends TherapyChatService
             return array();
         }
         $llmConversationId = $conversation['id_llmConversations'];
-        
+
         $sql = "SELECT lm.id, lm.role, lm.content, lm.attachments, lm.model, 
                        lm.tokens_used, lm.timestamp, lm.sent_context,
                        JSON_UNQUOTE(JSON_EXTRACT(lm.sent_context, '$.therapy_sender_type')) as sender_type,
@@ -227,7 +232,7 @@ class TherapyMessageService extends TherapyChatService
                 WHERE lm.id_llmConversations = :cid
                 AND lm.deleted = 0
                 AND lm.is_validated = 1";
-        
+
         $params = array(':cid' => $llmConversationId);
 
         if ($afterId) {
@@ -242,7 +247,7 @@ class TherapyMessageService extends TherapyChatService
         // Process messages to add labels
         foreach ($messages as &$msg) {
             $msg['label'] = $this->getSenderLabel($msg['sender_type'], $msg['sender_name']);
-            
+
             // Check for tags
             $msg['tags'] = $this->getMessageTags($msg['id']);
         }
@@ -265,13 +270,13 @@ class TherapyMessageService extends TherapyChatService
             return 0;
         }
         $llmConversationId = $conversation['id_llmConversations'];
-        
+
         $sql = "SELECT COUNT(*) as cnt FROM llmMessages 
                 WHERE id_llmConversations = :cid 
                 AND deleted = 0 
                 AND is_validated = 1
                 AND timestamp > :since";
-        
+
         $result = $this->db->query_db_first($sql, array(
             ':cid' => $llmConversationId,
             ':since' => $since
@@ -338,10 +343,10 @@ class TherapyMessageService extends TherapyChatService
         if (preg_match('/@(?:therapist|Therapist)\b/', $content)) {
             // Get assigned therapist or first available for this group
             $conversation = $this->getTherapyConversation($conversationId);
-            
+
             if ($conversation) {
                 $therapistId = $conversation['id_therapist'];
-                
+
                 // If no assigned therapist, try to find one
                 if (!$therapistId) {
                     $therapists = $this->getTherapistsForGroup($conversation['id_groups']);
@@ -368,11 +373,12 @@ class TherapyMessageService extends TherapyChatService
      */
     private function createTag($messageId, $userId, $reason = null, $urgency = 'normal')
     {
+        $urgencyId = $this->db->get_lookup_id_by_code(THERAPY_LOOKUP_TAG_URGENCY, $urgency);
         $data = array(
             'id_llmMessages' => $messageId,
             'id_users' => $userId,
             'tag_reason' => $reason,
-            'urgency' => $urgency
+            'id_tagUrgency' => $urgencyId
         );
 
         return $this->db->insert('therapyTags', $data);
@@ -390,7 +396,7 @@ class TherapyMessageService extends TherapyChatService
                 FROM therapyTags tt
                 INNER JOIN users u ON u.id = tt.id_users
                 WHERE tt.id_llmMessages = :mid";
-        
+
         return $this->db->query_db($sql, array(':mid' => $messageId));
     }
 
@@ -524,9 +530,11 @@ class TherapyMessageService extends TherapyChatService
             foreach ($recipients as $recipient) {
                 $values[] = [$recipient['id_llmMessages'], $recipient['id_users'], $recipient['is_new'], $recipient['seen_at']];
             }
-            $this->db->insert_mult('therapyMessageRecipients',
+            $this->db->insert_mult(
+                'therapyMessageRecipients',
                 ['id_llmMessages', 'id_users', 'is_new', 'seen_at'],
-                $values);
+                $values
+            );
         }
     }
 
