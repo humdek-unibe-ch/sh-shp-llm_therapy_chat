@@ -265,7 +265,6 @@ sh-shp-llm_therapy_chat/
         ├── TherapyAlertService.php
         ├── TherapyChatService.php
         ├── TherapyMessageService.php
-        └── TherapyTaggingService.php
 ```
 
 ---
@@ -372,7 +371,6 @@ class TherapyAlertService extends TherapyChatService
 class TherapyTaggingService extends TherapyAlertService
 {
     // Tag reasons configuration
-    public function parseTagReasons($jsonConfig);
     public function getDefaultTagReasons();
     
     // Create tags

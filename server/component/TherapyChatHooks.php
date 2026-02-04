@@ -7,7 +7,6 @@
 
 require_once __DIR__ . "/../../../../component/BaseHooks.php";
 require_once __DIR__ . "/../../../../component/style/BaseStyleComponent.php";
-require_once __DIR__ . "/../service/TherapyTaggingService.php";
 require_once __DIR__ . "/../service/TherapyMessageService.php";
 require_once __DIR__ . "/../constants/TherapyLookups.php";
 
@@ -21,9 +20,6 @@ require_once __DIR__ . "/../constants/TherapyLookups.php";
  */
 class TherapyChatHooks extends BaseHooks
 {
-    /** @var TherapyTaggingService */
-    private $taggingService;
-
     /** @var TherapyMessageService */
     private $messageService;
 
@@ -35,7 +31,6 @@ class TherapyChatHooks extends BaseHooks
     public function __construct($services, $params = array())
     {
         parent::__construct($services, $params);
-        $this->taggingService = new TherapyTaggingService($services);
         $this->messageService = new TherapyMessageService($services);
     }
 
@@ -279,8 +274,8 @@ class TherapyChatHooks extends BaseHooks
         }
 
         // Check if user has access to therapy chat (as subject or therapist)
-        $isSubject = $this->taggingService->isSubject($userId);
-        $isTherapist = $this->taggingService->isTherapist($userId);
+        $isSubject = $this->messageService->isSubject($userId);
+        $isTherapist = $this->messageService->isTherapist($userId);
 
         // Additional check: verify user is in the configured therapy chat groups
         $subjectGroupId = $this->getConfigValue('therapy_chat_subject_group');
@@ -312,8 +307,8 @@ class TherapyChatHooks extends BaseHooks
         // Get unread count and determine URL
         if ($isTherapist && (!$isSubject || $isTherapist)) {
             // If user is therapist (or both), prioritize therapist dashboard
-            $unreadCount = $this->taggingService->getUnreadAlertCount($userId)
-                         + $this->taggingService->getPendingTagCount($userId);
+            $unreadCount = $this->messageService->getUnreadAlertCount($userId)
+                         + $this->messageService->getPendingTagCount($userId);
             $chatUrl = $therapistPageUrl;
             $iconTitle = 'Therapist Dashboard';
         } else {

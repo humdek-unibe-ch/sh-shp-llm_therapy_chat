@@ -37,6 +37,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Private notes
   - AI enable/disable controls
 
+#### Markdown Rendering
+- **MarkdownRenderer component** - Full markdown support for AI responses
+  - GitHub Flavored Markdown (GFM) with remark-gfm
+  - Syntax highlighting for code blocks
+  - Copy-to-clipboard functionality for code
+  - Proper styling for headings, lists, tables, blockquotes
+  - Image and video rendering with fallbacks
+  - External link handling with target="_blank"
+  - Task list (checkbox) support
+- Applied markdown rendering to both subject chat and therapist dashboard
+- Consistent styling with the sh-shp-llm plugin
+
+#### Speech-to-Text (Audio LLM)
+- **Voice input support** for both patients and therapists
+  - Microphone button in message input area
+  - Real-time audio recording with visual feedback
+  - Whisper API integration for transcription
+  - Text appends at cursor position without overwriting
+  - Auto-stop after 60 seconds (configurable)
+  - Support for WebM/Opus, MP4, WAV, MP3 audio formats
+- New database fields: `enable_speech_to_text`, `speech_to_text_model`, `speech_to_text_language`
+
 #### Services (extending LlmService)
 - `TherapyChatService` - Core conversation management
   - Create therapy conversations with metadata
@@ -61,6 +83,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Urgency levels (normal/urgent/emergency)
   - Tag acknowledgment workflow
 
+- **@All Therapists option** - Tag all therapists in the group at once
+  - New suggestion with distinct styling (fa-users icon, yellow badge)
+  - Useful when patient doesn't know specific therapist name
+- **Console logging for debugging**
+  - `[TherapyChat] Available therapists for @mention:` - logs therapist list
+  - `[TherapyChat] Available tag reasons (#):` - logs tag reasons
+  - `[TherapyChat] Loaded therapists from API:` - logs API response
+  - Helps administrators verify configuration is working
+
 #### Hooks
 - `outputTherapyChatIcon` - Floating chat button with unread badge
 - `field-therapy_chat_panel-edit/view` - Admin configuration panel
@@ -76,12 +107,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Transaction logging for audit trail
 - Conversation blocking on danger detection
 
+### Changed
+
+#### UI/UX Improvements
+- **Character counter** - Moved from center to bottom-right corner
+  - Subtle color when under limit
+  - Yellow warning when approaching limit (>90%)
+  - Red danger when over limit
+- **Suggestion dropdown redesign**
+  - Improved scrolling with custom scrollbar
+  - Better icon styling with gradients and shadows
+  - Hover effects with left border highlight
+  - Increased max height for more visible options (320px)
+  - Dropdown now appears above input (bottom: 100%)
+- **Button styling** - More modern appearance with consistent sizing
+- **Message bubbles** - Cleaner layout with better spacing
+
+#### Dependencies
+- Added `remark-gfm` v4.0.0 for GitHub Flavored Markdown
+
 ### Technical Notes
 
 - **No React build required** - Uses vanilla JavaScript for frontend
 - **No code duplication** - Extends existing LLM services
 - **Single data source** - All chat data in llmConversations/llmMessages tables
 - **Polling-based updates** - Configurable interval (default 3 seconds)
+
+- Speech-to-text requires the sh-shp-llm plugin for the Whisper API integration
+- Markdown rendering uses the same patterns as sh-shp-llm for consistency
+- All UI components maintain Bootstrap 4.6 compatibility
 
 ### Dependencies
 

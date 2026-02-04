@@ -1,6 +1,6 @@
 # SelfHelp Plugin: LLM Therapy Chat
 
-**Version:** 1.0.0  
+**Version:** 1.1.0  
 **Author:** SelfHelp Team  
 **License:** MPL-2.0
 
@@ -71,10 +71,14 @@ All conversations and messages are stored in the LLM plugin's tables (`llmConver
 
 - **AI Chat Buddy (24/7)** - Supportive AI trained in empathy, validation, and grounding
 - **Tag Therapist** - @mention to request human intervention
+  - Tag individual therapists by name
+  - Tag all therapists in your group with @All Therapists
 - **Predefined Tag Reasons:**
   - "I'm feeling overwhelmed"
   - "I need to talk soon"
   - "This feels urgent"
+- **Voice Input (v1.1.0)** - Speak your messages using the microphone button
+- **Rich AI Responses** - Markdown-formatted responses with code blocks, lists, and media
 - **Safe & Private** - Encrypted, secure conversations with automatic safety monitoring
 
 ### For Therapists
@@ -87,6 +91,8 @@ All conversations and messages are stored in the LLM plugin's tables (`llmConver
   - Patient tags
   - High activity
 - **Notes System** - Add private notes to conversations
+- **Voice Input (v1.1.0)** - Dictate responses using speech-to-text
+- **Rich Message Display** - View patient messages with full markdown formatting
 - **Full Conversation History** - Access via LLM Admin Console
 
 ### Clinical Boundaries
@@ -196,6 +202,9 @@ The `therapyChat` style inherits many fields from `llmChat`:
 | `enable_danger_detection` | Enable safety monitoring |
 | `danger_keywords` | Keywords that trigger alerts |
 | `danger_notification_emails` | Email addresses for alerts |
+| `enable_speech_to_text` | Enable voice input (v1.1.0) |
+| `speech_to_text_model` | Whisper model for transcription (v1.1.0) |
+| `speech_to_text_language` | Language code or "auto" (v1.1.0) |
 
 ## URLs
 
@@ -272,6 +281,27 @@ All conversations can be viewed and managed in the LLM Admin Console at `/admin/
 - See danger detections
 
 The therapy plugin adds metadata but does not duplicate core functionality.
+
+## New in v1.1.0
+
+### Markdown Rendering
+AI responses are now rendered with full Markdown support:
+- **Code blocks** with syntax highlighting and copy-to-clipboard
+- **Lists, tables, and blockquotes** with proper styling
+- **Images and videos** with responsive layout
+- **External links** open in new tab with security attributes
+
+### Speech-to-Text (Voice Input)
+Patients and therapists can now use voice input:
+- Click the microphone button to start recording
+- Speak your message (max 60 seconds)
+- Text is automatically transcribed and inserted at cursor position
+- Requires Whisper API configuration in the LLM plugin
+
+### Improved Tagging
+- **@All Therapists** option to notify all therapists in your group
+- Better suggestion dropdown UI with scrolling and visual feedback
+- Console logging for debugging tagging configuration
 
 ## Security Considerations
 

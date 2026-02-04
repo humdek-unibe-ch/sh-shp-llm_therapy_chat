@@ -289,6 +289,40 @@ class TherapyChatModel extends StyleModel
         return (int)$this->get_db_field('llm_max_tokens', '2048');
     }
 
+    /**
+     * Check if speech-to-text is enabled
+     *
+     * @return bool
+     */
+    public function isSpeechToTextEnabled()
+    {
+        $enabled = (bool)$this->get_db_field('enable_speech_to_text', '0');
+        $model = $this->get_db_field('speech_to_text_model', '');
+        
+        // Speech-to-text requires both enabled flag and a model
+        return $enabled && !empty($model);
+    }
+
+    /**
+     * Get speech-to-text model
+     *
+     * @return string
+     */
+    public function getSpeechToTextModel()
+    {
+        return $this->get_db_field('speech_to_text_model', '');
+    }
+
+    /**
+     * Get speech-to-text language
+     *
+     * @return string
+     */
+    public function getSpeechToTextLanguage()
+    {
+        return $this->get_db_field('speech_to_text_language', 'auto');
+    }
+
     /* Label Getters **********************************************************/
 
     /**
@@ -320,8 +354,7 @@ class TherapyChatModel extends StyleModel
      */
     public function getTagReasons()
     {
-        $jsonConfig = $this->get_db_field('therapy_tag_reasons', '');
-        return $this->therapyService->parseTagReasons($jsonConfig);
+        return $this->get_db_field('therapy_tag_reasons', '');
     }
 
     /* Service Access *********************************************************/
@@ -413,6 +446,11 @@ class TherapyChatModel extends StyleModel
 
             // LLM Configuration
             'configuredModel' => $this->getLlmModel(),
+
+            // Speech-to-Text Configuration
+            'speechToTextEnabled' => $this->isSpeechToTextEnabled(),
+            'speechToTextModel' => $this->getSpeechToTextModel(),
+            'speechToTextLanguage' => $this->getSpeechToTextLanguage(),
         );
     }
     

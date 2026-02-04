@@ -4,11 +4,12 @@
  * 
  * Input area for composing and sending messages.
  * Supports @therapist mentions and #topic tagging using react-mentions.
+ * Includes speech-to-text input via microphone button.
  * Built with Bootstrap 4.6 styling.
  */
 
 import React, { useState, useCallback, useRef, useEffect } from 'react';
-import { Button } from 'react-bootstrap';
+import { Button, Alert } from 'react-bootstrap';
 import { MentionsInput, Mention, SuggestionDataItem } from 'react-mentions';
 import type { TherapyChatLabels, TherapistDashboardLabels, TagReason, TagUrgency } from '../../types';
 import './MessageInput.css';
@@ -39,6 +40,11 @@ interface MessageInputProps {
   therapists?: TherapistSuggestion[];
   onLoadTherapists?: () => Promise<TherapistSuggestion[]>;
   maxLength?: number;
+  // Speech-to-text configuration
+  speechToTextEnabled?: boolean;
+  speechToTextModel?: string;
+  speechToTextLanguage?: string;
+  sectionId?: number;
 }
 
 export interface MentionData {
@@ -82,6 +88,9 @@ const mentionStyle = {
   },
 };
 
+// Maximum recording duration (60 seconds) to prevent payload too large errors
+const MAX_RECORDING_DURATION_MS = 60000;
+
 export const MessageInput: React.FC<MessageInputProps> = ({
   onSend,
   disabled = false,
@@ -93,6 +102,10 @@ export const MessageInput: React.FC<MessageInputProps> = ({
   therapists: externalTherapists = [],
   onLoadTherapists,
   maxLength = 4000,
+  speechToTextEnabled = false,
+  speechToTextModel,
+  speechToTextLanguage = 'auto',
+  sectionId,
 }) => {
   const [message, setMessage] = useState('');
   const [plainText, setPlainText] = useState('');
@@ -101,6 +114,44 @@ export const MessageInput: React.FC<MessageInputProps> = ({
   const [mentions, setMentions] = useState<MentionData>({ therapists: [], topics: [] });
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const labelsTyped = labels as (TherapyChatLabels & TherapistDashboardLabels) | undefined;
+  
+  // Speech-to-text state
+  const [isRecording, setIsRecording] = useState(false);
+  const [isProcessingSpeech, setIsProcessingSpeech] = useState(false);
+  const [speechError, setSpeechError] = useState<string | null>(null);
+  
+  // Speech-to-text refs
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const audioStreamRef = useRef<MediaStream | null>(null);
+  const audioChunksRef = useRef<Blob[]>([]);
+  const recordingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  
+  // Ref to always have current message value (avoids stale closure issues)
+  const messageRef = useRef<string>(message);
+  
+  // Keep messageRef in sync with message state
+  useEffect(() => {
+    messageRef.current = message;
+  }, [message]);
+  
+  // Check if speech-to-text is available
+  const isSpeechAvailable = speechToTextEnabled &&
+    speechToTextModel &&
+    typeof navigator !== 'undefined' &&
+    navigator.mediaDevices &&
+    typeof navigator.mediaDevices.getUserMedia === 'function';
+
+  // Cleanup audio stream and timeout on unmount
+  useEffect(() => {
+    return () => {
+      if (audioStreamRef.current) {
+        audioStreamRef.current.getTracks().forEach(track => track.stop());
+      }
+      if (recordingTimeoutRef.current) {
+        clearTimeout(recordingTimeoutRef.current);
+      }
+    };
+  }, []);
 
   // Support both direct props and labels object
   const defaultPlaceholder = placeholder || labelsTyped?.placeholder || labelsTyped?.sendPlaceholder || 'Type your message...';
@@ -116,16 +167,39 @@ export const MessageInput: React.FC<MessageInputProps> = ({
 
   /**
    * Load therapists when @ is triggered
+   * Includes special @therapists option to tag all therapists in group
    */
   const loadTherapists = useCallback(async (query: string, callback: (data: TherapistSuggestion[]) => void) => {
+    // Create the "all therapists" option
+    const allTherapistsOption: TherapistSuggestion = {
+      id: 'all_therapists',
+      display: 'All Therapists',
+      name: 'All Therapists',
+      email: 'Notify all therapists in your group'
+    };
+
     // If we have external therapists or already loaded, filter them
     if (therapistSuggestions.length > 0 || externalTherapists.length > 0) {
       const source = therapistSuggestions.length > 0 ? therapistSuggestions : externalTherapists;
+      
+      // Debug: Log available therapists
+      console.log('[TherapyChat] Available therapists for @mention:', source);
+      
+      // Start with "all therapists" option if it matches query
+      const results: TherapistSuggestion[] = [];
+      if ('all therapists'.includes(query.toLowerCase()) || 'therapists'.includes(query.toLowerCase())) {
+        results.push(allTherapistsOption);
+      }
+      
+      // Add filtered individual therapists
       const filtered = source.filter(t => 
         t.display.toLowerCase().includes(query.toLowerCase()) ||
         (t.email && t.email.toLowerCase().includes(query.toLowerCase()))
       );
-      callback(filtered);
+      results.push(...filtered);
+      
+      console.log('[TherapyChat] Filtered therapists for query "' + query + '":', results);
+      callback(results);
       return;
     }
 
@@ -134,31 +208,55 @@ export const MessageInput: React.FC<MessageInputProps> = ({
       setIsLoadingTherapists(true);
       try {
         const loaded = await onLoadTherapists();
+        console.log('[TherapyChat] Loaded therapists from API:', loaded);
         setTherapistSuggestions(loaded);
+        
+        // Start with "all therapists" option if it matches query
+        const results: TherapistSuggestion[] = [];
+        if ('all therapists'.includes(query.toLowerCase()) || 'therapists'.includes(query.toLowerCase())) {
+          results.push(allTherapistsOption);
+        }
+        
         const filtered = loaded.filter(t => 
           t.display.toLowerCase().includes(query.toLowerCase()) ||
           (t.email && t.email.toLowerCase().includes(query.toLowerCase()))
         );
-        callback(filtered);
+        results.push(...filtered);
+        
+        console.log('[TherapyChat] Filtered therapists for query "' + query + '":', results);
+        callback(results);
       } catch (err) {
-        console.error('Failed to load therapists:', err);
+        console.error('[TherapyChat] Failed to load therapists:', err);
         callback([]);
       } finally {
         setIsLoadingTherapists(false);
       }
     } else {
-      callback([]);
+      // Still show "all therapists" option even without loaded data
+      if ('all therapists'.includes(query.toLowerCase()) || 'therapists'.includes(query.toLowerCase())) {
+        console.log('[TherapyChat] No therapist data, showing "All Therapists" option');
+        callback([allTherapistsOption]);
+      } else {
+        console.log('[TherapyChat] No therapist data available and query does not match "all therapists"');
+        callback([]);
+      }
     }
   }, [therapistSuggestions, externalTherapists, onLoadTherapists, isLoadingTherapists]);
 
   /**
    * Filter topics/tag reasons
+   * Debug logging to browser console for troubleshooting
    */
   const loadTopics = useCallback((query: string, callback: (data: TopicSuggestion[]) => void) => {
+    // Debug: Log all available tag reasons
+    console.log('[TherapyChat] Available tag reasons (#):', topicSuggestions);
+    
     const filtered = topicSuggestions.filter(t =>
       t.display.toLowerCase().includes(query.toLowerCase()) ||
       (t.code && t.code.toLowerCase().includes(query.toLowerCase()))
     );
+    
+    console.log('[TherapyChat] Filtered reasons for query "' + query + '":', filtered);
     callback(filtered);
   }, [topicSuggestions]);
 
@@ -252,6 +350,205 @@ export const MessageInput: React.FC<MessageInputProps> = ({
     ? (plainText.length > maxLength ? 'text-danger' : 'text-warning')
     : '';
 
+  // ===== Speech-to-Text Handlers =====
+
+  /**
+   * Safely append transcribed text to the message at cursor position
+   */
+  const appendTranscribedText = useCallback((transcribedText: string) => {
+    // Get the CURRENT message from ref (not stale closure)
+    const currentMessage = messageRef.current;
+    const currentPlainText = plainText;
+    
+    // Determine spacing needed
+    const needsSpaceBefore = currentPlainText.length > 0 && 
+      !/[\s]$/.test(currentPlainText);
+    
+    // Build the new text with proper spacing
+    const spaceBefore = needsSpaceBefore ? ' ' : '';
+    const trailingSpace = ' ';
+    const newPlainText = currentPlainText + spaceBefore + transcribedText + trailingSpace;
+    
+    // For mentions input, we work with plain text and let react-mentions handle markup
+    // Append to the existing message value
+    const newMessage = currentMessage + spaceBefore + transcribedText + trailingSpace;
+    
+    // Update state
+    setMessage(newMessage);
+    setPlainText(newPlainText);
+    
+    // Update ref immediately for any subsequent operations
+    messageRef.current = newMessage;
+  }, [plainText]);
+
+  /**
+   * Start recording audio from the microphone
+   */
+  const handleStartRecording = useCallback(async () => {
+    if (!isSpeechAvailable || isRecording) return;
+
+    setSpeechError(null);
+
+    try {
+      // Request microphone permission
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          sampleRate: 16000
+        }
+      });
+
+      audioStreamRef.current = stream;
+      audioChunksRef.current = [];
+
+      // Create MediaRecorder with WebM/Opus format (widely supported)
+      const mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
+        ? 'audio/webm;codecs=opus'
+        : MediaRecorder.isTypeSupported('audio/webm')
+          ? 'audio/webm'
+          : 'audio/mp4';
+
+      // Configure MediaRecorder with lower bitrate for smaller file sizes
+      const mediaRecorder = new MediaRecorder(stream, { 
+        mimeType,
+        audioBitsPerSecond: 16000 // 16 kbps - optimized for speech
+      });
+      mediaRecorderRef.current = mediaRecorder;
+
+      mediaRecorder.ondataavailable = (event) => {
+        if (event.data.size > 0) {
+          audioChunksRef.current.push(event.data);
+        }
+      };
+
+      mediaRecorder.onstop = async () => {
+        // Process the recorded audio
+        if (audioChunksRef.current.length > 0) {
+          const audioBlob = new Blob(audioChunksRef.current, { type: mimeType });
+          await processAudioBlob(audioBlob);
+        }
+        
+        // Cleanup
+        audioChunksRef.current = [];
+      };
+
+      // Start recording
+      mediaRecorder.start();
+      setIsRecording(true);
+      
+      // Auto-stop recording after max duration
+      recordingTimeoutRef.current = setTimeout(() => {
+        if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
+          console.log('[TherapyChat] Auto-stopping recording after max duration');
+          handleStopRecording();
+        }
+      }, MAX_RECORDING_DURATION_MS);
+
+    } catch (error: unknown) {
+      console.error('[TherapyChat] Failed to start recording:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      
+      if (errorMessage.includes('Permission denied') || errorMessage.includes('NotAllowedError')) {
+        setSpeechError('Microphone access denied. Please allow microphone access in your browser settings.');
+      } else {
+        setSpeechError('Failed to start recording: ' + errorMessage);
+      }
+    }
+  }, [isSpeechAvailable, isRecording]);
+
+  /**
+   * Stop recording and process the audio
+   */
+  const handleStopRecording = useCallback(() => {
+    if (!isRecording || !mediaRecorderRef.current) return;
+
+    // Clear the auto-stop timeout
+    if (recordingTimeoutRef.current) {
+      clearTimeout(recordingTimeoutRef.current);
+      recordingTimeoutRef.current = null;
+    }
+
+    // Stop the MediaRecorder
+    if (mediaRecorderRef.current.state === 'recording') {
+      mediaRecorderRef.current.stop();
+    }
+
+    // Stop all tracks in the stream
+    if (audioStreamRef.current) {
+      audioStreamRef.current.getTracks().forEach(track => track.stop());
+      audioStreamRef.current = null;
+    }
+
+    setIsRecording(false);
+  }, [isRecording]);
+
+  /**
+   * Process the recorded audio blob and send to server for transcription
+   */
+  const processAudioBlob = useCallback(async (audioBlob: Blob) => {
+    if (audioBlob.size === 0) {
+      setSpeechError('No audio recorded');
+      return;
+    }
+
+    setIsProcessingSpeech(true);
+    setSpeechError(null);
+
+    try {
+      // Create form data for the API request
+      const formData = new FormData();
+      formData.append('audio', audioBlob, 'recording.webm');
+      formData.append('action', 'speech_transcribe');
+      if (sectionId) {
+        formData.append('section_id', sectionId.toString());
+      }
+      if (speechToTextLanguage) {
+        formData.append('language', speechToTextLanguage);
+      }
+
+      // Send to the server for transcription
+      const response = await fetch(window.location.href, {
+        method: 'POST',
+        body: formData
+      });
+
+      const result = await response.json();
+
+      if (result.success && result.text) {
+        // Get the transcribed text (trimmed)
+        const transcribedText = result.text.trim();
+        
+        if (transcribedText) {
+          // Use the safe append function - NEVER overwrites, ALWAYS appends
+          appendTranscribedText(transcribedText);
+        }
+      } else if (result.success && !result.text) {
+        setSpeechError('No speech detected. Please try again.');
+      } else {
+        setSpeechError(result.error || 'Speech transcription failed');
+      }
+
+    } catch (error: unknown) {
+      console.error('[TherapyChat] Speech processing error:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      setSpeechError('Speech processing failed: ' + errorMessage);
+    } finally {
+      setIsProcessingSpeech(false);
+    }
+  }, [sectionId, appendTranscribedText]);
+
+  /**
+   * Toggle recording state
+   */
+  const handleMicrophoneClick = useCallback(() => {
+    if (isRecording) {
+      handleStopRecording();
+    } else {
+      handleStartRecording();
+    }
+  }, [isRecording, handleStartRecording, handleStopRecording]);
+
   // Render therapist suggestion item
   const renderTherapistSuggestion = (
     suggestion: SuggestionDataItem,
@@ -259,19 +556,24 @@ export const MessageInput: React.FC<MessageInputProps> = ({
     highlightedDisplay: React.ReactNode,
     _index: number,
     focused: boolean
-  ) => (
-    <div className={`therapy-suggestion-item ${focused ? 'focused' : ''}`}>
-      <div className="suggestion-icon therapist">
-        <i className="fas fa-user-md"></i>
+  ) => {
+    const therapist = suggestion as TherapistSuggestion;
+    const isAllTherapists = therapist.id === 'all_therapists';
+    
+    return (
+      <div className={`therapy-suggestion-item ${focused ? 'focused' : ''}`}>
+        <div className={`suggestion-icon ${isAllTherapists ? 'all-therapists' : 'therapist'}`}>
+          <i className={`fas ${isAllTherapists ? 'fa-users' : 'fa-user-md'}`}></i>
+        </div>
+        <div className="suggestion-content">
+          <div className="suggestion-name">{highlightedDisplay}</div>
+          {therapist.email && (
+            <div className="suggestion-meta">{therapist.email}</div>
+          )}
+        </div>
       </div>
-      <div className="suggestion-content">
-        <div className="suggestion-name">{highlightedDisplay}</div>
-        {(suggestion as TherapistSuggestion).email && (
-          <div className="suggestion-meta">{(suggestion as TherapistSuggestion).email}</div>
-        )}
-      </div>
-    </div>
-  );
+    );
+  };
 
   // Render topic suggestion item
   const renderTopicSuggestion = (
@@ -307,6 +609,19 @@ export const MessageInput: React.FC<MessageInputProps> = ({
 
   return (
     <form onSubmit={handleSubmit} className="therapy-message-input">
+      {/* Speech error alert */}
+      {speechError && (
+        <Alert 
+          variant="warning" 
+          dismissible 
+          onClose={() => setSpeechError(null)}
+          className="therapy-speech-error mb-2"
+        >
+          <i className="fas fa-exclamation-triangle mr-2"></i>
+          {speechError}
+        </Alert>
+      )}
+      
       <div className="therapy-input-container">
         <div className="therapy-input-wrapper">
           <div className="therapy-input-area">
@@ -315,7 +630,7 @@ export const MessageInput: React.FC<MessageInputProps> = ({
               onChange={handleChange}
               onKeyDown={handleKeyDown}
               placeholder={defaultPlaceholder}
-              disabled={disabled}
+              disabled={disabled || isProcessingSpeech}
               className="therapy-mentions-input"
               style={mentionStyle as any}
               inputRef={inputRef}
@@ -347,13 +662,33 @@ export const MessageInput: React.FC<MessageInputProps> = ({
             </MentionsInput>
           </div>
           
-          {/* Character counter - like reference design */}
+          {/* Character counter */}
           <div className="therapy-input-footer">
             <small className={`therapy-char-counter ${charCountClass}`}>
               {plainText.length}/{maxLength}
             </small>
           </div>
         </div>
+        
+        {/* Microphone button - only show when speech-to-text is available */}
+        {isSpeechAvailable && (
+          <Button
+            type="button"
+            variant={isRecording ? 'danger' : 'outline-secondary'}
+            onClick={handleMicrophoneClick}
+            disabled={disabled || isProcessingSpeech}
+            className={`therapy-mic-button ${isRecording ? 'recording' : ''}`}
+            title={isRecording ? 'Stop recording' : 'Start voice input'}
+          >
+            {isProcessingSpeech ? (
+              <i className="fas fa-spinner fa-spin"></i>
+            ) : isRecording ? (
+              <i className="fas fa-stop"></i>
+            ) : (
+              <i className="fas fa-microphone"></i>
+            )}
+          </Button>
+        )}
         
         {/* Clear button - only show when there's content */}
         {plainText.length > 0 && (
@@ -372,7 +707,7 @@ export const MessageInput: React.FC<MessageInputProps> = ({
         <Button
           type="submit"
           variant="primary"
-          disabled={disabled || !plainText.trim() || plainText.length > maxLength}
+          disabled={disabled || isProcessingSpeech || !plainText.trim() || plainText.length > maxLength}
           title={sendLabel}
           className="therapy-send-button"
         >

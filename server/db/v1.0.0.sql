@@ -699,3 +699,42 @@ VALUES
 (@id_page_therapy_chat_config, get_field_id('therapy_chat_polling_interval'), '0000000001', '3'),
 (@id_page_therapy_chat_config, get_field_id('therapy_chat_enable_tagging'), '0000000001', '1'),
 (@id_page_therapy_chat_config, get_field_id('therapy_tag_reasons'), '0000000002', '[{"key":"overwhelmed","label":"I am feeling overwhelmed","urgency":"normal"},{"key":"need_talk","label":"I need to talk soon","urgency":"urgent"},{"key":"urgent","label":"This feels urgent","urgency":"urgent"},{"key":"emergency","label":"Emergency - please respond immediately","urgency":"emergency"}]');
+
+-- =====================================================
+-- SPEECH-TO-TEXT CONFIGURATION FOR THERAPY CHAT
+-- =====================================================
+-- Re-use the audio model field type from sh-shp-llm plugin.
+-- The field type 'select-audio-model' should already exist from llm plugin.
+
+-- Add speech-to-text fields to therapyChat style
+-- These use the same fields as llmChat for consistency
+INSERT IGNORE INTO `styles_fields` (`id_styles`, `id_fields`, `default_value`, `help`) VALUES
+(get_style_id('therapyChat'), get_field_id('enable_speech_to_text'), '0', 
+ 'Enable speech-to-text input for patients. When enabled and an audio model is selected, a microphone button appears in the message input area. Patients can click to record voice input which is transcribed to text in real-time.\n\n**Requirements:**\n- sh-shp-llm plugin must be installed\n- An audio model must be configured in the LLM settings\n- User must grant microphone permissions\n- Modern browser with MediaRecorder API support\n\n**Privacy:** Audio is processed in real-time and not stored permanently.'),
+
+(get_style_id('therapyChat'), get_field_id('speech_to_text_model'), '', 
+ 'Select the Whisper model for speech recognition. Leave empty to use the default model configured in the LLM plugin.\n\n**Recommended:** faster-whisper-large-v3 for best accuracy.\n\n**Note:** The microphone button will only appear when both this field is set AND the enable checkbox above is checked.');
+
+-- Add speech-to-text fields to therapistDashboard style
+INSERT IGNORE INTO `styles_fields` (`id_styles`, `id_fields`, `default_value`, `help`) VALUES
+(get_style_id('therapistDashboard'), get_field_id('enable_speech_to_text'), '0', 
+ 'Enable speech-to-text input for therapists. When enabled and an audio model is selected, a microphone button appears in the message input area. Therapists can click to record voice input which is transcribed to text.\n\n**Requirements:**\n- sh-shp-llm plugin must be installed\n- An audio model must be configured\n- User must grant microphone permissions\n\n**Note:** This is useful for therapists who prefer voice dictation for longer responses.'),
+
+(get_style_id('therapistDashboard'), get_field_id('speech_to_text_model'), '', 
+ 'Select the Whisper model for speech recognition in the therapist dashboard. Leave empty to use the default model configured in the LLM plugin.');
+
+-- =====================================================
+-- ADD LANGUAGE FIELD FOR SPEECH RECOGNITION
+-- =====================================================
+-- Add language preference for better transcription accuracy
+
+INSERT IGNORE INTO `fields` (`id`, `name`, `id_type`, `display`) VALUES
+(NULL, 'speech_to_text_language', get_field_type_id('text'), '0');
+
+-- Add language field to both styles
+INSERT IGNORE INTO `styles_fields` (`id_styles`, `id_fields`, `default_value`, `help`) VALUES
+(get_style_id('therapyChat'), get_field_id('speech_to_text_language'), 'auto', 
+ 'Language code for speech recognition (e.g., "en", "de", "fr"). Use "auto" for automatic detection.\n\nSupported languages depend on the Whisper model used.'),
+
+(get_style_id('therapistDashboard'), get_field_id('speech_to_text_language'), 'auto', 
+ 'Language code for speech recognition (e.g., "en", "de", "fr"). Use "auto" for automatic detection.');

@@ -55,7 +55,7 @@ class TherapistDashboardController extends BaseController
         parent::__construct($model);
 
         // Validate section ID
-        if (!$this->isRequestForThisSection()) {
+        if (!$this->isRequestForThisSection() || $model->get_services()->get_router()->current_keyword == 'admin') {
             return;
         }
 
@@ -149,6 +149,9 @@ class TherapistDashboardController extends BaseController
             case 'mark_messages_read':
                 $this->handleMarkMessagesRead();
                 break;
+            case 'speech_transcribe':
+                $this->handleSpeechTranscribe();
+                break;
             default:
                 break;
         }
@@ -202,7 +205,7 @@ class TherapistDashboardController extends BaseController
     private function handleSendMessage()
     {
         $user_id = $this->validateTherapistOrFail();
-        
+
         $conversation_id = $_POST['conversation_id'] ?? null;
         $message = trim($_POST['message'] ?? '');
 
@@ -242,7 +245,6 @@ class TherapistDashboardController extends BaseController
                 'success' => true,
                 'message_id' => $result['message_id']
             ]);
-
         } catch (Exception $e) {
             $this->sendJsonResponse(['error' => $e->getMessage()], 500);
         }
@@ -254,7 +256,7 @@ class TherapistDashboardController extends BaseController
     private function handleToggleAI()
     {
         $user_id = $this->validateTherapistOrFail();
-        
+
         $conversation_id = $_POST['conversation_id'] ?? null;
         $enabled = isset($_POST['enabled']) ? (bool)$_POST['enabled'] : true;
 
@@ -271,7 +273,6 @@ class TherapistDashboardController extends BaseController
         try {
             $result = $this->alert_service->setAIEnabled($conversation_id, $enabled);
             $this->sendJsonResponse(['success' => $result, 'ai_enabled' => $enabled]);
-
         } catch (Exception $e) {
             $this->sendJsonResponse(['error' => $e->getMessage()], 500);
         }
@@ -283,7 +284,7 @@ class TherapistDashboardController extends BaseController
     private function handleSetRisk()
     {
         $user_id = $this->validateTherapistOrFail();
-        
+
         $conversation_id = $_POST['conversation_id'] ?? null;
         $risk_level = $_POST['risk_level'] ?? null;
 
@@ -305,7 +306,6 @@ class TherapistDashboardController extends BaseController
         try {
             $result = $this->alert_service->updateRiskLevel($conversation_id, $risk_level);
             $this->sendJsonResponse(['success' => $result, 'risk_level' => $risk_level]);
-
         } catch (Exception $e) {
             $this->sendJsonResponse(['error' => $e->getMessage()], 500);
         }
@@ -317,7 +317,7 @@ class TherapistDashboardController extends BaseController
     private function handleAddNote()
     {
         $user_id = $this->validateTherapistOrFail();
-        
+
         $conversation_id = $_POST['conversation_id'] ?? null;
         $content = trim($_POST['content'] ?? '');
 
@@ -333,7 +333,7 @@ class TherapistDashboardController extends BaseController
 
         try {
             $db = $this->model->get_services()->get_db();
-            
+
             $note_id = $db->insert('therapyNotes', [
                 'id_llmConversations' => $conversation_id,
                 'id_users' => $user_id,
@@ -344,7 +344,6 @@ class TherapistDashboardController extends BaseController
                 'success' => (bool)$note_id,
                 'note_id' => $note_id
             ]);
-
         } catch (Exception $e) {
             $this->sendJsonResponse(['error' => $e->getMessage()], 500);
         }
@@ -356,7 +355,7 @@ class TherapistDashboardController extends BaseController
     private function handleAcknowledgeTag()
     {
         $user_id = $this->validateTherapistOrFail();
-        
+
         $tag_id = $_POST['tag_id'] ?? null;
 
         if (!$tag_id) {
@@ -367,7 +366,6 @@ class TherapistDashboardController extends BaseController
         try {
             $result = $this->tagging_service->acknowledgeTag($tag_id, $user_id);
             $this->sendJsonResponse(['success' => $result]);
-
         } catch (Exception $e) {
             $this->sendJsonResponse(['error' => $e->getMessage()], 500);
         }
@@ -379,7 +377,7 @@ class TherapistDashboardController extends BaseController
     private function handleMarkAlertRead()
     {
         $user_id = $this->validateTherapistOrFail();
-        
+
         $alert_id = $_POST['alert_id'] ?? null;
 
         if (!$alert_id) {
@@ -390,7 +388,6 @@ class TherapistDashboardController extends BaseController
         try {
             $result = $this->alert_service->markAlertRead($alert_id, $user_id);
             $this->sendJsonResponse(['success' => $result]);
-
         } catch (Exception $e) {
             $this->sendJsonResponse(['error' => $e->getMessage()], 500);
         }
@@ -402,13 +399,12 @@ class TherapistDashboardController extends BaseController
     private function handleMarkAllRead()
     {
         $user_id = $this->validateTherapistOrFail();
-        
+
         $conversation_id = $_POST['conversation_id'] ?? null;
 
         try {
             $result = $this->alert_service->markAllAlertsRead($user_id, $conversation_id);
             $this->sendJsonResponse(['success' => $result]);
-
         } catch (Exception $e) {
             $this->sendJsonResponse(['error' => $e->getMessage()], 500);
         }
@@ -440,7 +436,7 @@ class TherapistDashboardController extends BaseController
 
         try {
             $filters = [];
-            
+
             if (isset($_GET['status'])) {
                 $filters['status'] = $_GET['status'];
             }
@@ -454,7 +450,6 @@ class TherapistDashboardController extends BaseController
             $conversations = $this->alert_service->getTherapyConversationsByTherapist($user_id, $filters);
 
             $this->sendJsonResponse(['conversations' => $conversations]);
-
         } catch (Exception $e) {
             $this->sendJsonResponse(['error' => $e->getMessage()], 500);
         }
@@ -466,7 +461,7 @@ class TherapistDashboardController extends BaseController
     private function handleGetConversation()
     {
         $user_id = $this->validateTherapistOrFail();
-        
+
         $conversation_id = $_GET['conversation_id'] ?? null;
 
         if (!$conversation_id) {
@@ -481,7 +476,7 @@ class TherapistDashboardController extends BaseController
 
         try {
             $conversation = $this->alert_service->getTherapyConversation($conversation_id);
-            
+
             if (!$conversation) {
                 $this->sendJsonResponse(['error' => 'Conversation not found'], 404);
                 return;
@@ -502,7 +497,6 @@ class TherapistDashboardController extends BaseController
                 'tags' => $tags,
                 'alerts' => $alerts
             ]);
-
         } catch (Exception $e) {
             $this->sendJsonResponse(['error' => $e->getMessage()], 500);
         }
@@ -514,7 +508,7 @@ class TherapistDashboardController extends BaseController
     private function handleGetMessages()
     {
         $user_id = $this->validateTherapistOrFail();
-        
+
         $conversation_id = $_GET['conversation_id'] ?? null;
         $after_id = isset($_GET['after_id']) ? (int)$_GET['after_id'] : null;
 
@@ -530,7 +524,7 @@ class TherapistDashboardController extends BaseController
 
         try {
             $messages = $this->message_service->getTherapyMessages($conversation_id, 100, $after_id);
-            
+
             // Update last seen
             $this->alert_service->updateLastSeen($conversation_id, 'therapist');
 
@@ -538,7 +532,6 @@ class TherapistDashboardController extends BaseController
                 'messages' => $messages,
                 'conversation_id' => $conversation_id
             ]);
-
         } catch (Exception $e) {
             $this->sendJsonResponse(['error' => $e->getMessage()], 500);
         }
@@ -553,7 +546,7 @@ class TherapistDashboardController extends BaseController
 
         try {
             $filters = [];
-            
+
             if (isset($_GET['unread_only']) && $_GET['unread_only']) {
                 $filters['unread_only'] = true;
             }
@@ -564,7 +557,6 @@ class TherapistDashboardController extends BaseController
             $alerts = $this->alert_service->getAlertsForTherapist($user_id, $filters);
 
             $this->sendJsonResponse(['alerts' => $alerts]);
-
         } catch (Exception $e) {
             $this->sendJsonResponse(['error' => $e->getMessage()], 500);
         }
@@ -580,7 +572,6 @@ class TherapistDashboardController extends BaseController
         try {
             $tags = $this->tagging_service->getPendingTagsForTherapist($user_id);
             $this->sendJsonResponse(['tags' => $tags]);
-
         } catch (Exception $e) {
             $this->sendJsonResponse(['error' => $e->getMessage()], 500);
         }
@@ -596,7 +587,6 @@ class TherapistDashboardController extends BaseController
         try {
             $stats = $this->alert_service->getTherapistStats($user_id);
             $this->sendJsonResponse(['stats' => $stats]);
-
         } catch (Exception $e) {
             $this->sendJsonResponse(['error' => $e->getMessage()], 500);
         }
@@ -608,7 +598,7 @@ class TherapistDashboardController extends BaseController
     private function handleGetNotes()
     {
         $user_id = $this->validateTherapistOrFail();
-        
+
         $conversation_id = $_GET['conversation_id'] ?? null;
 
         if (!$conversation_id) {
@@ -624,7 +614,6 @@ class TherapistDashboardController extends BaseController
         try {
             $notes = $this->model->getNotes($conversation_id);
             $this->sendJsonResponse(['notes' => $notes]);
-
         } catch (Exception $e) {
             $this->sendJsonResponse(['error' => $e->getMessage()], 500);
         }
@@ -640,7 +629,7 @@ class TherapistDashboardController extends BaseController
         try {
             // Get all conversations for this therapist
             $conversations = $this->alert_service->getTherapyConversationsByTherapist($user_id);
-            
+
             $total_unread = 0;
             $by_subject = [];
 
@@ -653,7 +642,7 @@ class TherapistDashboardController extends BaseController
 
                 if ($unread_count > 0) {
                     $total_unread += $unread_count;
-                    
+
                     $subject_id = $conv['id_users'];
                     $by_subject[$subject_id] = [
                         'subjectId' => (int)$subject_id,
@@ -672,7 +661,6 @@ class TherapistDashboardController extends BaseController
                     'bySubject' => $by_subject
                 ]
             ]);
-
         } catch (Exception $e) {
             $this->sendJsonResponse(['error' => $e->getMessage()], 500);
         }
@@ -684,7 +672,7 @@ class TherapistDashboardController extends BaseController
     private function handleMarkMessagesRead()
     {
         $user_id = $this->validateTherapistOrFail();
-        
+
         $conversation_id = $_POST['conversation_id'] ?? null;
 
         if (!$conversation_id) {
@@ -701,9 +689,88 @@ class TherapistDashboardController extends BaseController
             // Update therapist last seen timestamp
             $result = $this->alert_service->updateLastSeen($conversation_id, 'therapist');
             $this->sendJsonResponse(['success' => $result]);
-
         } catch (Exception $e) {
             $this->sendJsonResponse(['error' => $e->getMessage()], 500);
+        }
+    }
+
+    /**
+     * Handle speech transcription request for therapists
+     */
+    private function handleSpeechTranscribe()
+    {
+        $this->validateTherapistOrFail();
+
+        // Check if speech-to-text is enabled
+        if (!$this->model->isSpeechToTextEnabled()) {
+            $this->sendJsonResponse(['error' => 'Speech-to-text is not enabled'], 400);
+            return;
+        }
+
+        // Check for uploaded audio file
+        if (!isset($_FILES['audio']) || $_FILES['audio']['error'] !== UPLOAD_ERR_OK) {
+            $this->sendJsonResponse(['error' => 'No audio file uploaded'], 400);
+            return;
+        }
+
+        $audioFile = $_FILES['audio'];
+        $tempPath = $audioFile['tmp_name'];
+
+        // Validate file size (max 25MB)
+        $maxSize = 25 * 1024 * 1024;
+        if ($audioFile['size'] > $maxSize) {
+            $this->sendJsonResponse(['error' => 'Audio file too large (max 25MB)'], 400);
+            return;
+        }
+
+        // Validate MIME type
+        $finfo = finfo_open(FILEINFO_MIME_TYPE);
+        $mimeType = finfo_file($finfo, $tempPath);
+        finfo_close($finfo);
+
+        if (strpos($mimeType, 'audio') === false) {
+            $this->sendJsonResponse(['error' => 'Invalid audio format: ' . $mimeType], 400);
+            return;
+        }
+
+        try {
+            // Check if LLM Speech-to-Text service is available
+            $llmSpeechServicePath = __DIR__ . "/../../../../sh-shp-llm/server/service/LlmSpeechToTextService.php";
+
+            if (!file_exists($llmSpeechServicePath)) {
+                $this->sendJsonResponse(['error' => 'Speech-to-text service not available'], 500);
+                return;
+            }
+
+            require_once $llmSpeechServicePath;
+
+            $services = $this->model->get_services();
+            $speechService = new LlmSpeechToTextService($services, $this->model);
+
+            $model = $this->model->getSpeechToTextModel();
+            $language = $this->model->getSpeechToTextLanguage();
+
+            $result = $speechService->transcribeAudio(
+                $tempPath,
+                $model,
+                $language !== 'auto' ? $language : null
+            );
+
+            if (isset($result['error'])) {
+                $this->sendJsonResponse(['success' => false, 'error' => $result['error']], 500);
+                return;
+            }
+
+            $this->sendJsonResponse([
+                'success' => true,
+                'text' => $result['text'] ?? ''
+            ]);
+        } catch (Exception $e) {
+            error_log("TherapistDashboard speech transcription error: " . $e->getMessage());
+            $this->sendJsonResponse([
+                'success' => false,
+                'error' => DEBUG ? $e->getMessage() : 'Speech transcription failed'
+            ], 500);
         }
     }
 

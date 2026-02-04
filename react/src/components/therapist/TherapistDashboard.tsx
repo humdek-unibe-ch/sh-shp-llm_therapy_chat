@@ -600,13 +600,17 @@ export const TherapistDashboard: React.FC<TherapistDashboardProps> = ({ config }
                   )}
                 </Card.Body>
 
-                {/* Input */}
+                {/* Input with speech-to-text support */}
                 <Card.Footer className="bg-white">
                   <MessageInput
                     onSend={sendMessage}
                     disabled={isSending || isLoading}
                     placeholder={labels.sendPlaceholder}
                     buttonLabel={labels.sendButton}
+                    speechToTextEnabled={config.speechToTextEnabled}
+                    speechToTextModel={config.speechToTextModel}
+                    speechToTextLanguage={config.speechToTextLanguage}
+                    sectionId={config.sectionId}
                   />
                 </Card.Footer>
               </>

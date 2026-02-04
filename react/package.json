@@ -1,6 +1,6 @@
 {
   "name": "therapy-chat-react",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "React-based Therapy Chat Component for SelfHelp CMS",
   "main": "dist/therapy-chat.umd.js",
   "type": "module",
@@ -17,7 +17,8 @@
     "react-bootstrap": "^1.6.8",
     "react-dom": "^18.2.0",
     "react-markdown": "^9.1.0",
-    "react-mentions": "^4.4.10"
+    "react-mentions": "^4.4.10",
+    "remark-gfm": "^4.0.0"
   },
   "devDependencies": {
     "@types/react": "^18.2.0",
@@ -35,6 +36,7 @@
     "therapy",
     "chat",
     "selfhelp",
-    "cms"
+    "cms",
+    "markdown"
   ]
 }

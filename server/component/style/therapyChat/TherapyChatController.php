@@ -49,11 +49,8 @@ class TherapyChatController extends BaseController
     {
         parent::__construct($model);
 
-        // Check if this is an AJAX request (has action parameter)
-        $isAjaxRequest = isset($_GET['action']) || isset($_POST['action']);
-
         // Validate section ID for multi-instance support
-        if (!$this->isRequestForThisSection()) {
+        if (!$this->isRequestForThisSection() || $model->get_services()->get_router()->current_keyword == 'admin') {
             return;
         }
 
@@ -89,12 +86,12 @@ class TherapyChatController extends BaseController
     {
         $services = $this->model->get_services();
         $this->therapy_service = new TherapyMessageService($services);
-        
+
         // Initialize danger detection if enabled
         if ($this->model->isDangerDetectionEnabled()) {
             $this->danger_service = new LlmDangerDetectionService($services, $this->model);
         }
-        
+
         // Set up error handler for JSON responses
         $this->setupJsonErrorHandler();
     }
@@ -110,26 +107,26 @@ class TherapyChatController extends BaseController
             return;
         }
 
-        set_error_handler(function($errno, $errstr, $errfile, $errline) {
+        set_error_handler(function ($errno, $errstr, $errfile, $errline) {
             // Log the error
             error_log("TherapyChat Error [$errno]: $errstr in $errfile:$errline");
-            
+
             // Don't handle errors that should be suppressed
             if (!(error_reporting() & $errno)) {
                 return false;
             }
-            
+
             // For fatal-ish errors, return JSON
             if (in_array($errno, [E_ERROR, E_USER_ERROR, E_RECOVERABLE_ERROR])) {
                 $this->sendJsonResponse([
                     'error' => DEBUG ? "$errstr in $errfile:$errline" : 'An internal error occurred'
                 ], 500);
             }
-            
+
             return true; // Don't execute PHP's internal error handler
         });
 
-        set_exception_handler(function($exception) {
+        set_exception_handler(function ($exception) {
             error_log("TherapyChat Exception: " . $exception->getMessage());
             $this->sendJsonResponse([
                 'error' => DEBUG ? $exception->getMessage() : 'An internal error occurred'
@@ -172,6 +169,9 @@ class TherapyChatController extends BaseController
                 break;
             case 'tag_therapist':
                 $this->handleTagTherapist();
+                break;
+            case 'speech_transcribe':
+                $this->handleSpeechTranscribe();
                 break;
             default:
                 // Legacy: handle direct message POST
@@ -220,7 +220,7 @@ class TherapyChatController extends BaseController
     private function handleSendMessage()
     {
         $user_id = $this->validatePatientOrFail();
-        
+
         $message = trim($_POST['message'] ?? $_GET['message'] ?? '');
         if (empty($message)) {
             $this->sendJsonResponse(['error' => 'Message cannot be empty'], 400);
@@ -228,7 +228,7 @@ class TherapyChatController extends BaseController
         }
 
         $conversation_id = $_POST['conversation_id'] ?? $_GET['conversation_id'] ?? null;
-        
+
         // Cast to integer to handle zero-padded strings like "0000000003"
         if ($conversation_id) {
             $conversation_id = (int) $conversation_id;
@@ -237,7 +237,7 @@ class TherapyChatController extends BaseController
         // Check danger detection
         if ($this->danger_service && $this->danger_service->isEnabled()) {
             $danger_result = $this->danger_service->checkMessage($message, $user_id, $conversation_id);
-            
+
             if (!$danger_result['safe']) {
                 // Create alert for therapist
                 $this->therapy_service->createDangerAlert(
@@ -263,7 +263,7 @@ class TherapyChatController extends BaseController
                 // Verify the conversation exists
                 $conversation = $this->therapy_service->getTherapyConversation($conversation_id);
             }
-            
+
             if (!$conversation) {
                 // Create new conversation if none exists or provided ID is invalid
                 $conversation = $this->model->getOrCreateConversation();
@@ -295,10 +295,10 @@ class TherapyChatController extends BaseController
 
             // Process AI response if enabled
             $conversation = $this->therapy_service->getTherapyConversation($conversation_id);
-            
+
             if ($conversation && $conversation['ai_enabled'] && $conversation['mode'] === THERAPY_MODE_AI_HYBRID) {
                 $ai_response = $this->processAIResponse($conversation_id, $conversation);
-                
+
                 if ($ai_response && !isset($ai_response['error'])) {
                     $response['ai_message'] = [
                         'id' => $ai_response['message_id'],
@@ -311,7 +311,6 @@ class TherapyChatController extends BaseController
             }
 
             $this->sendJsonResponse($response);
-
         } catch (Exception $e) {
             $this->sendJsonResponse(['error' => $e->getMessage()], 500);
         }
@@ -328,7 +327,7 @@ class TherapyChatController extends BaseController
     {
         // Build context messages
         $context_messages = [];
-        
+
         // Add system context
         $system_context = $this->model->getConversationContext();
         if ($system_context) {
@@ -395,7 +394,7 @@ PROMPT;
     private function handleTagTherapist()
     {
         $user_id = $this->validatePatientOrFail();
-        
+
         if (!$this->model->isTaggingEnabled()) {
             $this->sendJsonResponse(['error' => 'Tagging is disabled'], 400);
             return;
@@ -419,7 +418,7 @@ PROMPT;
         try {
             // Get conversation to validate access and get group
             $conversation = $this->therapy_service->getTherapyConversation($conversation_id);
-            
+
             if (!$conversation) {
                 $this->sendJsonResponse(['error' => 'Conversation not found'], 404);
                 return;
@@ -452,7 +451,7 @@ PROMPT;
                     }
                 }
             }
-            
+
             if ($reason) {
                 $tagReasons = $this->model->getTagReasons();
                 foreach ($tagReasons as $r) {
@@ -495,7 +494,6 @@ PROMPT;
             }
 
             $this->sendJsonResponse($result);
-
         } catch (Exception $e) {
             $this->sendJsonResponse(['error' => $e->getMessage()], 500);
         }
@@ -526,17 +524,17 @@ PROMPT;
         try {
             // Get the conversation or create one to find the group
             $conversation = $this->model->getOrCreateConversation();
-            
+
             if (!$conversation) {
                 $this->sendJsonResponse(['therapists' => []]);
                 return;
             }
 
             $groupId = $conversation['id_groups'];
-            
+
             // Get therapists for this group
             $therapists = $this->therapy_service->getTherapistsForGroup($groupId);
-            
+
             // Format for frontend
             $formattedTherapists = array();
             foreach ($therapists as $therapist) {
@@ -549,7 +547,6 @@ PROMPT;
             }
 
             $this->sendJsonResponse(['therapists' => $formattedTherapists]);
-
         } catch (Exception $e) {
             $this->sendJsonResponse(['error' => $e->getMessage()], 500);
         }
@@ -564,7 +561,7 @@ PROMPT;
 
         try {
             $tagReasons = $this->model->getTagReasons();
-            
+
             // Format for frontend
             $formattedReasons = array();
             foreach ($tagReasons as $reason) {
@@ -576,7 +573,6 @@ PROMPT;
             }
 
             $this->sendJsonResponse(['tag_reasons' => $formattedReasons]);
-
         } catch (Exception $e) {
             $this->sendJsonResponse(['error' => $e->getMessage()], 500);
         }
@@ -648,7 +644,6 @@ PROMPT;
                 'conversation' => $conversation,
                 'messages' => $messages
             ]);
-
         } catch (Exception $e) {
             $this->sendJsonResponse(['error' => $e->getMessage()], 500);
         }
@@ -660,7 +655,7 @@ PROMPT;
     private function handleGetMessages()
     {
         $user_id = $this->validatePatientOrFail();
-        
+
         $conversation_id = $_GET['conversation_id'] ?? null;
         $after_id = isset($_GET['after_id']) ? (int)$_GET['after_id'] : null;
 
@@ -685,7 +680,7 @@ PROMPT;
 
         try {
             $messages = $this->therapy_service->getTherapyMessages($conversation_id, 100, $after_id);
-            
+
             // Update last seen
             $this->therapy_service->updateLastSeen($conversation_id, 'subject');
 
@@ -693,9 +688,103 @@ PROMPT;
                 'messages' => $messages,
                 'conversation_id' => $conversation_id
             ]);
-
         } catch (Exception $e) {
             $this->sendJsonResponse(['error' => $e->getMessage()], 500);
+        }
+    }
+
+    /**
+     * Handle speech transcription request
+     * 
+     * Receives audio from client and sends it to Whisper API for transcription.
+     * Uses the LLM plugin's speech-to-text service if available.
+     */
+    private function handleSpeechTranscribe()
+    {
+        $this->validatePatientOrFail();
+
+        // Check if speech-to-text is enabled
+        if (!$this->model->isSpeechToTextEnabled()) {
+            $this->sendJsonResponse(['error' => 'Speech-to-text is not enabled'], 400);
+            return;
+        }
+
+        // Check for uploaded audio file
+        if (!isset($_FILES['audio']) || $_FILES['audio']['error'] !== UPLOAD_ERR_OK) {
+            $this->sendJsonResponse(['error' => 'No audio file uploaded'], 400);
+            return;
+        }
+
+        $audioFile = $_FILES['audio'];
+        $tempPath = $audioFile['tmp_name'];
+
+        // Validate file size (max 25MB)
+        $maxSize = 25 * 1024 * 1024; // 25MB
+        if ($audioFile['size'] > $maxSize) {
+            $this->sendJsonResponse(['error' => 'Audio file too large (max 25MB)'], 400);
+            return;
+        }
+
+        // Validate MIME type
+        $allowedTypes = [
+            'audio/webm',
+            'audio/webm;codecs=opus',
+            'audio/wav',
+            'audio/mp3',
+            'audio/mpeg',
+            'audio/mp4',
+            'audio/ogg',
+            'audio/flac'
+        ];
+
+        $finfo = finfo_open(FILEINFO_MIME_TYPE);
+        $mimeType = finfo_file($finfo, $tempPath);
+        finfo_close($finfo);
+
+        // Be lenient with MIME types since browser might send different formats
+        if (!in_array($mimeType, $allowedTypes) && strpos($mimeType, 'audio') === false) {
+            $this->sendJsonResponse(['error' => 'Invalid audio format: ' . $mimeType], 400);
+            return;
+        }
+
+        try {
+            // Check if LLM Speech-to-Text service is available
+            $llmSpeechServicePath = __DIR__ . "/../../../../sh-shp-llm/server/service/LlmSpeechToTextService.php";
+
+            if (!file_exists($llmSpeechServicePath)) {
+                $this->sendJsonResponse(['error' => 'Speech-to-text service not available. Please install the sh-shp-llm plugin.'], 500);
+                return;
+            }
+
+            require_once $llmSpeechServicePath;
+
+            $services = $this->model->get_services();
+            $speechService = new LlmSpeechToTextService($services, $this->model);
+
+            $model = $this->model->getSpeechToTextModel();
+            $language = $this->model->getSpeechToTextLanguage();
+
+            $result = $speechService->transcribeAudio(
+                $tempPath,
+                $model,
+                $language !== 'auto' ? $language : null
+            );
+
+            if (isset($result['error'])) {
+                $this->sendJsonResponse(['success' => false, 'error' => $result['error']], 500);
+                return;
+            }
+
+            $this->sendJsonResponse([
+                'success' => true,
+                'text' => $result['text'] ?? ''
+            ]);
+        } catch (Exception $e) {
+            error_log("TherapyChat speech transcription error: " . $e->getMessage());
+            $this->sendJsonResponse([
+                'success' => false,
+                'error' => DEBUG ? $e->getMessage() : 'Speech transcription failed'
+            ], 500);
         }
     }
 

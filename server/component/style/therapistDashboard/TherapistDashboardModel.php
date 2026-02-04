@@ -374,8 +374,46 @@ class TherapistDashboardModel extends StyleModel
                 'interventionMessage' => $getField('dashboard_intervention_message', 'Your therapist has joined the conversation.'),
                 'aiPausedNotice' => $getField('dashboard_ai_paused_notice', 'AI responses have been paused. Your therapist will respond directly.'),
                 'aiResumedNotice' => $getField('dashboard_ai_resumed_notice', 'AI-assisted support has been resumed.'),
-            ]
+            ],
+
+            // Speech-to-Text Configuration
+            'speechToTextEnabled' => $this->isSpeechToTextEnabled(),
+            'speechToTextModel' => $this->getSpeechToTextModel(),
+            'speechToTextLanguage' => $this->getSpeechToTextLanguage(),
         ];
+    }
+
+    /**
+     * Check if speech-to-text is enabled
+     *
+     * @return bool
+     */
+    public function isSpeechToTextEnabled()
+    {
+        $enabled = (bool)$this->get_db_field('enable_speech_to_text', '0');
+        $model = $this->get_db_field('speech_to_text_model', '');
+        
+        return $enabled && !empty($model);
+    }
+
+    /**
+     * Get speech-to-text model
+     *
+     * @return string
+     */
+    public function getSpeechToTextModel()
+    {
+        return $this->get_db_field('speech_to_text_model', '');
+    }
+
+    /**
+     * Get speech-to-text language
+     *
+     * @return string
+     */
+    public function getSpeechToTextLanguage()
+    {
+        return $this->get_db_field('speech_to_text_language', 'auto');
     }
 }
 ?>

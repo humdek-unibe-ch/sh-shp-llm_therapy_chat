@@ -350,6 +350,10 @@ export interface TherapyChatConfig {
   labels: TherapyChatLabels;
   tagReasons: TagReason[];
   configuredModel?: string;
+  // Speech-to-text configuration
+  speechToTextEnabled?: boolean;
+  speechToTextModel?: string;
+  speechToTextLanguage?: string;
 }
 
 /**
@@ -368,6 +372,10 @@ export interface TherapistDashboardConfig {
   features: TherapistDashboardFeatures;
   notifications: TherapistDashboardNotifications;
   labels: TherapistDashboardLabels;
+  // Speech-to-text configuration
+  speechToTextEnabled?: boolean;
+  speechToTextModel?: string;
+  speechToTextLanguage?: string;
 }
 
 /**

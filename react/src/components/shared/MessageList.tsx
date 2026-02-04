@@ -3,11 +3,14 @@
  * ======================
  * 
  * Renders a list of chat messages with proper styling for different sender types.
+ * Uses MarkdownRenderer for proper markdown formatting in AI responses.
  */
 
 import React, { useRef, useEffect } from 'react';
 import type { Message, TherapyChatLabels, TherapistDashboardLabels } from '../../types';
+import { MarkdownRenderer } from './MarkdownRenderer';
 import './MessageList.css';
+import './MarkdownRenderer.css';
 
 interface MessageListProps {
   messages: Message[];
@@ -170,7 +173,7 @@ export const MessageList: React.FC<MessageListProps> = ({
             </span>
           </div>
           <div className="therapy-message-content">
-            {message.content}
+            <MarkdownRenderer content={message.content} />
           </div>
           {message.tags && message.tags.length > 0 && (
             <div className="therapy-message-tags">

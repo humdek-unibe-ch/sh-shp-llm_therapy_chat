@@ -5,8 +5,7 @@
 ?>
 <?php
 
-require_once __DIR__ . '/TherapyChatService.php';
-require_once __DIR__ . '/TherapyTaggingService.php';
+require_once __DIR__ . '/TherapyAlertService.php';
 
 /**
  * Therapy Message Service
@@ -21,12 +20,10 @@ require_once __DIR__ . '/TherapyTaggingService.php';
  * @package LLM Therapy Chat Plugin
  * @requires sh-shp-llm plugin
  */
-class TherapyMessageService extends TherapyChatService
+class TherapyMessageService extends TherapyAlertService
 {
     /* Properties **************************************************************/
 
-    /** @var TherapyTaggingService */
-    private $taggingService;
     /* Constants **************************************************************/
 
     const SENDER_AI = 'ai';
@@ -42,7 +39,6 @@ class TherapyMessageService extends TherapyChatService
     public function __construct($services)
     {
         parent::__construct($services);
-        $this->taggingService = new TherapyTaggingService($services);
     }
 
     /**
@@ -390,24 +386,8 @@ class TherapyMessageService extends TherapyChatService
     {
         // Check for @therapist or @Therapist tag
         if (preg_match('/@(?:therapist|Therapist)\b/', $content)) {
-            // Get assigned therapist or first available for this group
-            $conversation = $this->getTherapyConversation($conversationId);
-
-            if ($conversation) {
-                $therapistId = $conversation['id_therapist'];
-
-                // If no assigned therapist, try to find one
-                if (!$therapistId) {
-                    $therapists = $this->getTherapistsForGroup($conversation['id_groups']);
-                    if (!empty($therapists)) {
-                        $therapistId = $therapists[0]['id'];
-                    }
-                }
-
-                if ($therapistId) {
-                    $this->createTag($messageId, $therapistId, null, 'normal');
-                }
-            }
+            // Tag the assigned therapist (or first available)
+            $this->tagConversationTherapist($conversationId, $messageId, null, 'normal');
         }
     }
 
@@ -429,7 +409,6 @@ class TherapyMessageService extends TherapyChatService
             'tag_reason' => $reason,
             'id_tagUrgency' => $urgencyId
         );
-
         return $this->db->insert('therapyTags', $data);
     }
 
@@ -474,7 +453,7 @@ class TherapyMessageService extends TherapyChatService
                 INNER JOIN users_groups ug ON u.id = ug.id_users
                 WHERE ug.id_groups = ? AND u.id != ?"; // Exclude the subject if they're in the group
 
-        $subjectId = $conversation['id_users']; // Subject is the conversation owner
+        $subjectId = $conversation['id_users']; // Subject is conversation owner
         return $this->db->query_db($sql, [$therapistGroupId, $subjectId]);
     }
 
@@ -487,8 +466,8 @@ class TherapyMessageService extends TherapyChatService
     private function getUserTherapyConversations($userId)
     {
         // Check if user is a subject
-        $isSubject = $this->taggingService->isSubject($userId);
-        $isTherapist = $this->taggingService->isTherapist($userId);
+        $isSubject = $this->isSubject($userId);
+        $isTherapist = $this->isTherapist($userId);
 
         if (!$isSubject && !$isTherapist) {
             return [];
@@ -654,6 +633,112 @@ class TherapyMessageService extends TherapyChatService
         return $result ? intval($result['count']) : 0;
     }
 
+    /* Tag Reasons Configuration **********************************************/
+
+    /**
+     * Get urgency for a tag reason key
+     * 
+     * @param string $reasonKey
+     * @param array $tagReasons Array of tag reasons
+     * @return string Urgency lookup_code
+     */
+    public function getUrgencyForReasonKey($reasonKey, $tagReasons)
+    {
+        foreach ($tagReasons as $reason) {
+            if ($reason['key'] === $reasonKey) {
+                return $reason['urgency'];
+            }
+        }
+        return THERAPY_URGENCY_NORMAL;
+    }
+
+    /* Tag Creation ***********************************************************/
+
+    /**
+     * Create a tag with full alert workflow
+     *
+     * @param int $messageId LLM message ID where tag was created
+     * @param int $conversationId
+     * @param int $therapistId Tagged therapist
+     * @param string|null $reasonKey Tag reason key from JSON config
+     * @param string $urgency Urgency lookup_code (normal, urgent, emergency)
+     * @return array Result with success/error and tag ID
+     */
+    public function createTagWithAlert($messageId, $conversationId, $therapistId, $reasonKey = null, $urgency = THERAPY_URGENCY_NORMAL)
+    {
+        // Validate urgency
+        if (!in_array($urgency, THERAPY_VALID_URGENCIES)) {
+            $urgency = THERAPY_URGENCY_NORMAL;
+        }
+
+        // Validate the conversation exists and user can tag
+        $conversation = $this->getTherapyConversation($conversationId);
+        
+        if (!$conversation) {
+            return array('error' => 'Conversation not found');
+        }
+
+        // Check if therapist is valid for this group
+        $therapists = $this->getTherapistsForGroup($conversation['id_groups']);
+        $validTherapist = false;
+        
+        foreach ($therapists as $t) {
+            if ($t['id'] == $therapistId) {
+                $validTherapist = true;
+                break;
+            }
+        }
+
+        if (!$validTherapist) {
+            return array('error' => 'Invalid therapist for this conversation');
+        }
+
+        // Get urgency lookup ID
+        $urgencyId = $this->db->get_lookup_id_by_code(THERAPY_LOOKUP_TAG_URGENCY, $urgency);
+
+        // Create the tag
+        $tagData = array(
+            'id_llmMessages' => $messageId,
+            'id_users' => $therapistId,
+            'tag_reason' => $reasonKey,
+            'id_tagUrgency' => $urgencyId
+        );
+
+        $tagId = $this->db->insert('therapyTags', $tagData);
+
+        if (!$tagId) {
+            return array('error' => 'Failed to create tag');
+        }
+
+        // Create alert for the therapist
+        $this->createTagAlert($conversationId, $tagId, $therapistId, $reasonKey, $urgency);
+
+        // Update risk level based on urgency
+        if ($urgency === THERAPY_URGENCY_EMERGENCY) {
+            $this->updateRiskLevel($conversationId, THERAPY_RISK_CRITICAL);
+        } elseif ($urgency === THERAPY_URGENCY_URGENT) {
+            // Only elevate if not already higher
+            if (!in_array($conversation['risk_level'], array(THERAPY_RISK_HIGH, THERAPY_RISK_CRITICAL))) {
+                $this->updateRiskLevel($conversationId, THERAPY_RISK_MEDIUM);
+            }
+        }
+
+        // Log transaction
+        $this->logTransaction(
+            transactionTypes_insert,
+            'therapyTags',
+            $tagId,
+            $conversation['id_users'],
+            "Therapist tagged with urgency: $urgency"
+        );
+
+        return array(
+            'success' => true,
+            'tag_id' => $tagId,
+            'alert_created' => true
+        );
+    }
+
     /**
      * Tag the assigned therapist (or first available)
      *
@@ -665,7 +750,126 @@ class TherapyMessageService extends TherapyChatService
      */
     public function tagConversationTherapist($conversationId, $messageId, $reasonKey = null, $urgency = THERAPY_URGENCY_NORMAL)
     {
-        return $this->taggingService->tagConversationTherapist($conversationId, $messageId, $reasonKey, $urgency);
+        $conversation = $this->getTherapyConversation($conversationId);
+        
+        if (!$conversation) {
+            return array('error' => 'Conversation not found');
+        }
+
+        // Get therapist to tag
+        $therapistId = $conversation['id_therapist'];
+        
+        if (!$therapistId) {
+            // Find first available therapist for the group
+            $therapists = $this->getTherapistsForGroup($conversation['id_groups']);
+            
+            if (empty($therapists)) {
+                return array('error' => 'No therapist available');
+            }
+            
+            $therapistId = $therapists[0]['id'];
+        }
+
+        return $this->createTagWithAlert($messageId, $conversationId, $therapistId, $reasonKey, $urgency);
+    }
+
+    /* Tag Retrieval **********************************************************/
+
+    /**
+     * Get pending (unacknowledged) tags for a therapist
+     * Uses view_therapyTags for easy access to lookup values
+     *
+     * @param int $therapistId
+     * @param int $limit
+     * @return array
+     */
+    public function getPendingTagsForTherapist($therapistId, $limit = 50)
+    {
+        $conversations = $this->getTherapyConversationsByTherapist($therapistId);
+        
+        if (empty($conversations)) {
+            return array();
+        }
+
+        $conversationIds = array_column($conversations, 'id_llmConversations');
+        $placeholders = implode(',', array_fill(0, count($conversationIds), '?'));
+
+        $sql = "SELECT vtt.*, lc.id_users as subject_id, u.name as subject_name, vc.code as subject_code
+                FROM view_therapyTags vtt
+                INNER JOIN llmConversations lc ON lc.id = vtt.conversation_id
+                INNER JOIN users u ON u.id = lc.id_users
+                LEFT JOIN validation_codes vc ON vc.id_users = u.id
+                WHERE vtt.conversation_id IN ($placeholders)
+                AND vtt.id_users = ?
+                AND vtt.acknowledged = 0
+                ORDER BY 
+                    FIELD(vtt.urgency, '" . THERAPY_URGENCY_EMERGENCY . "', '" . THERAPY_URGENCY_URGENT . "', '" . THERAPY_URGENCY_NORMAL . "'),
+                    vtt.created_at DESC
+                LIMIT " . (int)$limit;
+
+        $params = $conversationIds;
+        $params[] = $therapistId;
+
+        $result = $this->db->query_db($sql, $params);
+        return $result !== false ? $result : array();
+    }
+
+    /**
+     * Get all tags for a conversation
+     * Uses view_therapyTags for easy access to lookup values
+     *
+     * @param int $conversationId
+     * @return array
+     */
+    public function getTagsForConversation($conversationId)
+    {
+        $sql = "SELECT * FROM view_therapyTags
+                WHERE conversation_id = :cid
+                ORDER BY created_at DESC";
+
+        $result = $this->db->query_db($sql, array(':cid' => $conversationId));
+        return $result !== false ? $result : array();
+    }
+
+    /* Tag Management *********************************************************/
+
+    /**
+     * Acknowledge a tag
+     *
+     * @param int $tagId
+     * @param int $therapistId
+     * @return bool
+     */
+    public function acknowledgeTag($tagId, $therapistId)
+    {
+        // Verify therapist owns this tag
+        $sql = "SELECT tt.* FROM therapyTags tt WHERE tt.id = :tid AND tt.id_users = :uid";
+        $tag = $this->db->query_db_first($sql, array(':tid' => $tagId, ':uid' => $therapistId));
+        
+        if (!$tag) {
+            return false;
+        }
+
+        return $this->db->update_by_ids(
+            'therapyTags',
+            array(
+                'acknowledged' => 1,
+                'acknowledged_at' => date('Y-m-d H:i:s')
+            ),
+            array('id' => $tagId)
+        );
+    }
+
+    /**
+     * Get count of pending tags for a therapist
+     *
+     * @param int $therapistId
+     * @return int
+     */
+    public function getPendingTagCount($therapistId)
+    {
+        $tags = $this->getPendingTagsForTherapist($therapistId, 1000);
+        return count($tags);
     }
 
     /**
@@ -689,33 +893,6 @@ class TherapyMessageService extends TherapyChatService
         }
 
         return $defaultValue;
-    }
-    public function parseTagReasons($jsonConfig)
-    {
-        if (!empty($jsonConfig)) {
-            $parsed = json_decode($jsonConfig, true);
-            if (is_array($parsed) && !empty($parsed)) {
-                // Validate each reason has required fields
-                $valid = array();
-                foreach ($parsed as $reason) {
-                    if (isset($reason['key']) && isset($reason['label'])) {
-                        $valid[] = array(
-                            'key' => $reason['key'],
-                            'label' => $reason['label'],
-                            'urgency' => isset($reason['urgency']) && in_array($reason['urgency'], THERAPY_VALID_URGENCIES)
-                                ? $reason['urgency']
-                                : THERAPY_URGENCY_NORMAL
-                        );
-                    }
-                }
-                if (!empty($valid)) {
-                    return $valid;
-                }
-            }
-        }
-
-        // Return default reasons
-        return $this->getDefaultTagReasons();
     }
 
     /**

@@ -229,7 +229,7 @@ export const SubjectChat: React.FC<SubjectChatProps> = ({ config }) => {
             buttonLabel={config.labels.tag_button_label}
           />
 
-          {/* Message Input with @mentions and #topics support */}
+          {/* Message Input with @mentions, #topics, and speech-to-text support */}
           <MessageInput
             onSend={handleSendMessage}
             disabled={isSending || isLoading}
@@ -243,6 +243,10 @@ export const SubjectChat: React.FC<SubjectChatProps> = ({ config }) => {
               name: t.name || t.display,
               email: t.email,
             }))}
+            speechToTextEnabled={config.speechToTextEnabled}
+            speechToTextModel={config.speechToTextModel}
+            speechToTextLanguage={config.speechToTextLanguage}
+            sectionId={config.sectionId}
           />
         </Card.Footer>
       </Card>
