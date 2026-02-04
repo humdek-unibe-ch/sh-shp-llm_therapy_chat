@@ -160,10 +160,22 @@ VALUES
 (@id_page_therapy_chat_config, get_field_id('title'), '0000000002', 'LLM Therapie-Chat Konfiguration');
 
 -- =====================================================
--- THERAPY EXTENSION TABLES
--- These tables EXTEND the LLM plugin tables with therapy features
--- Uses lookups table for all status/type values
+-- THERAPY MESSAGE RECIPIENTS
+-- Tracks per-user message seen status (similar to chatRecipiants)
 -- =====================================================
+
+CREATE TABLE IF NOT EXISTS `therapyMessageRecipients` (
+    `id_llmMessages` INT(10) UNSIGNED ZEROFILL NOT NULL COMMENT 'Reference to llmMessages',
+    `id_users` INT(10) UNSIGNED ZEROFILL NOT NULL COMMENT 'Recipient user ID',
+    `is_new` TINYINT(1) DEFAULT 1 COMMENT '1=new unread, 0=seen',
+    `seen_at` TIMESTAMP NULL DEFAULT NULL COMMENT 'When user marked message as seen',
+    PRIMARY KEY (`id_llmMessages`, `id_users`),
+    KEY `idx_message` (`id_llmMessages`),
+    KEY `idx_user` (`id_users`),
+    KEY `idx_unread` (`is_new`, `id_users`),
+    CONSTRAINT `fk_therapyMessageRecipients_llmMessages` FOREIGN KEY (`id_llmMessages`) REFERENCES `llmMessages` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
+    CONSTRAINT `fk_therapyMessageRecipients_users` FOREIGN KEY (`id_users`) REFERENCES `users` (`id`) ON DELETE CASCADE ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- Therapy metadata for LLM conversations (1:1 relationship with llmConversations)
 -- This table adds therapy-specific fields to conversations

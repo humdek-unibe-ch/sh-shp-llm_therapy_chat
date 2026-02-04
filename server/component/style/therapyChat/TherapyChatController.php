@@ -289,6 +289,7 @@ class TherapyChatController extends BaseController
 
             // Process AI response if enabled
             $conversation = $this->therapy_service->getTherapyConversation($conversation_id);
+            
             if ($conversation && $conversation['ai_enabled'] && $conversation['mode'] === THERAPY_MODE_AI_HYBRID) {
                 $ai_response = $this->processAIResponse($conversation_id, $conversation);
                 
@@ -522,6 +523,9 @@ PROMPT;
             error_log("TherapyChat: Access granted, returning conversation data");
 
             $messages = $this->therapy_service->getTherapyMessages($conversation['id']);
+
+            // Mark messages as seen when conversation is loaded
+            $this->therapy_service->updateLastSeen($conversation['id'], 'subject');
 
             $this->sendJsonResponse([
                 'conversation' => $conversation,

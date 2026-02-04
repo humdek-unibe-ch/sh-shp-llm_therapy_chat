@@ -6,6 +6,7 @@
 <?php
 
 require_once __DIR__ . '/TherapyChatService.php';
+require_once __DIR__ . '/TherapyTaggingService.php';
 
 /**
  * Therapy Message Service
@@ -22,6 +23,10 @@ require_once __DIR__ . '/TherapyChatService.php';
  */
 class TherapyMessageService extends TherapyChatService
 {
+    /* Properties **************************************************************/
+
+    /** @var TherapyTaggingService */
+    private $taggingService;
     /* Constants **************************************************************/
     
     const SENDER_AI = 'ai';
@@ -29,7 +34,16 @@ class TherapyMessageService extends TherapyChatService
     const SENDER_SUBJECT = 'subject';
     const SENDER_SYSTEM = 'system';
 
-    /* Message Management *****************************************************/
+    /**
+     * Constructor
+     *
+     * @param object $services Service container
+     */
+    public function __construct($services)
+    {
+        parent::__construct($services);
+        $this->taggingService = new TherapyTaggingService($services);
+    }
 
     /**
      * Send a message in a therapy conversation
@@ -66,12 +80,17 @@ class TherapyMessageService extends TherapyChatService
         // Get model for therapist/AI messages
         $model = ($senderType === self::SENDER_AI) ? $conversation['model'] : null;
 
-        // Build sent context with sender type metadata
-        $sentContext = array(
-            'therapy_sender_type' => $senderType,
-            'therapy_sender_id' => $senderId,
-            'therapy_mode' => $conversation['mode']
-        );
+        // For subject messages: check if therapist is tagged
+        $skipAI = false;
+        if ($senderType === self::SENDER_SUBJECT) {
+            // Check for @therapist tag in content
+            if (preg_match('/@(?:therapist|Therapist)\b/', $content)) {
+                $skipAI = true; // Skip AI processing, send to therapist
+            }
+        }
+
+        // Store skipAI flag in sent context for frontend reference
+        $sentContext['therapy_skip_ai'] = $skipAI;
 
         if ($metadata) {
             $sentContext = array_merge($sentContext, $metadata);
@@ -102,6 +121,9 @@ class TherapyMessageService extends TherapyChatService
         } else if ($senderType === self::SENDER_SUBJECT) {
             $this->updateLastSeen($conversationId, 'subject');
         }
+
+        // Create message recipients based on sender type and skipAI flag
+        $this->createMessageRecipients($messageId, $conversationId, $senderType, $senderId, $skipAI);
 
         // Check for @mentions (tags) in subject messages
         if ($senderType === self::SENDER_SUBJECT) {
@@ -258,39 +280,6 @@ class TherapyMessageService extends TherapyChatService
         return intval($result['cnt'] ?? 0);
     }
 
-    /**
-     * Get unread message count for a user across all their conversations
-     *
-     * @param int $userId
-     * @return int
-     */
-    public function getUnreadCountForUser($userId)
-    {
-        // Get the lookup ID for active status
-        $activeStatusId = $this->db->get_lookup_id_by_code(THERAPY_LOOKUP_CONVERSATION_STATUS, THERAPY_STATUS_ACTIVE);
-        
-        // For subjects: count messages since their last_seen
-        $sql = "SELECT SUM(
-                    (SELECT COUNT(*) FROM llmMessages lm 
-                     WHERE lm.id_llmConversations = lc.id 
-                     AND lm.deleted = 0 
-                     AND lm.is_validated = 1
-                     AND lm.timestamp > COALESCE(tcm.subject_last_seen, '1970-01-01'))
-                ) as cnt
-                FROM llmConversations lc
-                INNER JOIN therapyConversationMeta tcm ON tcm.id_llmConversations = lc.id
-                WHERE lc.id_users = :uid
-                AND lc.deleted = 0
-                AND tcm.id_conversationStatus = :active_status_id";
-        
-        $result = $this->db->query_db_first($sql, array(
-            ':uid' => $userId,
-            ':active_status_id' => $activeStatusId
-        ));
-
-        return intval($result['cnt'] ?? 0);
-    }
-
     /* Private Helpers ********************************************************/
 
     /**
@@ -405,17 +394,245 @@ class TherapyMessageService extends TherapyChatService
         return $this->db->query_db($sql, array(':mid' => $messageId));
     }
 
-    /* Tag Reasons Configuration **********************************************/
+    /* Helper Methods for Message Recipients ******************************/
 
     /**
-     * Get tag reasons from JSON configuration
+     * Get all therapists in the configured therapist group
      *
-     * Returns array of tag reasons with keys, labels, and urgency levels.
-     * Falls back to default reasons if not configured.
-     *
-     * @param string|null $jsonConfig JSON string from therapy_tag_reasons field
-     * @return array Array of tag reason objects
+     * @param int $conversationId
+     * @return array Array of therapist user records
      */
+    private function getTherapistsForConversation($conversationId)
+    {
+        $conversation = $this->getTherapyConversation($conversationId);
+        if (!$conversation || !$conversation['id_groups']) {
+            return [];
+        }
+
+        // Get therapist group ID from configuration
+        $therapistGroupId = $this->getConfigValue('therapy_chat_therapist_group');
+        if (!$therapistGroupId) {
+            return [];
+        }
+
+        $sql = "SELECT u.id, u.name, u.email FROM users u
+                INNER JOIN users_groups ug ON u.id = ug.id_users
+                WHERE ug.id_groups = ? AND u.id != ?"; // Exclude the subject if they're in the group
+
+        $subjectId = $conversation['id_users']; // Subject is the conversation owner
+        return $this->db->query_db($sql, [$therapistGroupId, $subjectId]);
+    }
+
+    /**
+     * Get all therapy conversations a user can access
+     *
+     * @param int $userId
+     * @return array Array of therapy conversation meta records
+     */
+    private function getUserTherapyConversations($userId)
+    {
+        // Check if user is a subject
+        $isSubject = $this->taggingService->isSubject($userId);
+        $isTherapist = $this->taggingService->isTherapist($userId);
+
+        if (!$isSubject && !$isTherapist) {
+            return [];
+        }
+
+        $sql = "SELECT tcm.* FROM therapyConversationMeta tcm
+                INNER JOIN llmConversations lc ON tcm.id_llmConversations = lc.id";
+
+        $params = [];
+        if ($isSubject && !$isTherapist) {
+            // Subject can only see their own conversations
+            $sql .= " WHERE lc.id_users = ?";
+            $params[] = $userId;
+        } elseif ($isTherapist) {
+            // Therapists can see conversations in their assigned group
+            $sql .= " WHERE tcm.id_groups = (SELECT id_groups FROM users_groups WHERE id_users = ? LIMIT 1)";
+            $params[] = $userId;
+        }
+
+        return $this->db->query_db($sql, $params);
+    }
+
+    /**
+     * Create message recipients based on sender type
+     *
+     * @param int $messageId LLM message ID
+     * @param int $conversationId Therapy conversation ID
+     * @param string $senderType SENDER_* constant
+     * @param int $senderId User ID of sender
+     * @param bool $skipAI Whether to skip AI processing (for tagged messages)
+     */
+    private function createMessageRecipients($messageId, $conversationId, $senderType, $senderId, $skipAI = false)
+    {
+        $recipients = [];
+
+        if ($senderType === self::SENDER_SUBJECT) {
+            // Subject messages: conditional based on skipAI flag
+            if ($skipAI) {
+                // Tagged message (@therapist): send to all therapists in group
+                $therapists = $this->getTherapistsForConversation($conversationId);
+                foreach ($therapists as $therapist) {
+                    $recipients[] = [
+                        'id_llmMessages' => $messageId,
+                        'id_users' => $therapist['id'],
+                        'is_new' => 1,
+                        'seen_at' => null
+                    ];
+                }
+            }
+            // If not skipAI, don't create recipients (AI-only conversation)
+        } elseif ($senderType === self::SENDER_THERAPIST) {
+            // Therapist sends to subject
+            $conversation = $this->getTherapyConversation($conversationId);
+            if ($conversation) {
+                $recipients[] = [
+                    'id_llmMessages' => $messageId,
+                    'id_users' => $conversation['id_users'], // Subject is conversation owner
+                    'is_new' => 1,
+                    'seen_at' => null
+                ];
+            }
+        } elseif ($senderType === self::SENDER_AI) {
+            // AI sends to subject (and assigned therapist if exists)
+            $conversation = $this->getTherapyConversation($conversationId);
+            if ($conversation) {
+                $recipients[] = [
+                    'id_llmMessages' => $messageId,
+                    'id_users' => $conversation['id_users'], // Subject
+                    'is_new' => 1,
+                    'seen_at' => null
+                ];
+
+                // Also send to assigned therapist if exists
+                if ($conversation['id_therapist']) {
+                    $recipients[] = [
+                        'id_llmMessages' => $messageId,
+                        'id_users' => $conversation['id_therapist'],
+                        'is_new' => 1,
+                        'seen_at' => null
+                    ];
+                }
+            }
+        }
+
+        // Bulk insert recipients
+        if (!empty($recipients)) {
+            $values = [];
+            foreach ($recipients as $recipient) {
+                $values[] = [$recipient['id_llmMessages'], $recipient['id_users'], $recipient['is_new'], $recipient['seen_at']];
+            }
+            $this->db->insert_mult('therapyMessageRecipients',
+                ['id_llmMessages', 'id_users', 'is_new', 'seen_at'],
+                $values);
+        }
+    }
+
+    /**
+     * Mark messages as seen for a user in a conversation
+     *
+     * @param int $conversationId Therapy conversation ID
+     * @param int $userId User ID
+     * @param int|null $upToMessageId Mark messages up to this ID as seen
+     * @return bool Success status
+     */
+    public function markMessagesAsSeen($conversationId, $userId, $upToMessageId = null)
+    {
+        // Verify user can access this conversation
+        if (!$this->canAccessTherapyConversation($userId, $conversationId)) {
+            return false;
+        }
+
+        $sql = "UPDATE therapyMessageRecipients
+                SET is_new = 0, seen_at = NOW()
+                WHERE id_users = ? AND id_llmMessages IN (
+                    SELECT lm.id FROM llmMessages lm
+                    INNER JOIN therapyConversationMeta tcm ON lm.id_llmConversations = tcm.id_llmConversations
+                    WHERE tcm.id = ?";
+
+        $params = [$userId, $conversationId];
+
+        if ($upToMessageId) {
+            $sql .= " AND lm.id <= ?";
+            $params[] = $upToMessageId;
+        }
+        $sql .= ")";
+
+        try {
+            $this->db->query_db($sql, $params);
+            return true;
+        } catch (Exception $e) {
+            return false;
+        }
+    }
+
+    /**
+     * Get unread message count for a user across all their therapy conversations
+     *
+     * @param int $userId User ID
+     * @return int Number of unread messages
+     */
+    public function getUnreadCountForUser($userId)
+    {
+        // Get all therapy conversations this user can access
+        $conversations = $this->getUserTherapyConversations($userId);
+        if (empty($conversations)) {
+            return 0;
+        }
+
+        $conversationIds = array_column($conversations, 'id');
+
+        $placeholders = str_repeat('?,', count($conversationIds) - 1) . '?';
+
+        $sql = "SELECT COUNT(*) as count FROM therapyMessageRecipients tmr
+                INNER JOIN llmMessages lm ON tmr.id_llmMessages = lm.id
+                INNER JOIN therapyConversationMeta tcm ON lm.id_llmConversations = tcm.id_llmConversations
+                WHERE tmr.id_users = ? AND tmr.is_new = 1 AND tcm.id IN ($placeholders)";
+
+        $params = array_merge([$userId], $conversationIds);
+        $result = $this->db->query_db_first($sql, $params);
+
+        return $result ? intval($result['count']) : 0;
+    }
+
+    /**
+     * Tag the assigned therapist (or first available)
+     *
+     * @param int $conversationId
+     * @param int $messageId
+     * @param string|null $reasonKey
+     * @param string $urgency
+     * @return array
+     */
+    public function tagConversationTherapist($conversationId, $messageId, $reasonKey = null, $urgency = THERAPY_URGENCY_NORMAL)
+    {
+        return $this->taggingService->tagConversationTherapist($conversationId, $messageId, $reasonKey, $urgency);
+    }
+
+    /**
+     * Get configuration value from therapy chat module settings
+     *
+     * @param string $fieldName Field name
+     * @param string $defaultValue Default value if not found
+     * @return string Configuration value
+     */
+    private function getConfigValue($fieldName, $defaultValue = '')
+    {
+        try {
+            // Get the therapy chat configuration page info
+            $configPage = $this->db->fetch_page_info('sh_module_llm_therapy_chat');
+
+            if ($configPage && isset($configPage[$fieldName])) {
+                return $configPage[$fieldName] ?: $defaultValue;
+            }
+        } catch (Exception $e) {
+            // Fall back to default if there's any error
+        }
+
+        return $defaultValue;
+    }
     public function parseTagReasons($jsonConfig)
     {
         if (!empty($jsonConfig)) {
