@@ -108,23 +108,4 @@ class TherapyTaggingService extends TherapyAlertService
         $result = $this->db->query_db($sql, $params);
         return $result !== false ? $result : array();
     }
-
-    /**
-     * Get therapy conversations by therapist
-     *
-     * @param int $therapistId
-     * @param array $filters
-     * @param int $limit
-     * @param int $offset
-     * @return array
-     */
-    public function getTherapyConversationsByTherapist($therapistId, $filters = array(), $limit = 50, $offset = 0)
-    {
-        $sql = "SELECT tcm.* FROM therapyConversationMeta tcm
-                INNER JOIN llmConversations lc ON tcm.id_llmConversations = lc.id
-                WHERE tcm.id_groups = (SELECT id_groups FROM users_groups WHERE id_users = ? LIMIT 1)";
-
-        return $this->db->query_db($sql, [$therapistId]);
-    }
 }
-?>
