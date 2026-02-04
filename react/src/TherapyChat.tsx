@@ -101,8 +101,8 @@ const SubjectChatLoader: React.FC<{ fallbackConfig: TherapyChatConfig | null }> 
     // Try to load fresh config from API
     async function loadConfig() {
       try {
-        const response = await therapyChatApi.getConfig(fallbackConfig!.sectionId);
-        setConfig(response.config);
+        const config = await therapyChatApi.getConfig(fallbackConfig!.sectionId);
+        setConfig(config);
       } catch (err) {
         console.warn('Failed to load config from API, using fallback:', err);
         // Keep using fallback config
@@ -163,8 +163,8 @@ const TherapistDashboardLoader: React.FC<{ fallbackConfig: TherapistDashboardCon
     // Try to load fresh config from API
     async function loadConfig() {
       try {
-        const response = await therapistDashboardApi.getConfig(fallbackConfig!.sectionId);
-        setConfig(response.config);
+        const config = await therapistDashboardApi.getConfig(fallbackConfig!.sectionId);
+        setConfig(config);
       } catch (err) {
         console.warn('Failed to load config from API, using fallback:', err);
         // Keep using fallback config
