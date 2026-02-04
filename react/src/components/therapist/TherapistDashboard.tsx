@@ -5,11 +5,12 @@
  * Dashboard for therapists to monitor and communicate with patients.
  * Features:
  * - Conversation list with filtering
- * - Real-time message viewing
+ * - Real-time message viewing with unread counts
  * - Alert management
  * - Notes and controls
  * - AI toggle and risk management
  * - Invisible monitoring mode
+ * - Per-subject unread message tracking
  */
 
 import React, { useState, useEffect, useCallback } from 'react';
@@ -20,7 +21,7 @@ import { LoadingIndicator } from '../shared/LoadingIndicator';
 import { useChatState } from '../../hooks/useChatState';
 import { usePolling } from '../../hooks/usePolling';
 import { therapistDashboardApi } from '../../utils/api';
-import type { TherapistDashboardConfig, Conversation, Alert as AlertType, Tag, Note, RiskLevel, ConversationStatus } from '../../types';
+import type { TherapistDashboardConfig, Conversation, Alert as AlertType, Tag, Note, RiskLevel, ConversationStatus, UnreadCounts } from '../../types';
 import './TherapistDashboard.css';
 
 // Filter types
@@ -43,6 +44,7 @@ export const TherapistDashboard: React.FC<TherapistDashboardProps> = ({ config }
   const [listError, setListError] = useState<string | null>(null);
   const [activeFilter, setActiveFilter] = useState<FilterType>('all');
   const [isInvisibleMode, setIsInvisibleMode] = useState(false);
+  const [unreadCounts, setUnreadCounts] = useState<UnreadCounts>({ total: 0, bySubject: {} });
 
   // Feature toggles from config
   const { features, labels } = config;
@@ -102,6 +104,18 @@ export const TherapistDashboard: React.FC<TherapistDashboardProps> = ({ config }
   }, [config.sectionId]);
 
   /**
+   * Load unread counts per subject
+   */
+  const loadUnreadCounts = useCallback(async () => {
+    try {
+      const response = await therapistDashboardApi.getUnreadCounts(config.sectionId);
+      setUnreadCounts(response.unread_counts || { total: 0, bySubject: {} });
+    } catch (err) {
+      console.error('Load unread counts error:', err);
+    }
+  }, [config.sectionId]);
+
+  /**
    * Load notes for selected conversation
    */
   const loadNotes = useCallback(async (conversationId: number | string) => {
@@ -120,7 +134,8 @@ export const TherapistDashboard: React.FC<TherapistDashboardProps> = ({ config }
     loadConversations();
     loadAlerts();
     loadTags();
-  }, [loadConversations, loadAlerts, loadTags]);
+    loadUnreadCounts();
+  }, [loadConversations, loadAlerts, loadTags, loadUnreadCounts]);
 
   /**
    * Load selected conversation
@@ -133,12 +148,13 @@ export const TherapistDashboard: React.FC<TherapistDashboardProps> = ({ config }
   }, [selectedConversationId, loadConversation, loadNotes]);
 
   /**
-   * Set up polling for alerts and messages
+   * Set up polling for alerts, tags, and unread counts
    */
   usePolling({
     callback: async () => {
       await loadAlerts();
       await loadTags();
+      await loadUnreadCounts();
       if (selectedConversationId) {
         // Poll messages handled by useChatState
       }
@@ -150,9 +166,18 @@ export const TherapistDashboard: React.FC<TherapistDashboardProps> = ({ config }
   /**
    * Handle conversation selection
    */
-  const handleSelectConversation = useCallback((convId: number | string) => {
+  const handleSelectConversation = useCallback(async (convId: number | string) => {
     setSelectedConversationId(convId);
-  }, []);
+    
+    // Mark messages as read when conversation is selected
+    try {
+      await therapistDashboardApi.markMessagesRead(config.sectionId, convId);
+      // Refresh unread counts
+      loadUnreadCounts();
+    } catch (err) {
+      console.error('Mark messages read error:', err);
+    }
+  }, [config.sectionId, loadUnreadCounts]);
 
   /**
    * Handle toggle AI
@@ -324,6 +349,13 @@ export const TherapistDashboard: React.FC<TherapistDashboardProps> = ({ config }
                     <div className="h4 mb-0 text-success">{config.stats.active}</div>
                     <small className="text-muted">{labels.statActive}</small>
                   </div>
+                  {/* Unread messages count - NEW */}
+                  <div className="text-center px-3">
+                    <div className={`h4 mb-0 ${unreadCounts.total > 0 ? 'text-primary font-weight-bold' : ''}`}>
+                      {unreadCounts.total}
+                    </div>
+                    <small className="text-muted">Unread</small>
+                  </div>
                   <div className="text-center px-3">
                     <div className="h4 mb-0 text-danger">{config.stats.risk_critical}</div>
                     <small className="text-muted">{labels.statCritical}</small>
@@ -434,37 +466,56 @@ export const TherapistDashboard: React.FC<TherapistDashboardProps> = ({ config }
               ) : getFilteredConversations().length === 0 ? (
                 <div className="p-3 text-center text-muted">{labels.noConversations}</div>
               ) : (
-                getFilteredConversations().map((conv) => (
-                  <ListGroup.Item
-                    key={conv.id}
-                    action
-                    active={selectedConversationId === conv.id}
-                    onClick={() => handleSelectConversation(conv.id)}
-                    className="d-flex justify-content-between align-items-start"
-                  >
-                    <div className="flex-grow-1">
-                      <div className="d-flex justify-content-between align-items-center mb-1">
-                        <strong>{conv.subject_name || 'Unknown'}</strong>
-                        <div className="d-flex gap-1">
-                          {features.showRiskColumn && getRiskBadge(conv.risk_level)}
-                          {features.showStatusColumn && getStatusBadge(conv.status)}
-                          {(conv.unread_alerts ?? 0) > 0 && (
-                            <Badge variant="danger" className="ml-1">{conv.unread_alerts}</Badge>
-                          )}
-                          {(conv.pending_tags ?? 0) > 0 && (
-                            <Badge variant="warning" className="ml-1">
-                              <i className="fas fa-at"></i>
-                            </Badge>
-                          )}
+                getFilteredConversations().map((conv) => {
+                  // Get unread count for this subject
+                  const subjectUnread = unreadCounts.bySubject[conv.id_users ?? 0];
+                  const unreadMessageCount = subjectUnread?.unreadCount ?? 0;
+                  
+                  return (
+                    <ListGroup.Item
+                      key={conv.id}
+                      action
+                      active={selectedConversationId === conv.id}
+                      onClick={() => handleSelectConversation(conv.id)}
+                      className={`d-flex justify-content-between align-items-start ${unreadMessageCount > 0 ? 'therapist-unread-conversation' : ''}`}
+                    >
+                      <div className="flex-grow-1">
+                        <div className="d-flex justify-content-between align-items-center mb-1">
+                          <div className="d-flex align-items-center">
+                            <strong className={unreadMessageCount > 0 ? 'font-weight-bold' : ''}>
+                              {conv.subject_name || 'Unknown'}
+                            </strong>
+                            {/* Unread message count badge - prominent display */}
+                            {unreadMessageCount > 0 && (
+                              <Badge variant="primary" className="ml-2">
+                                {unreadMessageCount} new
+                              </Badge>
+                            )}
+                          </div>
+                          <div className="d-flex gap-1">
+                            {features.showRiskColumn && getRiskBadge(conv.risk_level)}
+                            {features.showStatusColumn && getStatusBadge(conv.status)}
+                            {(conv.unread_alerts ?? 0) > 0 && (
+                              <Badge variant="danger" className="ml-1">
+                                <i className="fas fa-exclamation-triangle mr-1"></i>
+                                {conv.unread_alerts}
+                              </Badge>
+                            )}
+                            {(conv.pending_tags ?? 0) > 0 && (
+                              <Badge variant="warning" className="ml-1">
+                                <i className="fas fa-at"></i>
+                              </Badge>
+                            )}
+                          </div>
                         </div>
+                        <small className={unreadMessageCount > 0 ? 'text-dark' : 'text-muted'}>
+                          {conv.subject_code} • {conv.message_count ?? 0} messages
+                          {conv.ai_enabled ? '' : ' • 🤖❌'}
+                        </small>
                       </div>
-                      <small className="text-muted">
-                        {conv.subject_code} • {conv.message_count ?? 0} messages
-                        {conv.ai_enabled ? '' : ' • 🤖❌'}
-                      </small>
-                    </div>
-                  </ListGroup.Item>
-                ))
+                    </ListGroup.Item>
+                  );
+                })
               )}
             </ListGroup>
           </Card>

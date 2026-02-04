@@ -5,20 +5,21 @@
  * Main chat interface for subjects/patients.
  * Features:
  * - Real-time messaging with AI and therapist
- * - @mention tagging for therapist
+ * - @mention tagging for therapist using react-mentions
+ * - #topic tagging for therapy reasons
  * - Polling-based message updates
  */
 
-import React, { useEffect, useCallback } from 'react';
+import React, { useEffect, useCallback, useState } from 'react';
 import { Container, Card, Alert, Badge } from 'react-bootstrap';
 import { MessageList } from '../shared/MessageList';
-import { MessageInput } from '../shared/MessageInput';
+import { MessageInput, MentionData } from '../shared/MessageInput';
 import { LoadingIndicator } from '../shared/LoadingIndicator';
 import { TaggingPanel } from '../shared/TaggingPanel';
 import { useChatState } from '../../hooks/useChatState';
 import { usePolling } from '../../hooks/usePolling';
 import { therapyChatApi } from '../../utils/api';
-import type { TherapyChatConfig, TagUrgency } from '../../types';
+import type { TherapyChatConfig, TagUrgency, TherapistSuggestion } from '../../types';
 import './SubjectChat.css';
 
 interface SubjectChatProps {
@@ -26,6 +27,9 @@ interface SubjectChatProps {
 }
 
 export const SubjectChat: React.FC<SubjectChatProps> = ({ config }) => {
+  const [therapists, setTherapists] = useState<TherapistSuggestion[]>([]);
+  const [therapistsLoaded, setTherapistsLoaded] = useState(false);
+
   const {
     conversation,
     messages,
@@ -58,7 +62,27 @@ export const SubjectChat: React.FC<SubjectChatProps> = ({ config }) => {
   });
 
   /**
-   * Handle tagging therapist
+   * Load therapists for @mention suggestions
+   */
+  const loadTherapists = useCallback(async (): Promise<TherapistSuggestion[]> => {
+    if (therapistsLoaded && therapists.length > 0) {
+      return therapists;
+    }
+
+    try {
+      const response = await therapyChatApi.getTherapists(config.sectionId);
+      const loadedTherapists = response.therapists || [];
+      setTherapists(loadedTherapists);
+      setTherapistsLoaded(true);
+      return loadedTherapists;
+    } catch (err) {
+      console.error('Failed to load therapists:', err);
+      return [];
+    }
+  }, [config.sectionId, therapists, therapistsLoaded]);
+
+  /**
+   * Handle tagging therapist (from TaggingPanel)
    */
   const handleTag = useCallback(async (reason?: string, urgency?: TagUrgency) => {
     if (!conversation?.id) return;
@@ -82,6 +106,51 @@ export const SubjectChat: React.FC<SubjectChatProps> = ({ config }) => {
       throw err;
     }
   }, [config.sectionId, conversation?.id]);
+
+  /**
+   * Handle tagging therapist from @mention in message
+   */
+  const handleMentionTag = useCallback(async (reason?: string, urgency?: TagUrgency, therapistId?: number) => {
+    if (!conversation?.id) return;
+
+    try {
+      const response = await therapyChatApi.tagTherapist(
+        config.sectionId,
+        conversation.id,
+        reason,
+        urgency,
+        therapistId
+      );
+
+      if (response.error) {
+        throw new Error(response.error);
+      }
+      // Don't show alert for @mention tags - the message will be sent
+    } catch (err) {
+      console.error('Mention tag error:', err);
+    }
+  }, [config.sectionId, conversation?.id]);
+
+  /**
+   * Handle sending message with mentions
+   */
+  const handleSendMessage = useCallback(async (message: string, mentions?: MentionData) => {
+    // Use the existing sendMessage from useChatState
+    // The mentions will be processed by the backend
+    await sendMessage(message);
+    
+    // If there are therapist mentions, create tags
+    if (mentions?.therapists && mentions.therapists.length > 0) {
+      for (const therapist of mentions.therapists) {
+        const topicWithUrgency = mentions.topics?.find(t => t.urgency);
+        await handleMentionTag(
+          topicWithUrgency?.code,
+          topicWithUrgency?.urgency as TagUrgency | undefined,
+          therapist.id as number
+        );
+      }
+    }
+  }, [sendMessage, handleMentionTag]);
 
   /**
    * Get mode badge
@@ -162,11 +231,18 @@ export const SubjectChat: React.FC<SubjectChatProps> = ({ config }) => {
 
           {/* Message Input with @mentions and #topics support */}
           <MessageInput
-            onSend={sendMessage}
+            onSend={handleSendMessage}
             disabled={isSending || isLoading}
             labels={config.labels}
             tagReasons={config.tagReasons}
-            onTagTherapist={config.taggingEnabled ? (reason, urgency) => handleTag(reason, urgency) : undefined}
+            onTagTherapist={config.taggingEnabled ? handleMentionTag : undefined}
+            onLoadTherapists={config.taggingEnabled ? loadTherapists : undefined}
+            therapists={therapists.map(t => ({
+              id: t.id,
+              display: t.name || t.display,
+              name: t.name || t.display,
+              email: t.email,
+            }))}
           />
         </Card.Footer>
       </Card>

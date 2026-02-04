@@ -202,6 +202,12 @@ class TherapyChatController extends BaseController
             case 'send_message':
                 $this->handleSendMessage();
                 break;
+            case 'get_therapists':
+                $this->handleGetTherapists();
+                break;
+            case 'get_tag_reasons':
+                $this->handleGetTagReasons();
+                break;
             default:
                 // Regular page load
                 break;
@@ -398,6 +404,7 @@ PROMPT;
         $conversation_id = $_POST['conversation_id'] ?? null;
         $reason = $_POST['reason'] ?? null;
         $urgency = $_POST['urgency'] ?? THERAPY_URGENCY_NORMAL;
+        $therapist_id = $_POST['therapist_id'] ?? null;
 
         // Validate urgency
         if (!in_array($urgency, THERAPY_VALID_URGENCIES)) {
@@ -410,8 +417,42 @@ PROMPT;
         }
 
         try {
-            // Create tag message
+            // Get conversation to validate access and get group
+            $conversation = $this->therapy_service->getTherapyConversation($conversation_id);
+            
+            if (!$conversation) {
+                $this->sendJsonResponse(['error' => 'Conversation not found'], 404);
+                return;
+            }
+
+            // If specific therapist_id provided, validate they belong to the group
+            if ($therapist_id) {
+                $therapists = $this->therapy_service->getTherapistsForGroup($conversation['id_groups']);
+                $validTherapist = false;
+                foreach ($therapists as $t) {
+                    if ((int)$t['id'] === (int)$therapist_id) {
+                        $validTherapist = true;
+                        break;
+                    }
+                }
+                if (!$validTherapist) {
+                    $this->sendJsonResponse(['error' => 'Invalid therapist for this group'], 400);
+                    return;
+                }
+            }
+
+            // Create tag message with therapist name if specific one tagged
             $tag_message = "@therapist I would like to speak with my therapist";
+            if ($therapist_id) {
+                $therapists = $this->therapy_service->getTherapistsForGroup($conversation['id_groups']);
+                foreach ($therapists as $t) {
+                    if ((int)$t['id'] === (int)$therapist_id) {
+                        $tag_message = "@" . $t['name'] . " I would like to speak with you";
+                        break;
+                    }
+                }
+            }
+            
             if ($reason) {
                 $tagReasons = $this->model->getTagReasons();
                 foreach ($tagReasons as $r) {
@@ -435,13 +476,23 @@ PROMPT;
                 return;
             }
 
-            // Create tag with alert
-            $result = $this->therapy_service->tagConversationTherapist(
-                $conversation_id,
-                $msg_result['message_id'],
-                $reason,
-                $urgency
-            );
+            // Create tag with alert - use specific therapist if provided
+            if ($therapist_id) {
+                $result = $this->therapy_service->createTagWithAlert(
+                    $msg_result['message_id'],
+                    $conversation_id,
+                    $therapist_id,
+                    $reason,
+                    $urgency
+                );
+            } else {
+                $result = $this->therapy_service->tagConversationTherapist(
+                    $conversation_id,
+                    $msg_result['message_id'],
+                    $reason,
+                    $urgency
+                );
+            }
 
             $this->sendJsonResponse($result);
 
@@ -460,6 +511,72 @@ PROMPT;
         try {
             $config = $this->model->getReactConfig();
             $this->sendJsonResponse(['config' => $config]);
+        } catch (Exception $e) {
+            $this->sendJsonResponse(['error' => $e->getMessage()], 500);
+        }
+    }
+
+    /**
+     * Handle get therapists request - returns therapists in the user's group
+     */
+    private function handleGetTherapists()
+    {
+        $user_id = $this->validatePatientOrFail();
+
+        try {
+            // Get the conversation or create one to find the group
+            $conversation = $this->model->getOrCreateConversation();
+            
+            if (!$conversation) {
+                $this->sendJsonResponse(['therapists' => []]);
+                return;
+            }
+
+            $groupId = $conversation['id_groups'];
+            
+            // Get therapists for this group
+            $therapists = $this->therapy_service->getTherapistsForGroup($groupId);
+            
+            // Format for frontend
+            $formattedTherapists = array();
+            foreach ($therapists as $therapist) {
+                $formattedTherapists[] = array(
+                    'id' => (int)$therapist['id'],
+                    'display' => $therapist['name'],
+                    'name' => $therapist['name'],
+                    'email' => $therapist['email'] ?? null
+                );
+            }
+
+            $this->sendJsonResponse(['therapists' => $formattedTherapists]);
+
+        } catch (Exception $e) {
+            $this->sendJsonResponse(['error' => $e->getMessage()], 500);
+        }
+    }
+
+    /**
+     * Handle get tag reasons request - returns configured tag reasons
+     */
+    private function handleGetTagReasons()
+    {
+        $this->validatePatientOrFail();
+
+        try {
+            $tagReasons = $this->model->getTagReasons();
+            
+            // Format for frontend
+            $formattedReasons = array();
+            foreach ($tagReasons as $reason) {
+                $formattedReasons[] = array(
+                    'code' => $reason['key'],
+                    'label' => $reason['label'],
+                    'urgency' => $reason['urgency'] ?? THERAPY_URGENCY_NORMAL
+                );
+            }
+
+            $this->sendJsonResponse(['tag_reasons' => $formattedReasons]);
+
         } catch (Exception $e) {
             $this->sendJsonResponse(['error' => $e->getMessage()], 500);
         }

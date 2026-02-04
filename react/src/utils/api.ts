@@ -21,7 +21,11 @@ import type {
   Alert,
   Tag,
   Note,
-  DashboardStats
+  DashboardStats,
+  TherapistSuggestion,
+  TagReason,
+  UnreadCounts,
+  MentionData
 } from '../types';
 
 // ============================================================================
@@ -298,12 +302,14 @@ export function createTherapyChatApi(sectionId?: number) {
      * @param conversationId - Conversation ID
      * @param reason - Optional reason for tagging
      * @param urgency - Optional urgency level
+     * @param therapistId - Optional specific therapist ID to tag
      * @returns Promise resolving to tag result
      */
     async tagTherapist(
       conversationId: number | string,
       reason?: string,
-      urgency?: string
+      urgency?: string,
+      therapistId?: number
     ): Promise<TagTherapistResponse> {
       const formData = new FormData();
       formData.append('action', 'tag_therapist');
@@ -317,8 +323,69 @@ export function createTherapyChatApi(sectionId?: number) {
       if (urgency) {
         formData.append('urgency', urgency);
       }
+      if (therapistId) {
+        formData.append('therapist_id', String(therapistId));
+      }
 
       return apiPost<TagTherapistResponse>(formData);
+    },
+
+    /**
+     * Get therapists available for tagging in current group
+     * Calls: ?action=get_therapists&section_id=XXX
+     * 
+     * @returns Promise resolving to list of therapists
+     */
+    async getTherapists(): Promise<{ therapists: TherapistSuggestion[] }> {
+      const params: Record<string, string> = {};
+      if (sectionId !== undefined) {
+        params.section_id = String(sectionId);
+      }
+      return apiGet<{ therapists: TherapistSuggestion[] }>('get_therapists', params);
+    },
+
+    /**
+     * Get tag reasons configured for this chat
+     * Calls: ?action=get_tag_reasons&section_id=XXX
+     * 
+     * @returns Promise resolving to list of tag reasons
+     */
+    async getTagReasons(): Promise<{ tag_reasons: TagReason[] }> {
+      const params: Record<string, string> = {};
+      if (sectionId !== undefined) {
+        params.section_id = String(sectionId);
+      }
+      return apiGet<{ tag_reasons: TagReason[] }>('get_tag_reasons', params);
+    },
+
+    /**
+     * Send message with mention data
+     * Calls: POST action=send_message with mentions
+     * 
+     * @param conversationId - Conversation ID
+     * @param message - Message content
+     * @param mentions - Mention data (therapists and topics)
+     * @returns Promise resolving to send result
+     */
+    async sendMessageWithMentions(
+      conversationId: number | string | undefined,
+      message: string,
+      mentions?: MentionData
+    ): Promise<SendMessageResponse> {
+      const formData = new FormData();
+      formData.append('action', 'send_message');
+      formData.append('message', message);
+      if (sectionId !== undefined) {
+        formData.append('section_id', String(sectionId));
+      }
+      if (conversationId !== undefined) {
+        formData.append('conversation_id', String(conversationId));
+      }
+      if (mentions) {
+        formData.append('mentions', JSON.stringify(mentions));
+      }
+
+      return apiPost<SendMessageResponse>(formData);
     }
   };
 }
@@ -345,9 +412,21 @@ export const therapyChatApi = {
     const api = createTherapyChatApi(sectionId);
     return api.sendMessage(conversationId, message);
   },
-  tagTherapist: (sectionId: number, conversationId: number | string, reason?: string, urgency?: string) => {
+  sendMessageWithMentions: (sectionId: number, conversationId: number | string | undefined, message: string, mentions?: MentionData) => {
     const api = createTherapyChatApi(sectionId);
-    return api.tagTherapist(conversationId, reason, urgency);
+    return api.sendMessageWithMentions(conversationId, message, mentions);
+  },
+  tagTherapist: (sectionId: number, conversationId: number | string, reason?: string, urgency?: string, therapistId?: number) => {
+    const api = createTherapyChatApi(sectionId);
+    return api.tagTherapist(conversationId, reason, urgency, therapistId);
+  },
+  getTherapists: (sectionId: number) => {
+    const api = createTherapyChatApi(sectionId);
+    return api.getTherapists();
+  },
+  getTagReasons: (sectionId: number) => {
+    const api = createTherapyChatApi(sectionId);
+    return api.getTagReasons();
   }
 };
 
@@ -667,6 +746,37 @@ export function createTherapistDashboardApi(sectionId?: number) {
         params.section_id = String(sectionId);
       }
       return apiGet<{ notes: Note[] }>('get_notes', params);
+    },
+
+    /**
+     * Get unread message counts per subject
+     * Calls: ?action=get_unread_counts&section_id=XXX
+     * 
+     * @returns Promise resolving to unread counts by subject
+     */
+    async getUnreadCounts(): Promise<{ unread_counts: UnreadCounts }> {
+      const params: Record<string, string> = {};
+      if (sectionId !== undefined) {
+        params.section_id = String(sectionId);
+      }
+      return apiGet<{ unread_counts: UnreadCounts }>('get_unread_counts', params);
+    },
+
+    /**
+     * Mark conversation messages as read
+     * Calls: POST action=mark_messages_read
+     * 
+     * @param conversationId - Conversation ID
+     * @returns Promise resolving to success
+     */
+    async markMessagesRead(conversationId: number | string): Promise<{ success: boolean }> {
+      const formData = new FormData();
+      formData.append('action', 'mark_messages_read');
+      formData.append('conversation_id', String(conversationId));
+      if (sectionId !== undefined) {
+        formData.append('section_id', String(sectionId));
+      }
+      return apiPost<{ success: boolean }>(formData);
     }
   };
 }
@@ -752,6 +862,14 @@ export const therapistDashboardApi = {
   getNotes: (sectionId: number, conversationId: number | string) => {
     const api = createTherapistDashboardApi(sectionId);
     return api.getNotes(conversationId);
+  },
+  getUnreadCounts: (sectionId: number) => {
+    const api = createTherapistDashboardApi(sectionId);
+    return api.getUnreadCounts();
+  },
+  markMessagesRead: (sectionId: number, conversationId: number | string) => {
+    const api = createTherapistDashboardApi(sectionId);
+    return api.markMessagesRead(conversationId);
   }
 };
 

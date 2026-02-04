@@ -285,6 +285,55 @@ class TherapyMessageService extends TherapyChatService
         return intval($result['cnt'] ?? 0);
     }
 
+    /**
+     * Get count of unread messages since last seen timestamp
+     * Used for therapist dashboard to show unread counts per subject
+     *
+     * @param int $conversationId The therapy meta ID (NOT llmConversations ID)
+     * @param string $userType 'therapist' or 'subject'
+     * @return int Number of unread messages
+     */
+    public function getUnreadCountSinceLastSeen($conversationId, $userType = 'therapist')
+    {
+        // Get the therapy conversation meta (which includes last_seen timestamps)
+        $conversation = $this->getTherapyConversation($conversationId);
+        if (!$conversation) {
+            return 0;
+        }
+
+        $llmConversationId = $conversation['id_llmConversations'];
+        $lastSeenField = ($userType === 'therapist') ? 'therapist_last_seen' : 'subject_last_seen';
+        $lastSeen = $conversation[$lastSeenField] ?? null;
+
+        // Build query to count messages after last seen
+        // Exclude messages sent by the user type we're checking (therapist doesn't see own messages as unread)
+        $excludeSenderType = ($userType === 'therapist') ? 'therapist' : 'subject';
+
+        $sql = "SELECT COUNT(*) as cnt FROM llmMessages lm
+                WHERE lm.id_llmConversations = :cid 
+                AND lm.deleted = 0 
+                AND lm.is_validated = 1
+                AND (
+                    JSON_UNQUOTE(JSON_EXTRACT(lm.sent_context, '$.therapy_sender_type')) IS NULL
+                    OR JSON_UNQUOTE(JSON_EXTRACT(lm.sent_context, '$.therapy_sender_type')) != :exclude_type
+                )";
+
+        $params = array(
+            ':cid' => $llmConversationId,
+            ':exclude_type' => $excludeSenderType
+        );
+
+        // If we have a last seen timestamp, only count messages after it
+        if ($lastSeen) {
+            $sql .= " AND lm.timestamp > :last_seen";
+            $params[':last_seen'] = $lastSeen;
+        }
+
+        $result = $this->db->query_db_first($sql, $params);
+
+        return intval($result['cnt'] ?? 0);
+    }
+
     /* Private Helpers ********************************************************/
 
     /**

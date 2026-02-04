@@ -146,6 +146,9 @@ class TherapistDashboardController extends BaseController
             case 'mark_all_read':
                 $this->handleMarkAllRead();
                 break;
+            case 'mark_messages_read':
+                $this->handleMarkMessagesRead();
+                break;
             default:
                 break;
         }
@@ -182,6 +185,9 @@ class TherapistDashboardController extends BaseController
                 break;
             case 'get_notes':
                 $this->handleGetNotes();
+                break;
+            case 'get_unread_counts':
+                $this->handleGetUnreadCounts();
                 break;
             default:
                 break;
@@ -618,6 +624,83 @@ class TherapistDashboardController extends BaseController
         try {
             $notes = $this->model->getNotes($conversation_id);
             $this->sendJsonResponse(['notes' => $notes]);
+
+        } catch (Exception $e) {
+            $this->sendJsonResponse(['error' => $e->getMessage()], 500);
+        }
+    }
+
+    /**
+     * Handle get unread counts per subject
+     */
+    private function handleGetUnreadCounts()
+    {
+        $user_id = $this->validateTherapistOrFail();
+
+        try {
+            // Get all conversations for this therapist
+            $conversations = $this->alert_service->getTherapyConversationsByTherapist($user_id);
+            
+            $total_unread = 0;
+            $by_subject = [];
+
+            foreach ($conversations as $conv) {
+                // Calculate unread messages since therapist last seen
+                $unread_count = $this->message_service->getUnreadCountSinceLastSeen(
+                    $conv['id_llmConversations'],
+                    'therapist'
+                );
+
+                if ($unread_count > 0) {
+                    $total_unread += $unread_count;
+                    
+                    $subject_id = $conv['id_users'];
+                    $by_subject[$subject_id] = [
+                        'subjectId' => (int)$subject_id,
+                        'subjectName' => $conv['subject_name'] ?? 'Unknown',
+                        'subjectCode' => $conv['subject_code'] ?? null,
+                        'conversationId' => (int)$conv['id_llmConversations'],
+                        'unreadCount' => $unread_count,
+                        'lastMessageAt' => $conv['updated_at'] ?? null
+                    ];
+                }
+            }
+
+            $this->sendJsonResponse([
+                'unread_counts' => [
+                    'total' => $total_unread,
+                    'bySubject' => $by_subject
+                ]
+            ]);
+
+        } catch (Exception $e) {
+            $this->sendJsonResponse(['error' => $e->getMessage()], 500);
+        }
+    }
+
+    /**
+     * Handle mark messages as read for a conversation
+     */
+    private function handleMarkMessagesRead()
+    {
+        $user_id = $this->validateTherapistOrFail();
+        
+        $conversation_id = $_POST['conversation_id'] ?? null;
+
+        if (!$conversation_id) {
+            $this->sendJsonResponse(['error' => 'Conversation ID is required'], 400);
+            return;
+        }
+
+        if (!$this->alert_service->canAccessTherapyConversation($user_id, $conversation_id)) {
+            $this->sendJsonResponse(['error' => 'Access denied'], 403);
+            return;
+        }
+
+        try {
+            // Update therapist last seen timestamp
+            $result = $this->alert_service->updateLastSeen($conversation_id, 'therapist');
+            $this->sendJsonResponse(['success' => $result]);
 
         } catch (Exception $e) {
             $this->sendJsonResponse(['error' => $e->getMessage()], 500);

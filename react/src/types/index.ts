@@ -148,12 +148,56 @@ export interface MentionSuggestion {
 }
 
 /**
+ * Therapist suggestion for @mentions
+ */
+export interface TherapistSuggestion {
+  id: number;
+  display: string;
+  name: string;
+  email?: string;
+  role?: string;
+}
+
+/**
+ * Topic suggestion for #hashtag mentions
+ */
+export interface TopicSuggestion {
+  id: string;
+  display: string;
+  code: string;
+  urgency?: TagUrgency;
+  description?: string;
+}
+
+/**
  * Topic for #hashtag mentions
  */
 export interface Topic {
   id: string;
   name: string;
   description?: string;
+}
+
+/**
+ * Mention data extracted from message
+ */
+export interface MentionData {
+  therapists: Array<{ id: string | number; display: string }>;
+  topics: Array<{ id: string | number; display: string; code?: string; urgency?: string }>;
+}
+
+/**
+ * Unread message counts per subject
+ */
+export interface UnreadCounts {
+  total: number;
+  bySubject: Record<number | string, {
+    subjectId: number | string;
+    subjectName: string;
+    subjectCode?: string;
+    unreadCount: number;
+    lastMessageAt?: string;
+  }>;
 }
 
 /**

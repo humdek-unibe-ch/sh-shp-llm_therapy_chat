@@ -1,12 +1,14 @@
 /**
  * Therapist Dashboard Styles
  * ===========================
+ * Bootstrap 4.6 compatible styling
  */
 
 .therapist-dashboard {
   min-height: calc(100vh - 200px);
 }
 
+/* Conversation List */
 .therapist-conversation-list {
   max-height: 500px;
   overflow-y: auto;
@@ -14,25 +16,67 @@
 
 .therapist-conversation-list .list-group-item {
   cursor: pointer;
-  transition: background-color 0.2s;
+  transition: background-color 0.15s ease-in-out, border-left-color 0.15s ease-in-out;
+  border-left: 3px solid transparent;
 }
 
 .therapist-conversation-list .list-group-item:hover:not(.active) {
-  background-color: #f8f9fa;
+  background-color: #f8f9fa; /* Bootstrap light */
 }
 
+/* Unread conversation highlighting */
+.therapist-unread-conversation {
+  background-color: #e7f1ff !important; /* Light primary background */
+  border-left-color: #007bff !important; /* Bootstrap primary */
+}
+
+.therapist-unread-conversation:hover:not(.active) {
+  background-color: #d0e3ff !important;
+}
+
+/* Active conversation */
+.therapist-conversation-list .list-group-item.active {
+  border-left-color: #fff;
+}
+
+/* Notes styling */
 .therapist-notes-list {
   max-height: 300px;
   overflow-y: auto;
 }
 
 .therapist-note-item {
-  background-color: #fffde7;
-  border-left: 3px solid #ffc107;
+  background-color: #fff3cd; /* Bootstrap warning light */
+  border-left: 3px solid #ffc107; /* Bootstrap warning */
   border-radius: 0.25rem;
 }
 
-/* Gap utilities for older Bootstrap */
+/* Stats header styling */
+.therapist-dashboard .card-body .h4 {
+  font-weight: 600;
+}
+
+/* Badge improvements */
+.therapist-dashboard .badge {
+  font-size: 0.75rem;
+  font-weight: 500;
+}
+
+/* Unread badge pulse animation */
+.therapist-dashboard .badge-primary {
+  animation: pulse-primary 2s infinite;
+}
+
+@keyframes pulse-primary {
+  0%, 100% {
+    box-shadow: 0 0 0 0 rgba(0, 123, 255, 0.4);
+  }
+  50% {
+    box-shadow: 0 0 0 4px rgba(0, 123, 255, 0);
+  }
+}
+
+/* Gap utilities for Bootstrap 4.6 compatibility */
 .gap-1 > * + * {
   margin-left: 0.25rem;
 }
@@ -56,7 +100,61 @@
   flex-wrap: wrap;
 }
 
-/* Responsive */
+/* Card styling improvements */
+.therapist-dashboard .card {
+  border: none;
+  border-radius: 0.5rem;
+}
+
+.therapist-dashboard .card-header {
+  border-bottom: 1px solid rgba(0, 0, 0, 0.125);
+}
+
+/* Filter buttons */
+.therapist-dashboard .btn-group .btn {
+  font-size: 0.8125rem;
+  padding: 0.25rem 0.5rem;
+}
+
+/* Message input area */
+.therapist-dashboard .card-footer {
+  border-top: 1px solid rgba(0, 0, 0, 0.125);
+  background-color: #fff;
+}
+
+/* Alert banner styling */
+.therapist-dashboard .alert {
+  border-radius: 0.375rem;
+  border: none;
+}
+
+.therapist-dashboard .alert-danger {
+  background-color: #f8d7da;
+  color: #721c24;
+}
+
+.therapist-dashboard .alert-warning {
+  background-color: #fff3cd;
+  color: #856404;
+}
+
+/* Risk control buttons */
+.therapist-dashboard .btn-success,
+.therapist-dashboard .btn-outline-success {
+  border-radius: 0.25rem;
+}
+
+.therapist-dashboard .btn-warning,
+.therapist-dashboard .btn-outline-warning {
+  border-radius: 0.25rem;
+}
+
+.therapist-dashboard .btn-danger,
+.therapist-dashboard .btn-outline-danger {
+  border-radius: 0.25rem;
+}
+
+/* Responsive adjustments */
 @media (max-width: 991px) {
   .therapist-dashboard {
     min-height: auto;
@@ -70,5 +168,11 @@
 @media (max-width: 767px) {
   .therapist-dashboard .row > [class^="col"] {
     margin-bottom: 1rem;
+  }
+
+  .therapist-dashboard .card-body .d-flex.gap-4 > * {
+    margin-left: 0;
+    margin-right: 1rem;
+    margin-bottom: 0.5rem;
   }
 }
