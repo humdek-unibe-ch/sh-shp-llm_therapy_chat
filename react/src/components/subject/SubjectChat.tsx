@@ -1,34 +1,51 @@
 /**
- * Subject Chat Component
- * =======================
- * 
- * Main chat interface for subjects/patients.
+ * SubjectChat Component
+ * ======================
+ *
+ * The patient-facing chat interface. Clean, card-based UI.
+ *
  * Features:
- * - Real-time messaging with AI and therapist
- * - @mention tagging for therapist using react-mentions
- * - #topic tagging for therapy reasons
- * - Polling-based message updates
+ *   - Send / receive messages (AI + therapist)
+ *   - @mention tagging to alert therapist
+ *   - Mode badge (AI vs human-only)
+ *   - Speech-to-text input
+ *   - Polling for new messages
+ *   - Auto-clears the floating chat badge on load
  */
 
-import React, { useEffect, useCallback, useState } from 'react';
-import { Container, Card, Alert, Badge } from 'react-bootstrap';
+import React, { useEffect, useCallback, useMemo, useRef } from 'react';
 import { MessageList } from '../shared/MessageList';
-import { MessageInput, MentionData } from '../shared/MessageInput';
+import { MessageInput } from '../shared/MessageInput';
 import { LoadingIndicator } from '../shared/LoadingIndicator';
 import { TaggingPanel } from '../shared/TaggingPanel';
 import { useChatState } from '../../hooks/useChatState';
 import { usePolling } from '../../hooks/usePolling';
-import { therapyChatApi } from '../../utils/api';
-import type { TherapyChatConfig, TagUrgency, TherapistSuggestion } from '../../types';
-import './SubjectChat.css';
+import { createSubjectApi } from '../../utils/api';
+import type { SubjectChatConfig, TagUrgency } from '../../types';
 
 interface SubjectChatProps {
-  config: TherapyChatConfig;
+  config: SubjectChatConfig;
+}
+
+/**
+ * Update (or hide) the server-rendered floating chat badge in the DOM.
+ * The badge is rendered by TherapyChatHooks::outputTherapyChatIcon() and
+ * has the class `.therapy-chat-badge`.
+ */
+function updateFloatingBadge(count: number): void {
+  const badge = document.querySelector('.therapy-chat-badge');
+  if (!badge) return;
+  if (count <= 0) {
+    (badge as HTMLElement).style.display = 'none';
+  } else {
+    (badge as HTMLElement).textContent = String(count);
+    (badge as HTMLElement).style.display = '';
+  }
 }
 
 export const SubjectChat: React.FC<SubjectChatProps> = ({ config }) => {
-  const [therapists, setTherapists] = useState<TherapistSuggestion[]>([]);
-  const [therapistsLoaded, setTherapistsLoaded] = useState(false);
+  const api = useMemo(() => createSubjectApi(config.sectionId), [config.sectionId]);
+  const loadedRef = useRef(false);
 
   const {
     conversation,
@@ -38,219 +55,122 @@ export const SubjectChat: React.FC<SubjectChatProps> = ({ config }) => {
     error,
     loadConversation,
     sendMessage,
-    clearError,
     pollMessages,
-  } = useChatState({ config, isTherapist: false });
-
-  /**
-   * Load conversation on mount
-   */
-  useEffect(() => {
-    loadConversation(config.conversationId ?? undefined);
-  }, [loadConversation, config.conversationId]);
-
-  /**
-   * Set up polling for new messages
-   */
-  usePolling({
-    callback: async () => {
-      await pollMessages();
-    },
-    interval: config.pollingInterval,
-    enabled: !!conversation,
-    immediate: false,
+    clearError,
+  } = useChatState({
+    loadFn: (convId) => api.getConversation(convId),
+    sendFn: (convId, msg) => api.sendMessage(convId, msg),
+    pollFn: (convId, afterId) => api.getMessages(convId, afterId),
+    senderType: 'subject',
   });
 
-  /**
-   * Load therapists for @mention suggestions
-   */
-  const loadTherapists = useCallback(async (): Promise<TherapistSuggestion[]> => {
-    if (therapistsLoaded && therapists.length > 0) {
-      return therapists;
-    }
+  // Load conversation ONCE on mount + mark messages as read + clear badge
+  useEffect(() => {
+    if (loadedRef.current) return;
+    loadedRef.current = true;
 
-    try {
-      const response = await therapyChatApi.getTherapists(config.sectionId);
-      const loadedTherapists = response.therapists || [];
-      setTherapists(loadedTherapists);
-      setTherapistsLoaded(true);
-      return loadedTherapists;
-    } catch (err) {
-      console.error('Failed to load therapists:', err);
-      return [];
-    }
-  }, [config.sectionId, therapists, therapistsLoaded]);
-
-  /**
-   * Handle tagging therapist (from TaggingPanel)
-   */
-  const handleTag = useCallback(async (reason?: string, urgency?: TagUrgency) => {
-    if (!conversation?.id) return;
-
-    try {
-      const response = await therapyChatApi.tagTherapist(
-        config.sectionId,
-        conversation.id,
-        reason,
-        urgency
-      );
-
-      if (response.error) {
-        throw new Error(response.error);
+    (async () => {
+      await loadConversation(config.conversationId ?? undefined);
+      // Mark messages as read and update the floating badge
+      try {
+        const res = await api.markMessagesRead(config.conversationId ?? undefined);
+        updateFloatingBadge(res.unread_count ?? 0);
+      } catch {
+        // non-critical – badge stays as-is
       }
+    })();
+  }, []);  // eslint-disable-line react-hooks/exhaustive-deps
 
-      // Show success message
-      alert('Your therapist has been notified.');
-    } catch (err) {
-      console.error('Tag error:', err);
-      throw err;
-    }
-  }, [config.sectionId, conversation?.id]);
-
-  /**
-   * Handle tagging therapist from @mention in message
-   */
-  const handleMentionTag = useCallback(async (reason?: string, urgency?: TagUrgency, therapistId?: number) => {
-    if (!conversation?.id) return;
-
+  // Also mark read after each poll (clears badge for new arriving messages)
+  const pollAndMark = useCallback(async () => {
+    await pollMessages();
     try {
-      const response = await therapyChatApi.tagTherapist(
-        config.sectionId,
-        conversation.id,
-        reason,
-        urgency,
-        therapistId
-      );
+      const res = await api.markMessagesRead();
+      updateFloatingBadge(res.unread_count ?? 0);
+    } catch { /* ignore */ }
+  }, [pollMessages, api]);
 
-      if (response.error) {
-        throw new Error(response.error);
-      }
-      // Don't show alert for @mention tags - the message will be sent
-    } catch (err) {
-      console.error('Mention tag error:', err);
-    }
-  }, [config.sectionId, conversation?.id]);
+  // Poll for new messages
+  usePolling({
+    callback: pollAndMark,
+    interval: config.pollingInterval,
+    enabled: !!conversation,
+  });
 
-  /**
-   * Handle sending message with mentions
-   */
-  const handleSendMessage = useCallback(async (message: string, mentions?: MentionData) => {
-    // Use the existing sendMessage from useChatState
-    // The mentions will be processed by the backend
-    await sendMessage(message);
-    
-    // If there are therapist mentions, create tags
-    if (mentions?.therapists && mentions.therapists.length > 0) {
-      for (const therapist of mentions.therapists) {
-        const topicWithUrgency = mentions.topics?.find(t => t.urgency);
-        await handleMentionTag(
-          topicWithUrgency?.code,
-          topicWithUrgency?.urgency as TagUrgency | undefined,
-          therapist.id as number
-        );
-      }
-    }
-  }, [sendMessage, handleMentionTag]);
+  // Tag therapist handler
+  const handleTag = useCallback(
+    async (reason?: string, urgency?: TagUrgency) => {
+      if (!conversation?.id) return;
+      await api.tagTherapist(conversation.id, reason, urgency);
+    },
+    [api, conversation?.id],
+  );
 
-  /**
-   * Get mode badge
-   */
-  const getModeBadge = () => {
-    if (!conversation) return null;
-    
-    if (conversation.ai_enabled && conversation.mode === 'ai_hybrid') {
-      return (
-        <Badge variant="info">
-          <i className="fas fa-robot mr-1"></i>
-          {config.labels.mode_ai}
-        </Badge>
-      );
-    }
-    
-    return (
-      <Badge variant="secondary">
-        <i className="fas fa-user-md mr-1"></i>
-        {config.labels.mode_human}
-      </Badge>
-    );
-  };
+  const labels = config.labels;
 
   return (
-    <Container fluid className="therapy-chat-container p-0">
-      {/* Error Alert */}
+    <div className="tc-subject">
+      {/* Error banner */}
       {error && (
-        <Alert 
-          variant="danger" 
-          dismissible 
-          onClose={clearError}
-          className="m-3 mb-0"
-        >
-          <i className="fas fa-exclamation-circle mr-2"></i>
+        <div className="alert alert-danger alert-dismissible fade show m-3 mb-0" role="alert">
+          <i className="fas fa-exclamation-circle mr-2" />
           {error}
-        </Alert>
+          <button type="button" className="close" onClick={clearError}>
+            <span>&times;</span>
+          </button>
+        </div>
       )}
 
-      <Card className="therapy-chat-card h-100 border-0 shadow-sm">
+      <div className="card border-0 shadow-sm h-100">
         {/* Header */}
-        <Card.Header className="therapy-chat-header bg-primary text-white d-flex justify-content-between align-items-center">
+        <div className="card-header bg-primary text-white d-flex justify-content-between align-items-center">
           <div className="d-flex align-items-center">
-            <div className="therapy-chat-icon mr-3">
-              <i className="fas fa-comments"></i>
-            </div>
+            <i className="fas fa-comments mr-2" />
             <h5 className="mb-0">Therapy Chat</h5>
           </div>
-          {getModeBadge()}
-        </Card.Header>
+          {conversation && (
+            <span className={`badge ${conversation.ai_enabled ? 'badge-light' : 'badge-warning'}`}>
+              <i className={`fas ${conversation.ai_enabled ? 'fa-robot' : 'fa-user-md'} mr-1`} />
+              {conversation.ai_enabled ? labels.mode_ai : labels.mode_human}
+            </span>
+          )}
+        </div>
 
-        {/* Messages */}
-        <Card.Body className="therapy-chat-body p-0 d-flex flex-column">
+        {/* Messages area */}
+        <div className="card-body p-0 d-flex flex-column" style={{ minHeight: 400 }}>
           <MessageList
             messages={messages}
             isLoading={isLoading}
-            labels={config.labels}
             isTherapistView={false}
+            emptyText={labels.empty_message}
           />
 
-          {/* Processing Indicator */}
           {isSending && (
             <div className="px-3 pb-2">
-              <LoadingIndicator text={config.labels.ai_thinking} />
+              <LoadingIndicator text={labels.ai_thinking} />
             </div>
           )}
-        </Card.Body>
+        </div>
 
-        {/* Input Area */}
-        <Card.Footer className="therapy-chat-footer bg-white border-top">
-          {/* Tagging Panel - quick access buttons */}
+        {/* Input area */}
+        <div className="card-footer bg-white border-top">
           <TaggingPanel
             enabled={config.taggingEnabled}
             reasons={config.tagReasons}
             onTag={handleTag}
-            buttonLabel={config.labels.tag_button_label}
+            buttonLabel={labels.tag_button_label}
           />
-
-          {/* Message Input with @mentions, #topics, and speech-to-text support */}
           <MessageInput
-            onSend={handleSendMessage}
+            onSend={sendMessage}
             disabled={isSending || isLoading}
-            labels={config.labels}
-            tagReasons={config.tagReasons}
-            onTagTherapist={config.taggingEnabled ? handleMentionTag : undefined}
-            onLoadTherapists={config.taggingEnabled ? loadTherapists : undefined}
-            therapists={therapists.map(t => ({
-              id: t.id,
-              display: t.name || t.display,
-              name: t.name || t.display,
-              email: t.email,
-            }))}
+            placeholder={labels.placeholder}
+            buttonLabel={labels.send_button}
             speechToTextEnabled={config.speechToTextEnabled}
-            speechToTextModel={config.speechToTextModel}
-            speechToTextLanguage={config.speechToTextLanguage}
             sectionId={config.sectionId}
           />
-        </Card.Footer>
-      </Card>
-    </Container>
+        </div>
+      </div>
+    </div>
   );
 };
 

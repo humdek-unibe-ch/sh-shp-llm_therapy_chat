@@ -43,6 +43,15 @@ class TherapistDashboardView extends StyleView
         $user_id = $this->model->getUserId();
         $section_id = $this->model->getSectionId();
 
+        // Check if user is logged in
+        if (!$user_id) {
+            echo '<div class="alert alert-warning">'
+               . '<i class="fa fa-exclamation-triangle"></i> '
+               . 'Please log in to access the therapist dashboard.'
+               . '</div>';
+            return;
+        }
+
         // Get selected conversation if any
         $selected_conversation_id = $this->model->getSelectedSubjectId();
 
@@ -119,7 +128,6 @@ class TherapistDashboardView extends StyleView
         $style['conversations'] = $this->model->getConversations();
         $style['stats'] = $this->model->getStats();
         $style['alerts'] = $this->model->getAlerts(['unread_only' => true]);
-        $style['pending_tags'] = $this->model->getPendingTags();
         
         return $style;
     }

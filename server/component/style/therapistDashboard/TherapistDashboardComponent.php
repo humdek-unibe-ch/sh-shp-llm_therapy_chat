@@ -45,28 +45,13 @@ class TherapistDashboardComponent extends BaseComponent
     }
 
     /**
-     * Output the component
-     *
-     * @return string
+     * Output the component.
+     * API requests are handled by the controller in its constructor.
+     * For normal page rendering, delegate to BaseComponent which calls view->output_content().
      */
     public function output_content()
     {
-        // Handle API requests
-        if ($this->controller->isApiRequest()) {
-            return $this->controller->handleApiRequest();
-        }
-
-        return $this->view->render();
-    }
-
-    /**
-     * Get CSS classes
-     *
-     * @return string
-     */
-    public function get_css_class()
-    {
-        return 'therapist-dashboard-component';
+        parent::output_content();
     }
 }
 ?>

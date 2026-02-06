@@ -5,8 +5,6 @@
 ?>
 <?php
 require_once __DIR__ . "/../../../../../../component/BaseController.php";
-require_once __DIR__ . "/../../../service/TherapyTaggingService.php";
-require_once __DIR__ . "/../../../service/TherapyAlertService.php";
 require_once __DIR__ . "/../../../service/TherapyMessageService.php";
 require_once __DIR__ . "/../../../constants/TherapyLookups.php";
 
@@ -14,799 +12,664 @@ require_once __DIR__ . "/../../../constants/TherapyLookups.php";
  * Therapist Dashboard Controller
  *
  * Handles API requests for the therapist dashboard.
+ * Uses TherapyMessageService (top-level) as single service entry point.
  *
  * API Actions:
- * - get_config: Get React configuration
- * - get_conversations: Get all conversations for therapist
- * - get_conversation: Get specific conversation with messages
- * - get_messages: Get messages for polling
- * - send_message: Send therapist message
- * - toggle_ai: Enable/disable AI for conversation
- * - set_risk: Set risk level
- * - add_note: Add private note
- * - acknowledge_tag: Acknowledge a patient tag
- * - mark_alert_read: Mark alert as read
- * - get_alerts: Get alerts for therapist
- * - get_stats: Get dashboard statistics
+ * - get_config, get_conversations, get_conversation, get_messages
+ * - send_message, edit_message, delete_message
+ * - toggle_ai, set_risk, set_status
+ * - add_note, get_notes
+ * - mark_alert_read, mark_all_read, get_alerts
+ * - get_stats, get_unread_counts, mark_messages_read
+ * - create_draft, update_draft, send_draft, discard_draft
+ * - speech_transcribe
  *
  * @package LLM Therapy Chat Plugin
  */
 class TherapistDashboardController extends BaseController
 {
-    /** @var TherapyTaggingService */
-    private $tagging_service;
-
-    /** @var TherapyAlertService */
-    private $alert_service;
-
     /** @var TherapyMessageService */
-    private $message_service;
+    private $service;
 
-    /** @var string|null Current action being processed */
-    private $current_action;
-
-    /**
-     * Constructor
-     *
-     * @param object $model
-     */
     public function __construct($model)
     {
         parent::__construct($model);
 
-        // Validate section ID
         if (!$this->isRequestForThisSection() || $model->get_services()->get_router()->current_keyword == 'admin') {
             return;
         }
 
-        // Initialize services
-        $this->initializeServices();
-
-        // Route the request
+        $this->service = new TherapyMessageService($model->get_services());
         $this->handleRequest();
     }
 
-    /**
-     * Check if the incoming request is for this section
-     *
-     * @return bool
-     */
     private function isRequestForThisSection()
     {
-        $requested_section_id = $_GET['section_id'] ?? $_POST['section_id'] ?? null;
-        $model_section_id = $this->model->getSectionId();
+        $requested = $_GET['section_id'] ?? $_POST['section_id'] ?? null;
+        $model_id = $this->model->getSectionId();
 
-        if ($requested_section_id === null) {
+        if ($requested === null) {
             $action = $_GET['action'] ?? $_POST['action'] ?? null;
             return $action === null;
         }
 
-        return (int)$requested_section_id === (int)$model_section_id;
+        return (int)$requested === (int)$model_id;
     }
 
-    /**
-     * Initialize services
-     */
-    private function initializeServices()
-    {
-        $services = $this->model->get_services();
-        $this->tagging_service = new TherapyTaggingService($services);
-        $this->alert_service = new TherapyAlertService($services);
-        $this->message_service = new TherapyMessageService($services);
-    }
-
-    /**
-     * Route incoming request
-     */
     private function handleRequest()
     {
-        // Handle POST requests
         if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $action = $_POST['action'] ?? null;
-            $this->current_action = $action;
             $this->handlePostRequest($action);
-            return;
-        }
-
-        // Handle GET requests
-        if ($_SERVER['REQUEST_METHOD'] === 'GET') {
+        } elseif ($_SERVER['REQUEST_METHOD'] === 'GET') {
             $action = $_GET['action'] ?? null;
-            $this->current_action = $action;
             $this->handleGetRequest($action);
-            return;
         }
     }
 
-    /**
-     * Handle POST requests
-     *
-     * @param string|null $action
-     */
     private function handlePostRequest($action)
     {
         switch ($action) {
-            case 'send_message':
-                $this->handleSendMessage();
-                break;
-            case 'toggle_ai':
-                $this->handleToggleAI();
-                break;
-            case 'set_risk':
-                $this->handleSetRisk();
-                break;
-            case 'add_note':
-                $this->handleAddNote();
-                break;
-            case 'acknowledge_tag':
-                $this->handleAcknowledgeTag();
-                break;
-            case 'mark_alert_read':
-                $this->handleMarkAlertRead();
-                break;
-            case 'mark_all_read':
-                $this->handleMarkAllRead();
-                break;
-            case 'mark_messages_read':
-                $this->handleMarkMessagesRead();
-                break;
-            case 'speech_transcribe':
-                $this->handleSpeechTranscribe();
-                break;
-            default:
-                break;
+            case 'send_message': $this->handleSendMessage(); break;
+            case 'edit_message': $this->handleEditMessage(); break;
+            case 'delete_message': $this->handleDeleteMessage(); break;
+            case 'toggle_ai': $this->handleToggleAI(); break;
+            case 'set_risk': $this->handleSetRisk(); break;
+            case 'set_status': $this->handleSetStatus(); break;
+            case 'add_note': $this->handleAddNote(); break;
+            case 'mark_alert_read': $this->handleMarkAlertRead(); break;
+            case 'mark_all_read': $this->handleMarkAllRead(); break;
+            case 'mark_messages_read': $this->handleMarkMessagesRead(); break;
+            case 'create_draft': $this->handleCreateDraft(); break;
+            case 'update_draft': $this->handleUpdateDraft(); break;
+            case 'send_draft': $this->handleSendDraft(); break;
+            case 'discard_draft': $this->handleDiscardDraft(); break;
+            case 'speech_transcribe': $this->handleSpeechTranscribe(); break;
         }
     }
 
-    /**
-     * Handle GET requests
-     *
-     * @param string|null $action
-     */
     private function handleGetRequest($action)
     {
         switch ($action) {
-            case 'get_config':
-                $this->handleGetConfig();
-                break;
-            case 'get_conversations':
-                $this->handleGetConversations();
-                break;
-            case 'get_conversation':
-                $this->handleGetConversation();
-                break;
-            case 'get_messages':
-                $this->handleGetMessages();
-                break;
-            case 'get_alerts':
-                $this->handleGetAlerts();
-                break;
-            case 'get_tags':
-                $this->handleGetTags();
-                break;
-            case 'get_stats':
-                $this->handleGetStats();
-                break;
-            case 'get_notes':
-                $this->handleGetNotes();
-                break;
-            case 'get_unread_counts':
-                $this->handleGetUnreadCounts();
-                break;
-            default:
-                break;
+            case 'get_config': $this->handleGetConfig(); break;
+            case 'get_conversations': $this->handleGetConversations(); break;
+            case 'get_conversation': $this->handleGetConversation(); break;
+            case 'get_messages': $this->handleGetMessages(); break;
+            case 'get_alerts': $this->handleGetAlerts(); break;
+            case 'get_stats': $this->handleGetStats(); break;
+            case 'get_notes': $this->handleGetNotes(); break;
+            case 'get_unread_counts': $this->handleGetUnreadCounts(); break;
+            case 'get_groups': $this->handleGetGroups(); break;
         }
     }
 
-    /* POST Handlers **********************************************************/
+    /* =========================================================================
+     * POST HANDLERS
+     * ========================================================================= */
 
-    /**
-     * Handle send message (therapist to subject)
-     */
     private function handleSendMessage()
     {
-        $user_id = $this->validateTherapistOrFail();
+        $uid = $this->validateTherapistOrFail();
 
-        $conversation_id = $_POST['conversation_id'] ?? null;
+        $cid = $_POST['conversation_id'] ?? null;
         $message = trim($_POST['message'] ?? '');
 
-        if (!$conversation_id) {
-            $this->sendJsonResponse(['error' => 'Conversation ID is required'], 400);
-            return;
-        }
+        if (!$cid) { $this->json(['error' => 'Conversation ID is required'], 400); return; }
+        if (empty($message)) { $this->json(['error' => 'Message cannot be empty'], 400); return; }
 
-        if (empty($message)) {
-            $this->sendJsonResponse(['error' => 'Message cannot be empty'], 400);
-            return;
-        }
-
-        // Verify access
-        if (!$this->alert_service->canAccessTherapyConversation($user_id, $conversation_id)) {
-            $this->sendJsonResponse(['error' => 'Access denied'], 403);
+        if (!$this->service->canAccessTherapyConversation($uid, $cid)) {
+            $this->json(['error' => 'Access denied'], 403);
             return;
         }
 
         try {
-            $result = $this->message_service->sendTherapyMessage(
-                $conversation_id,
-                $user_id,
-                $message,
-                'therapist'
+            $result = $this->service->sendTherapyMessage(
+                $cid, $uid, $message, TherapyMessageService::SENDER_THERAPIST
             );
 
             if (isset($result['error'])) {
-                $this->sendJsonResponse(['error' => $result['error']], 400);
+                $this->json(['error' => $result['error']], 400);
                 return;
             }
 
-            // Update last seen
-            $this->alert_service->updateLastSeen($conversation_id, 'therapist');
-
-            $this->sendJsonResponse([
-                'success' => true,
-                'message_id' => $result['message_id']
-            ]);
+            $this->service->updateLastSeen($cid, 'therapist');
+            $this->json(['success' => true, 'message_id' => $result['message_id']]);
         } catch (Exception $e) {
-            $this->sendJsonResponse(['error' => $e->getMessage()], 500);
+            $this->json(['error' => $e->getMessage()], 500);
         }
     }
 
-    /**
-     * Handle toggle AI responses
-     */
+    private function handleEditMessage()
+    {
+        $uid = $this->validateTherapistOrFail();
+
+        $messageId = $_POST['message_id'] ?? null;
+        $newContent = trim($_POST['content'] ?? '');
+
+        if (!$messageId || empty($newContent)) {
+            $this->json(['error' => 'Message ID and content are required'], 400);
+            return;
+        }
+
+        try {
+            $result = $this->service->editMessage($messageId, $uid, $newContent);
+            $this->json(['success' => $result]);
+        } catch (Exception $e) {
+            $this->json(['error' => $e->getMessage()], 500);
+        }
+    }
+
+    private function handleDeleteMessage()
+    {
+        $uid = $this->validateTherapistOrFail();
+
+        $messageId = $_POST['message_id'] ?? null;
+        if (!$messageId) {
+            $this->json(['error' => 'Message ID is required'], 400);
+            return;
+        }
+
+        try {
+            $result = $this->service->softDeleteMessage($messageId, $uid);
+            $this->json(['success' => $result]);
+        } catch (Exception $e) {
+            $this->json(['error' => $e->getMessage()], 500);
+        }
+    }
+
     private function handleToggleAI()
     {
-        $user_id = $this->validateTherapistOrFail();
+        $uid = $this->validateTherapistOrFail();
 
-        $conversation_id = $_POST['conversation_id'] ?? null;
+        $cid = $_POST['conversation_id'] ?? null;
         $enabled = isset($_POST['enabled']) ? (bool)$_POST['enabled'] : true;
 
-        if (!$conversation_id) {
-            $this->sendJsonResponse(['error' => 'Conversation ID is required'], 400);
-            return;
-        }
+        if (!$cid) { $this->json(['error' => 'Conversation ID is required'], 400); return; }
 
-        if (!$this->alert_service->canAccessTherapyConversation($user_id, $conversation_id)) {
-            $this->sendJsonResponse(['error' => 'Access denied'], 403);
+        if (!$this->service->canAccessTherapyConversation($uid, $cid)) {
+            $this->json(['error' => 'Access denied'], 403);
             return;
         }
 
         try {
-            $result = $this->alert_service->setAIEnabled($conversation_id, $enabled);
-            $this->sendJsonResponse(['success' => $result, 'ai_enabled' => $enabled]);
+            $result = $this->service->setAIEnabled($cid, $enabled);
+            $this->json(['success' => $result, 'ai_enabled' => $enabled]);
         } catch (Exception $e) {
-            $this->sendJsonResponse(['error' => $e->getMessage()], 500);
+            $this->json(['error' => $e->getMessage()], 500);
         }
     }
 
-    /**
-     * Handle set risk level
-     */
     private function handleSetRisk()
     {
-        $user_id = $this->validateTherapistOrFail();
+        $uid = $this->validateTherapistOrFail();
 
-        $conversation_id = $_POST['conversation_id'] ?? null;
-        $risk_level = $_POST['risk_level'] ?? null;
+        $cid = $_POST['conversation_id'] ?? null;
+        $risk = $_POST['risk_level'] ?? null;
 
-        if (!$conversation_id || !$risk_level) {
-            $this->sendJsonResponse(['error' => 'Conversation ID and risk level are required'], 400);
-            return;
-        }
+        if (!$cid || !$risk) { $this->json(['error' => 'Conversation ID and risk level are required'], 400); return; }
+        if (!in_array($risk, THERAPY_VALID_RISK_LEVELS)) { $this->json(['error' => 'Invalid risk level'], 400); return; }
 
-        if (!in_array($risk_level, THERAPY_VALID_RISK_LEVELS)) {
-            $this->sendJsonResponse(['error' => 'Invalid risk level'], 400);
-            return;
-        }
-
-        if (!$this->alert_service->canAccessTherapyConversation($user_id, $conversation_id)) {
-            $this->sendJsonResponse(['error' => 'Access denied'], 403);
+        if (!$this->service->canAccessTherapyConversation($uid, $cid)) {
+            $this->json(['error' => 'Access denied'], 403);
             return;
         }
 
         try {
-            $result = $this->alert_service->updateRiskLevel($conversation_id, $risk_level);
-            $this->sendJsonResponse(['success' => $result, 'risk_level' => $risk_level]);
+            $result = $this->service->updateRiskLevel($cid, $risk);
+            $this->json(['success' => $result, 'risk_level' => $risk]);
         } catch (Exception $e) {
-            $this->sendJsonResponse(['error' => $e->getMessage()], 500);
+            $this->json(['error' => $e->getMessage()], 500);
         }
     }
 
-    /**
-     * Handle add note
-     */
+    private function handleSetStatus()
+    {
+        $uid = $this->validateTherapistOrFail();
+
+        $cid = $_POST['conversation_id'] ?? null;
+        $status = $_POST['status'] ?? null;
+
+        if (!$cid || !$status) { $this->json(['error' => 'Conversation ID and status are required'], 400); return; }
+        if (!in_array($status, THERAPY_VALID_STATUSES)) { $this->json(['error' => 'Invalid status'], 400); return; }
+
+        if (!$this->service->canAccessTherapyConversation($uid, $cid)) {
+            $this->json(['error' => 'Access denied'], 403);
+            return;
+        }
+
+        try {
+            $result = $this->service->updateTherapyStatus($cid, $status);
+            $this->json(['success' => $result, 'status' => $status]);
+        } catch (Exception $e) {
+            $this->json(['error' => $e->getMessage()], 500);
+        }
+    }
+
     private function handleAddNote()
     {
-        $user_id = $this->validateTherapistOrFail();
+        $uid = $this->validateTherapistOrFail();
 
-        $conversation_id = $_POST['conversation_id'] ?? null;
+        $cid = $_POST['conversation_id'] ?? null;
         $content = trim($_POST['content'] ?? '');
+        $noteType = $_POST['note_type'] ?? THERAPY_NOTE_MANUAL;
 
-        if (!$conversation_id || empty($content)) {
-            $this->sendJsonResponse(['error' => 'Conversation ID and content are required'], 400);
+        if (!$cid || empty($content)) {
+            $this->json(['error' => 'Conversation ID and content are required'], 400);
             return;
         }
 
-        if (!$this->alert_service->canAccessTherapyConversation($user_id, $conversation_id)) {
-            $this->sendJsonResponse(['error' => 'Access denied'], 403);
-            return;
-        }
-
-        try {
-            $db = $this->model->get_services()->get_db();
-
-            $note_id = $db->insert('therapyNotes', [
-                'id_llmConversations' => $conversation_id,
-                'id_users' => $user_id,
-                'content' => $content
-            ]);
-
-            $this->sendJsonResponse([
-                'success' => (bool)$note_id,
-                'note_id' => $note_id
-            ]);
-        } catch (Exception $e) {
-            $this->sendJsonResponse(['error' => $e->getMessage()], 500);
-        }
-    }
-
-    /**
-     * Handle acknowledge tag
-     */
-    private function handleAcknowledgeTag()
-    {
-        $user_id = $this->validateTherapistOrFail();
-
-        $tag_id = $_POST['tag_id'] ?? null;
-
-        if (!$tag_id) {
-            $this->sendJsonResponse(['error' => 'Tag ID is required'], 400);
+        if (!$this->service->canAccessTherapyConversation($uid, $cid)) {
+            $this->json(['error' => 'Access denied'], 403);
             return;
         }
 
         try {
-            $result = $this->tagging_service->acknowledgeTag($tag_id, $user_id);
-            $this->sendJsonResponse(['success' => $result]);
+            $noteId = $this->service->addNote($cid, $uid, $content, $noteType);
+            $this->json(['success' => (bool)$noteId, 'note_id' => $noteId]);
         } catch (Exception $e) {
-            $this->sendJsonResponse(['error' => $e->getMessage()], 500);
+            $this->json(['error' => $e->getMessage()], 500);
         }
     }
 
-    /**
-     * Handle mark alert read
-     */
     private function handleMarkAlertRead()
     {
-        $user_id = $this->validateTherapistOrFail();
+        $this->validateTherapistOrFail();
+        $alertId = $_POST['alert_id'] ?? null;
+        if (!$alertId) { $this->json(['error' => 'Alert ID is required'], 400); return; }
 
-        $alert_id = $_POST['alert_id'] ?? null;
+        try {
+            $result = $this->service->markAlertRead($alertId);
+            $this->json(['success' => $result]);
+        } catch (Exception $e) {
+            $this->json(['error' => $e->getMessage()], 500);
+        }
+    }
 
-        if (!$alert_id) {
-            $this->sendJsonResponse(['error' => 'Alert ID is required'], 400);
+    private function handleMarkAllRead()
+    {
+        $uid = $this->validateTherapistOrFail();
+        $cid = $_POST['conversation_id'] ?? null;
+
+        try {
+            $result = $this->service->markAllAlertsRead($uid, $cid);
+            $this->json(['success' => $result]);
+        } catch (Exception $e) {
+            $this->json(['error' => $e->getMessage()], 500);
+        }
+    }
+
+    private function handleMarkMessagesRead()
+    {
+        $uid = $this->validateTherapistOrFail();
+        $cid = $_POST['conversation_id'] ?? null;
+
+        if (!$cid) { $this->json(['error' => 'Conversation ID is required'], 400); return; }
+
+        if (!$this->service->canAccessTherapyConversation($uid, $cid)) {
+            $this->json(['error' => 'Access denied'], 403);
             return;
         }
 
         try {
-            $result = $this->alert_service->markAlertRead($alert_id, $user_id);
-            $this->sendJsonResponse(['success' => $result]);
+            $this->service->updateLastSeen($cid, 'therapist');
+            $this->service->markMessagesAsSeen($cid, $uid);
+            $this->json(['success' => true]);
         } catch (Exception $e) {
-            $this->sendJsonResponse(['error' => $e->getMessage()], 500);
+            $this->json(['error' => $e->getMessage()], 500);
         }
     }
 
-    /**
-     * Handle mark all alerts read
-     */
-    private function handleMarkAllRead()
-    {
-        $user_id = $this->validateTherapistOrFail();
+    /* =========================================================================
+     * DRAFT HANDLERS
+     * ========================================================================= */
 
-        $conversation_id = $_POST['conversation_id'] ?? null;
+    private function handleCreateDraft()
+    {
+        $uid = $this->validateTherapistOrFail();
+
+        $cid = $_POST['conversation_id'] ?? null;
+        $aiContent = trim($_POST['ai_content'] ?? '');
+
+        if (!$cid || empty($aiContent)) {
+            $this->json(['error' => 'Conversation ID and AI content are required'], 400);
+            return;
+        }
 
         try {
-            $result = $this->alert_service->markAllAlertsRead($user_id, $conversation_id);
-            $this->sendJsonResponse(['success' => $result]);
+            $draftId = $this->service->createDraft($cid, $uid, $aiContent);
+            $this->json(['success' => (bool)$draftId, 'draft_id' => $draftId]);
         } catch (Exception $e) {
-            $this->sendJsonResponse(['error' => $e->getMessage()], 500);
+            $this->json(['error' => $e->getMessage()], 500);
         }
     }
 
-    /* GET Handlers ***********************************************************/
-
-    /**
-     * Handle get config request
-     */
-    private function handleGetConfig()
+    private function handleUpdateDraft()
     {
         $this->validateTherapistOrFail();
 
+        $draftId = $_POST['draft_id'] ?? null;
+        $editedContent = trim($_POST['edited_content'] ?? '');
+
+        if (!$draftId) {
+            $this->json(['error' => 'Draft ID is required'], 400);
+            return;
+        }
+
         try {
-            $config = $this->model->getReactConfig();
-            $this->sendJsonResponse(['config' => $config]);
+            $result = $this->service->updateDraft($draftId, $editedContent);
+            $this->json(['success' => $result]);
         } catch (Exception $e) {
-            $this->sendJsonResponse(['error' => $e->getMessage()], 500);
+            $this->json(['error' => $e->getMessage()], 500);
         }
     }
 
-    /**
-     * Handle get conversations
-     */
+    private function handleSendDraft()
+    {
+        $uid = $this->validateTherapistOrFail();
+
+        $draftId = $_POST['draft_id'] ?? null;
+        $cid = $_POST['conversation_id'] ?? null;
+
+        if (!$draftId || !$cid) {
+            $this->json(['error' => 'Draft ID and conversation ID are required'], 400);
+            return;
+        }
+
+        try {
+            $result = $this->service->sendDraft($draftId, $uid, $cid);
+            $this->json($result);
+        } catch (Exception $e) {
+            $this->json(['error' => $e->getMessage()], 500);
+        }
+    }
+
+    private function handleDiscardDraft()
+    {
+        $uid = $this->validateTherapistOrFail();
+
+        $draftId = $_POST['draft_id'] ?? null;
+        if (!$draftId) {
+            $this->json(['error' => 'Draft ID is required'], 400);
+            return;
+        }
+
+        try {
+            $result = $this->service->discardDraft($draftId, $uid);
+            $this->json(['success' => $result]);
+        } catch (Exception $e) {
+            $this->json(['error' => $e->getMessage()], 500);
+        }
+    }
+
+    /* =========================================================================
+     * GET HANDLERS
+     * ========================================================================= */
+
+    private function handleGetConfig()
+    {
+        $this->validateTherapistOrFail();
+        try {
+            $config = $this->model->getReactConfig();
+            $this->json(['config' => $config]);
+        } catch (Exception $e) {
+            $this->json(['error' => $e->getMessage()], 500);
+        }
+    }
+
     private function handleGetConversations()
     {
-        $user_id = $this->validateTherapistOrFail();
+        $uid = $this->validateTherapistOrFail();
 
         try {
             $filters = [];
+            if (isset($_GET['status'])) $filters['status'] = $_GET['status'];
+            if (isset($_GET['risk_level'])) $filters['risk_level'] = $_GET['risk_level'];
+            if (isset($_GET['group_id'])) $filters['group_id'] = (int)$_GET['group_id'];
 
-            if (isset($_GET['status'])) {
-                $filters['status'] = $_GET['status'];
-            }
-            if (isset($_GET['risk_level'])) {
-                $filters['risk_level'] = $_GET['risk_level'];
-            }
-            if (isset($_GET['group_id'])) {
-                $filters['group_id'] = (int)$_GET['group_id'];
-            }
-
-            $conversations = $this->alert_service->getTherapyConversationsByTherapist($user_id, $filters);
-
-            $this->sendJsonResponse(['conversations' => $conversations]);
+            $conversations = $this->service->getTherapyConversationsByTherapist($uid, $filters);
+            $this->json(['conversations' => $conversations]);
         } catch (Exception $e) {
-            $this->sendJsonResponse(['error' => $e->getMessage()], 500);
+            $this->json(['error' => $e->getMessage()], 500);
         }
     }
 
-    /**
-     * Handle get conversation
-     */
     private function handleGetConversation()
     {
-        $user_id = $this->validateTherapistOrFail();
+        $uid = $this->validateTherapistOrFail();
 
-        $conversation_id = $_GET['conversation_id'] ?? null;
+        $cid = $_GET['conversation_id'] ?? null;
+        if (!$cid) { $this->json(['error' => 'Conversation ID is required'], 400); return; }
 
-        if (!$conversation_id) {
-            $this->sendJsonResponse(['error' => 'Conversation ID is required'], 400);
-            return;
-        }
-
-        if (!$this->alert_service->canAccessTherapyConversation($user_id, $conversation_id)) {
-            $this->sendJsonResponse(['error' => 'Access denied'], 403);
+        if (!$this->service->canAccessTherapyConversation($uid, $cid)) {
+            $this->json(['error' => 'Access denied'], 403);
             return;
         }
 
         try {
-            $conversation = $this->alert_service->getTherapyConversation($conversation_id);
-
+            $conversation = $this->service->getTherapyConversation($cid);
             if (!$conversation) {
-                $this->sendJsonResponse(['error' => 'Conversation not found'], 404);
+                $this->json(['error' => 'Conversation not found'], 404);
                 return;
             }
 
-            $messages = $this->message_service->getTherapyMessages($conversation_id);
-            $notes = $this->model->getNotes($conversation_id);
-            $tags = $this->tagging_service->getTagsForConversation($conversation_id);
-            $alerts = $this->alert_service->getAlertsForConversation($conversation_id);
+            $messages = $this->service->getTherapyMessages($cid);
+            $notes = $this->service->getNotesForConversation($cid);
+            $alerts = $this->service->getAlertsForTherapist($uid, ['unread_only' => false]);
 
-            // Update last seen
-            $this->alert_service->updateLastSeen($conversation_id, 'therapist');
+            $this->service->updateLastSeen($cid, 'therapist');
+            $this->service->markMessagesAsSeen($cid, $uid);
 
-            $this->sendJsonResponse([
+            $this->json([
                 'conversation' => $conversation,
                 'messages' => $messages,
                 'notes' => $notes,
-                'tags' => $tags,
                 'alerts' => $alerts
             ]);
         } catch (Exception $e) {
-            $this->sendJsonResponse(['error' => $e->getMessage()], 500);
+            $this->json(['error' => $e->getMessage()], 500);
         }
     }
 
-    /**
-     * Handle get messages (for polling)
-     */
     private function handleGetMessages()
     {
-        $user_id = $this->validateTherapistOrFail();
+        $uid = $this->validateTherapistOrFail();
 
-        $conversation_id = $_GET['conversation_id'] ?? null;
-        $after_id = isset($_GET['after_id']) ? (int)$_GET['after_id'] : null;
+        $cid = $_GET['conversation_id'] ?? null;
+        $afterId = isset($_GET['after_id']) ? (int)$_GET['after_id'] : null;
 
-        if (!$conversation_id) {
-            $this->sendJsonResponse(['error' => 'Conversation ID is required'], 400);
-            return;
-        }
+        if (!$cid) { $this->json(['error' => 'Conversation ID is required'], 400); return; }
 
-        if (!$this->alert_service->canAccessTherapyConversation($user_id, $conversation_id)) {
-            $this->sendJsonResponse(['error' => 'Access denied'], 403);
+        if (!$this->service->canAccessTherapyConversation($uid, $cid)) {
+            $this->json(['error' => 'Access denied'], 403);
             return;
         }
 
         try {
-            $messages = $this->message_service->getTherapyMessages($conversation_id, 100, $after_id);
+            $messages = $this->service->getTherapyMessages($cid, 100, $afterId);
+            $this->service->updateLastSeen($cid, 'therapist');
 
-            // Update last seen
-            $this->alert_service->updateLastSeen($conversation_id, 'therapist');
-
-            $this->sendJsonResponse([
+            $this->json([
                 'messages' => $messages,
-                'conversation_id' => $conversation_id
+                'conversation_id' => $cid
             ]);
         } catch (Exception $e) {
-            $this->sendJsonResponse(['error' => $e->getMessage()], 500);
+            $this->json(['error' => $e->getMessage()], 500);
         }
     }
 
-    /**
-     * Handle get alerts
-     */
     private function handleGetAlerts()
     {
-        $user_id = $this->validateTherapistOrFail();
+        $uid = $this->validateTherapistOrFail();
 
         try {
             $filters = [];
+            if (isset($_GET['unread_only']) && $_GET['unread_only']) $filters['unread_only'] = true;
+            if (isset($_GET['alert_type'])) $filters['alert_type'] = $_GET['alert_type'];
 
-            if (isset($_GET['unread_only']) && $_GET['unread_only']) {
-                $filters['unread_only'] = true;
-            }
-            if (isset($_GET['alert_type'])) {
-                $filters['alert_type'] = $_GET['alert_type'];
-            }
-
-            $alerts = $this->alert_service->getAlertsForTherapist($user_id, $filters);
-
-            $this->sendJsonResponse(['alerts' => $alerts]);
+            $alerts = $this->service->getAlertsForTherapist($uid, $filters);
+            $this->json(['alerts' => $alerts]);
         } catch (Exception $e) {
-            $this->sendJsonResponse(['error' => $e->getMessage()], 500);
+            $this->json(['error' => $e->getMessage()], 500);
         }
     }
 
-    /**
-     * Handle get pending tags
-     */
-    private function handleGetTags()
-    {
-        $user_id = $this->validateTherapistOrFail();
-
-        try {
-            $tags = $this->tagging_service->getPendingTagsForTherapist($user_id);
-            $this->sendJsonResponse(['tags' => $tags]);
-        } catch (Exception $e) {
-            $this->sendJsonResponse(['error' => $e->getMessage()], 500);
-        }
-    }
-
-    /**
-     * Handle get stats
-     */
     private function handleGetStats()
     {
-        $user_id = $this->validateTherapistOrFail();
-
+        $uid = $this->validateTherapistOrFail();
         try {
-            $stats = $this->alert_service->getTherapistStats($user_id);
-            $this->sendJsonResponse(['stats' => $stats]);
+            $stats = $this->service->getTherapistStats($uid);
+            $this->json(['stats' => $stats]);
         } catch (Exception $e) {
-            $this->sendJsonResponse(['error' => $e->getMessage()], 500);
+            $this->json(['error' => $e->getMessage()], 500);
         }
     }
 
-    /**
-     * Handle get notes
-     */
     private function handleGetNotes()
     {
-        $user_id = $this->validateTherapistOrFail();
+        $uid = $this->validateTherapistOrFail();
 
-        $conversation_id = $_GET['conversation_id'] ?? null;
+        $cid = $_GET['conversation_id'] ?? null;
+        if (!$cid) { $this->json(['error' => 'Conversation ID is required'], 400); return; }
 
-        if (!$conversation_id) {
-            $this->sendJsonResponse(['error' => 'Conversation ID is required'], 400);
-            return;
-        }
-
-        if (!$this->alert_service->canAccessTherapyConversation($user_id, $conversation_id)) {
-            $this->sendJsonResponse(['error' => 'Access denied'], 403);
+        if (!$this->service->canAccessTherapyConversation($uid, $cid)) {
+            $this->json(['error' => 'Access denied'], 403);
             return;
         }
 
         try {
-            $notes = $this->model->getNotes($conversation_id);
-            $this->sendJsonResponse(['notes' => $notes]);
+            $notes = $this->service->getNotesForConversation($cid);
+            $this->json(['notes' => $notes]);
         } catch (Exception $e) {
-            $this->sendJsonResponse(['error' => $e->getMessage()], 500);
+            $this->json(['error' => $e->getMessage()], 500);
         }
     }
 
-    /**
-     * Handle get unread counts per subject
-     */
     private function handleGetUnreadCounts()
     {
-        $user_id = $this->validateTherapistOrFail();
+        $uid = $this->validateTherapistOrFail();
 
         try {
-            // Get all conversations for this therapist
-            $conversations = $this->alert_service->getTherapyConversationsByTherapist($user_id);
+            $unreadMessages = $this->service->getUnreadCountForUser($uid);
+            $unreadAlerts = $this->service->getUnreadAlertCount($uid);
 
-            $total_unread = 0;
-            $by_subject = [];
-
-            foreach ($conversations as $conv) {
-                // Calculate unread messages since therapist last seen
-                $unread_count = $this->message_service->getUnreadCountSinceLastSeen(
-                    $conv['id_llmConversations'],
-                    'therapist'
-                );
-
-                if ($unread_count > 0) {
-                    $total_unread += $unread_count;
-
-                    $subject_id = $conv['id_users'];
-                    $by_subject[$subject_id] = [
-                        'subjectId' => (int)$subject_id,
-                        'subjectName' => $conv['subject_name'] ?? 'Unknown',
-                        'subjectCode' => $conv['subject_code'] ?? null,
-                        'conversationId' => (int)$conv['id_llmConversations'],
-                        'unreadCount' => $unread_count,
-                        'lastMessageAt' => $conv['updated_at'] ?? null
-                    ];
-                }
-            }
-
-            $this->sendJsonResponse([
+            $this->json([
                 'unread_counts' => [
-                    'total' => $total_unread,
-                    'bySubject' => $by_subject
+                    'messages' => $unreadMessages,
+                    'alerts' => $unreadAlerts,
+                    'total' => $unreadMessages + $unreadAlerts
                 ]
             ]);
         } catch (Exception $e) {
-            $this->sendJsonResponse(['error' => $e->getMessage()], 500);
+            $this->json(['error' => $e->getMessage()], 500);
         }
     }
 
-    /**
-     * Handle mark messages as read for a conversation
-     */
-    private function handleMarkMessagesRead()
+    private function handleGetGroups()
     {
-        $user_id = $this->validateTherapistOrFail();
-
-        $conversation_id = $_POST['conversation_id'] ?? null;
-
-        if (!$conversation_id) {
-            $this->sendJsonResponse(['error' => 'Conversation ID is required'], 400);
-            return;
-        }
-
-        if (!$this->alert_service->canAccessTherapyConversation($user_id, $conversation_id)) {
-            $this->sendJsonResponse(['error' => 'Access denied'], 403);
-            return;
-        }
+        $uid = $this->validateTherapistOrFail();
 
         try {
-            // Update therapist last seen timestamp
-            $result = $this->alert_service->updateLastSeen($conversation_id, 'therapist');
-            $this->sendJsonResponse(['success' => $result]);
+            $groups = $this->service->getTherapistAssignedGroups($uid);
+            $this->json(['groups' => $groups]);
         } catch (Exception $e) {
-            $this->sendJsonResponse(['error' => $e->getMessage()], 500);
+            $this->json(['error' => $e->getMessage()], 500);
         }
     }
 
-    /**
-     * Handle speech transcription request for therapists
-     */
     private function handleSpeechTranscribe()
     {
         $this->validateTherapistOrFail();
 
-        // Check if speech-to-text is enabled
         if (!$this->model->isSpeechToTextEnabled()) {
-            $this->sendJsonResponse(['error' => 'Speech-to-text is not enabled'], 400);
+            $this->json(['error' => 'Speech-to-text is not enabled'], 400);
             return;
         }
 
-        // Check for uploaded audio file
         if (!isset($_FILES['audio']) || $_FILES['audio']['error'] !== UPLOAD_ERR_OK) {
-            $this->sendJsonResponse(['error' => 'No audio file uploaded'], 400);
+            $this->json(['error' => 'No audio file uploaded'], 400);
             return;
         }
 
         $audioFile = $_FILES['audio'];
         $tempPath = $audioFile['tmp_name'];
 
-        // Validate file size (max 25MB)
-        $maxSize = 25 * 1024 * 1024;
-        if ($audioFile['size'] > $maxSize) {
-            $this->sendJsonResponse(['error' => 'Audio file too large (max 25MB)'], 400);
+        if ($audioFile['size'] > 25 * 1024 * 1024) {
+            $this->json(['error' => 'Audio file too large (max 25MB)'], 400);
             return;
         }
 
-        // Validate MIME type
-        $finfo = finfo_open(FILEINFO_MIME_TYPE);
-        $mimeType = finfo_file($finfo, $tempPath);
-        finfo_close($finfo);
+        // Use browser-provided MIME type (same approach as sh-shp-llm plugin).
+        // finfo_file() detects WebM containers as "video/webm" even when
+        // they only contain audio tracks, so we rely on the upload type instead.
+        $mimeType = $audioFile['type'] ?? '';
+        $baseMime = explode(';', $mimeType)[0];
 
-        if (strpos($mimeType, 'audio') === false) {
-            $this->sendJsonResponse(['error' => 'Invalid audio format: ' . $mimeType], 400);
+        $allowedTypes = [
+            'audio/webm', 'audio/webm;codecs=opus',
+            'audio/wav', 'audio/mp3', 'audio/mpeg',
+            'audio/mp4', 'audio/ogg', 'audio/flac',
+            'video/webm',
+        ];
+        if (!in_array($mimeType, $allowedTypes) && !in_array($baseMime, $allowedTypes)) {
+            $this->json([
+                'error' => 'Invalid audio format: ' . $mimeType . '. Supported: WebM, WAV, MP3, OGG, FLAC'
+            ], 400);
             return;
         }
 
         try {
-            // Check if LLM Speech-to-Text service is available
-            $llmSpeechServicePath = __DIR__ . "/../../../../sh-shp-llm/server/service/LlmSpeechToTextService.php";
+            $llmSpeechServicePath = __DIR__ . "/../../../../../sh-shp-llm/server/service/LlmSpeechToTextService.php";
 
             if (!file_exists($llmSpeechServicePath)) {
-                $this->sendJsonResponse(['error' => 'Speech-to-text service not available'], 500);
+                $this->json(['error' => 'Speech-to-text service not available'], 500);
                 return;
             }
 
             require_once $llmSpeechServicePath;
 
-            $services = $this->model->get_services();
-            $speechService = new LlmSpeechToTextService($services, $this->model);
-
-            $model = $this->model->getSpeechToTextModel();
-            $language = $this->model->getSpeechToTextLanguage();
+            $speechService = new LlmSpeechToTextService($this->model->get_services(), $this->model);
 
             $result = $speechService->transcribeAudio(
                 $tempPath,
-                $model,
-                $language !== 'auto' ? $language : null
+                $this->model->getSpeechToTextModel(),
+                $this->model->getSpeechToTextLanguage() !== 'auto' ? $this->model->getSpeechToTextLanguage() : null
             );
 
             if (isset($result['error'])) {
-                $this->sendJsonResponse(['success' => false, 'error' => $result['error']], 500);
+                $this->json(['success' => false, 'error' => $result['error']], 500);
                 return;
             }
 
-            $this->sendJsonResponse([
-                'success' => true,
-                'text' => $result['text'] ?? ''
-            ]);
+            $this->json(['success' => true, 'text' => $result['text'] ?? '']);
         } catch (Exception $e) {
-            error_log("TherapistDashboard speech transcription error: " . $e->getMessage());
-            $this->sendJsonResponse([
-                'success' => false,
-                'error' => DEBUG ? $e->getMessage() : 'Speech transcription failed'
-            ], 500);
+            $this->json(['success' => false, 'error' => DEBUG ? $e->getMessage() : 'Speech transcription failed'], 500);
         }
     }
 
-    /* Helpers ****************************************************************/
+    /* =========================================================================
+     * HELPERS
+     * ========================================================================= */
 
-    /**
-     * Validate user is an authenticated therapist
-     *
-     * @return int User ID
-     */
     private function validateTherapistOrFail()
     {
-        $user_id = $this->model->getUserId();
-        if (!$user_id) {
-            $this->sendJsonResponse(['error' => 'User not authenticated'], 401);
+        $uid = $this->model->getUserId();
+        if (!$uid) {
+            $this->json(['error' => 'User not authenticated'], 401);
             exit;
         }
 
         if (!$this->model->hasAccess()) {
-            $this->sendJsonResponse(['error' => 'Access denied - therapist role required'], 403);
+            $this->json(['error' => 'Access denied - therapist role required'], 403);
             exit;
         }
 
-        return $user_id;
+        return $uid;
     }
 
-    /**
-     * Send JSON response
-     *
-     * @param array $data
-     * @param int $status_code
-     */
-    private function sendJsonResponse($data, $status_code = 200)
+    private function json($data, $status = 200)
     {
         if (!headers_sent()) {
-            http_response_code($status_code);
+            http_response_code($status);
             header('Content-Type: application/json');
         }
         echo json_encode($data);

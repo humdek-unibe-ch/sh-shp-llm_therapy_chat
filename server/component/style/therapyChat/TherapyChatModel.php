@@ -23,8 +23,11 @@ if (file_exists($llmContextServicePath)) {
 /**
  * Therapy Chat Model
  *
- * Data model for the subject chat interface.
+ * Data model for the subject/patient chat interface.
  * Wraps therapy services and provides CMS field access.
+ *
+ * Access control: patients access their own conversation only.
+ * No group ID needed on the model -- conversations are per-user.
  *
  * @package LLM Therapy Chat Plugin
  */
@@ -39,20 +42,11 @@ class TherapyChatModel extends StyleModel
     /** @var int|null Current user ID */
     private $userId;
 
-    /** @var int|null Group ID from URL params */
-    private $groupId;
-
-    /** @var array|null Current conversation */
+    /** @var array|null Cached current conversation */
     private $conversation;
 
     /**
      * Constructor
-     *
-     * @param object $services
-     * @param int $id
-     * @param array $params
-     * @param number $id_page
-     * @param array $entry_record
      */
     public function __construct($services, $id, $params = array(), $id_page = -1, $entry_record = array())
     {
@@ -60,7 +54,6 @@ class TherapyChatModel extends StyleModel
 
         $this->therapyService = new TherapyMessageService($services);
         $this->userId = $_SESSION['id_user'] ?? null;
-        $this->groupId = $params['gid'] ?? null;
 
         // Initialize danger detection if enabled
         if ($this->isDangerDetectionEnabled()) {
@@ -68,39 +61,36 @@ class TherapyChatModel extends StyleModel
         }
     }
 
-    /* Access Control *********************************************************/
+    /* =========================================================================
+     * ACCESS CONTROL
+     * ========================================================================= */
 
     /**
-     * Check if current user has access
-     *
-     * @return bool
+     * Check if current user has access to the subject chat
      */
     public function hasAccess()
     {
         if (!$this->userId) {
             return false;
         }
-
-        return $this->therapyService->isSubject($this->userId) || 
-               $this->therapyService->isTherapist($this->userId);
+        return $this->therapyService->isSubject($this->userId);
     }
 
     /**
      * Check if user is a subject
-     *
-     * @return bool
      */
     public function isSubject()
     {
         return $this->therapyService->isSubject($this->userId);
     }
 
-    /* Conversation Access ****************************************************/
+    /* =========================================================================
+     * CONVERSATION ACCESS
+     * ========================================================================= */
 
     /**
-     * Get or create the current conversation
-     *
-     * @return array|null
+     * Get or create the current conversation for this patient.
+     * No group ID required -- conversation is per-user.
      */
     public function getOrCreateConversation()
     {
@@ -108,28 +98,16 @@ class TherapyChatModel extends StyleModel
             return $this->conversation;
         }
 
-        if (!$this->groupId) {
-            // Try to get default group from config or first available
-            $this->groupId = $this->getDefaultGroupId();
-            error_log("TherapyChatModel: Got default group ID: " . ($this->groupId ?: 'null'));
-        }
-
-        if (!$this->groupId) {
-            error_log("TherapyChatModel: No group ID available for user " . $this->userId . ", using default group 1");
-            // Use default group 1 if no group is assigned
-            // This allows basic functionality even without proper group assignment
-            $this->groupId = 1;
-        }
-
         $mode = $this->get_db_field('therapy_chat_default_mode', THERAPY_MODE_AI_HYBRID);
         $model = $this->get_db_field('llm_model', '');
+        $aiEnabled = (bool)$this->get_db_field('therapy_enable_ai', '1');
 
         $this->conversation = $this->therapyService->getOrCreateTherapyConversation(
             $this->userId,
-            $this->groupId,
             $this->getSectionId(),
             $mode,
-            $model
+            $model,
+            $aiEnabled
         );
 
         return $this->conversation;
@@ -137,9 +115,6 @@ class TherapyChatModel extends StyleModel
 
     /**
      * Get conversation by ID
-     *
-     * @param int $conversationId
-     * @return array|null
      */
     public function getConversation($conversationId)
     {
@@ -148,15 +123,11 @@ class TherapyChatModel extends StyleModel
 
     /**
      * Get messages for current conversation
-     *
-     * @param int $limit
-     * @param int|null $afterId
-     * @return array
      */
     public function getMessages($limit = 100, $afterId = null)
     {
         $conversation = $this->getOrCreateConversation();
-        
+
         if (!$conversation) {
             return array();
         }
@@ -168,168 +139,97 @@ class TherapyChatModel extends StyleModel
         );
     }
 
-    /* Configuration Access ***************************************************/
+    /* =========================================================================
+     * CONFIGURATION ACCESS
+     * ========================================================================= */
 
-    /**
-     * Get section ID
-     *
-     * @return int
-     */
     public function getSectionId()
     {
         return $this->section_id;
     }
 
-
-    /**
-     * Check if danger detection is enabled
-     *
-     * @return bool
-     */
     public function isDangerDetectionEnabled()
     {
         return (bool)$this->get_db_field('enable_danger_detection', '0');
     }
 
-    /**
-     * Get danger keywords
-     *
-     * @return string
-     */
     public function getDangerKeywords()
     {
         return $this->get_db_field('danger_keywords', '');
     }
 
-    /**
-     * Get danger notification emails
-     *
-     * @return array
-     */
     public function getDangerNotificationEmails()
     {
         $emails = $this->get_db_field('danger_notification_emails', '');
         if (empty($emails)) {
             return array();
         }
-
-        // Split by semicolons, newlines, or commas
         $parts = preg_split('/[;\n,]+/', $emails);
         return array_filter(array_map('trim', $parts));
     }
 
-    /**
-     * Get danger blocked message
-     *
-     * @return string
-     */
     public function getDangerBlockedMessage()
     {
         return $this->get_db_field('danger_blocked_message',
-               'I noticed some concerning content. Please consider reaching out to a trusted person or crisis hotline.');
+            'I noticed some concerning content. Please consider reaching out to a trusted person or crisis hotline.');
     }
 
-    /**
-     * Get tagging enabled status
-     *
-     * @return bool
-     */
     public function isTaggingEnabled()
     {
         return (bool)$this->get_db_field('therapy_chat_enable_tagging', '0');
     }
 
-    /**
-     * Get polling interval
-     *
-     * @return int Seconds
-     */
+    public function isAIEnabled()
+    {
+        return (bool)$this->get_db_field('therapy_enable_ai', '1');
+    }
+
     public function getPollingInterval()
     {
         return (int)$this->get_db_field('therapy_chat_polling_interval', '3');
     }
 
-    /**
-     * Get conversation context for AI
-     *
-     * @return string
-     */
     public function getConversationContext()
     {
         return $this->get_db_field('conversation_context', '');
     }
 
-    /**
-     * Get LLM model
-     *
-     * @return string
-     */
     public function getLlmModel()
     {
         return $this->get_db_field('llm_model', '');
     }
 
-    /**
-     * Get LLM temperature
-     *
-     * @return float
-     */
     public function getLlmTemperature()
     {
         return (float)$this->get_db_field('llm_temperature', '1');
     }
 
-    /**
-     * Get LLM max tokens
-     *
-     * @return int
-     */
     public function getLlmMaxTokens()
     {
         return (int)$this->get_db_field('llm_max_tokens', '2048');
     }
 
-    /**
-     * Check if speech-to-text is enabled
-     *
-     * @return bool
-     */
     public function isSpeechToTextEnabled()
     {
         $enabled = (bool)$this->get_db_field('enable_speech_to_text', '0');
         $model = $this->get_db_field('speech_to_text_model', '');
-        
-        // Speech-to-text requires both enabled flag and a model
         return $enabled && !empty($model);
     }
 
-    /**
-     * Get speech-to-text model
-     *
-     * @return string
-     */
     public function getSpeechToTextModel()
     {
         return $this->get_db_field('speech_to_text_model', '');
     }
 
-    /**
-     * Get speech-to-text language
-     *
-     * @return string
-     */
     public function getSpeechToTextLanguage()
     {
         return $this->get_db_field('speech_to_text_language', 'auto');
     }
 
-    /* Label Getters **********************************************************/
+    /* =========================================================================
+     * LABEL GETTERS
+     * ========================================================================= */
 
-    /**
-     * Get all configurable labels
-     *
-     * @return array
-     */
     public function getLabels()
     {
         return array(
@@ -347,87 +247,50 @@ class TherapyChatModel extends StyleModel
         );
     }
 
-    /**
-     * Get tag reasons from JSON configuration
-     *
-     * @return array
-     */
     public function getTagReasons()
     {
         return $this->get_db_field('therapy_tag_reasons', '');
     }
 
-    /* Service Access *********************************************************/
+    /* =========================================================================
+     * SERVICE ACCESS
+     * ========================================================================= */
 
-    /**
-     * Get therapy service
-     *
-     * @return TherapyMessageService
-     */
     public function getTherapyService()
     {
         return $this->therapyService;
     }
 
-    /**
-     * Get danger detection service
-     *
-     * @return LlmDangerDetectionService|null
-     */
     public function getDangerDetection()
     {
         return $this->dangerDetection;
     }
 
-    /**
-     * Get user ID
-     *
-     * @return int|null
-     */
     public function getUserId()
     {
         return $this->userId;
     }
 
-    /**
-     * Get group ID
-     *
-     * @return int|null
-     */
-    public function getGroupId()
-    {
-        return $this->groupId;
-    }
-
-    /* Configuration for React **************************************************/
+    /* =========================================================================
+     * REACT CONFIGURATION
+     * ========================================================================= */
 
     /**
-     * Get React configuration as array
-     *
-     * @return array
+     * Get React configuration array
      */
     public function getReactConfig()
     {
-        // Don't auto-create conversation during config generation
-        // Let the React app handle conversation creation/loading
-        $conversation = null; // $this->getConversationIfExists();
-
-        // Get base URL for API calls
         $baseUrl = $this->getBaseUrl();
 
         return array(
-            // API configuration
             'baseUrl' => $baseUrl,
-
-            // Core identifiers
             'userId' => $this->getUserId(),
             'sectionId' => $this->getSectionId(),
-            'conversationId' => null, // Always start with null, let React handle conversation loading
-            'groupId' => $this->getGroupId(),
+            'conversationId' => null,
 
-            // Conversation state - defaults
+            // State defaults
             'conversationMode' => THERAPY_MODE_AI_HYBRID,
-            'aiEnabled' => true,
+            'aiEnabled' => $this->isAIEnabled(),
             'riskLevel' => THERAPY_RISK_LOW,
 
             // Feature flags
@@ -435,35 +298,30 @@ class TherapyChatModel extends StyleModel
             'taggingEnabled' => $this->isTaggingEnabled(),
             'dangerDetectionEnabled' => $this->isDangerDetectionEnabled(),
 
-            // Polling configuration
-            'pollingInterval' => $this->getPollingInterval() * 1000, // Convert to ms
+            // Polling
+            'pollingInterval' => $this->getPollingInterval() * 1000,
 
-            // UI Labels
+            // Labels
             'labels' => $this->getLabels(),
 
-            // Tag reasons for quick selection
+            // Tag reasons
             'tagReasons' => $this->getTagReasonsForReact(),
 
-            // LLM Configuration
+            // LLM
             'configuredModel' => $this->getLlmModel(),
 
-            // Speech-to-Text Configuration
+            // Speech-to-Text
             'speechToTextEnabled' => $this->isSpeechToTextEnabled(),
             'speechToTextModel' => $this->getSpeechToTextModel(),
             'speechToTextLanguage' => $this->getSpeechToTextLanguage(),
         );
     }
-    
-    /**
-     * Get tag reasons formatted for React
-     *
-     * @return array
-     */
+
     private function getTagReasonsForReact()
     {
         $labels = $this->getLabels();
         $reasons = $labels['tag_reasons'] ?? array();
-        
+
         if (empty($reasons)) {
             return array(
                 array('code' => 'overwhelmed', 'label' => 'I am feeling overwhelmed', 'urgency' => THERAPY_URGENCY_NORMAL),
@@ -472,9 +330,8 @@ class TherapyChatModel extends StyleModel
                 array('code' => 'emergency', 'label' => 'Emergency - please respond immediately', 'urgency' => THERAPY_URGENCY_EMERGENCY)
             );
         }
-        
-        // Ensure proper structure with 'code' instead of 'key'
-        return array_map(function($r) {
+
+        return array_map(function ($r) {
             return array(
                 'code' => $r['key'] ?? $r['code'] ?? '',
                 'label' => $r['label'] ?? '',
@@ -482,27 +339,17 @@ class TherapyChatModel extends StyleModel
             );
         }, $reasons);
     }
-    
-    /**
-     * Get the base URL for API calls
-     * 
-     * @return string Base URL including path to index.php
-     */
+
     private function getBaseUrl()
     {
-        // Get the current script path and extract the base
         $scriptPath = $_SERVER['SCRIPT_NAME'] ?? '/index.php';
-        
-        // If we have a valid script path, extract the base directory
         if (strpos($scriptPath, '/index.php') !== false) {
             return $scriptPath;
         }
-        
-        // Fallback to determining base from request URI
+
         $requestUri = $_SERVER['REQUEST_URI'] ?? '';
         $pathParts = explode('/', trim($requestUri, '/'));
-        
-        // Find where the app root is
+
         $basePath = '';
         foreach ($pathParts as $part) {
             if ($part === 'therapy-chat' || $part === 'therapist-dashboard') {
@@ -510,35 +357,8 @@ class TherapyChatModel extends StyleModel
             }
             $basePath .= '/' . $part;
         }
-        
+
         return $basePath . '/index.php';
-    }
-
-    /* Private Helpers ********************************************************/
-
-    /**
-     * Get default group ID for therapy chat
-     *
-     * @return int|null
-     */
-    private function getDefaultGroupId()
-    {
-        // Try to find first group the user belongs to
-        $sql = "SELECT ug.id_groups, g.name as group_name
-                FROM users_groups ug
-                INNER JOIN `groups` g ON g.id = ug.id_groups
-                WHERE ug.id_users = :uid
-                LIMIT 1";
-
-        $result = $this->db->query_db_first($sql, array(':uid' => $this->userId));
-
-        if ($result) {
-            error_log("TherapyChatModel: User {$this->userId} belongs to group {$result['id_groups']} ({$result['group_name']})");
-            return $result['id_groups'];
-        } else {
-            error_log("TherapyChatModel: User {$this->userId} is not assigned to any groups");
-            return null;
-        }
     }
 }
 ?>

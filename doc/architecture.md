@@ -1,155 +1,153 @@
-# Architecture Documentation
+# Architecture Overview
 
-## Plugin Design Philosophy
-
-The LLM Therapy Chat plugin follows a **extension-based architecture** that maximizes code reuse from the sh-shp-llm plugin while adding therapy-specific functionality.
-
-### Core Principles
-
-1. **No Code Duplication** - All LLM functionality is inherited, not reimplemented
-2. **Single Data Source** - All chat data lives in the LLM plugin's tables
-3. **Metadata Extension** - Therapy features add metadata, not duplicate data
-4. **Service Inheritance** - PHP classes extend LlmService for full functionality
-
-## Data Flow
+## Plugin Structure
 
 ```
-[Subject] ─────> [TherapyChatController]
-                        │
-                        ▼
-              [TherapyMessageService]
-                        │
-                        ├──> [LlmService.addMessage()] ──> llmMessages table
-                        │
-                        ├──> [Danger Detection] (from sh-shp-llm)
-                        │
-                        └──> [TherapyTaggingService] ──> therapyTags table
-                                    │
-                                    └──> [TherapyAlertService] ──> therapyAlerts table
+sh-shp-llm_therapy_chat/
+├── server/
+│   ├── service/
+│   │   ├── globals.php                    # Plugin constants loader
+│   │   ├── TherapyChatService.php         # Base: conversations, assignments, ACL
+│   │   ├── TherapyAlertService.php        # Extends above: alerts + tags
+│   │   └── TherapyMessageService.php      # Extends above: messaging, drafts, recipients
+│   ├── constants/
+│   │   └── TherapyLookups.php             # All PHP constants (lookup codes)
+│   ├── component/
+│   │   ├── style/
+│   │   │   ├── therapyChat/               # Patient chat (MVC)
+│   │   │   │   ├── TherapyChatComponent.php
+│   │   │   │   ├── TherapyChatModel.php
+│   │   │   │   ├── TherapyChatView.php
+│   │   │   │   ├── TherapyChatController.php
+│   │   │   │   └── tpl/therapy_chat_main.php
+│   │   │   └── therapistDashboard/        # Therapist dashboard (MVC)
+│   │   │       ├── TherapistDashboardComponent.php
+│   │   │       ├── TherapistDashboardModel.php
+│   │   │       ├── TherapistDashboardView.php
+│   │   │       ├── TherapistDashboardController.php
+│   │   │       └── tpl/therapist_dashboard_main.php
+│   │   ├── TherapyChatHooks.php           # Hook implementations
+│   │   └── TherapyChatHooks/tpl/          # Hook templates
+│   └── db/
+│       ├── v1.0.0.sql                     # Full schema + lookups + hooks
+│       └── FUN_PRO_VIEWS/                 # Standalone view definitions
+├── react/src/                             # React frontend
+│   ├── TherapyChat.tsx                    # Entry point & auto-mount
+│   ├── types/index.ts                     # All TypeScript interfaces
+│   ├── utils/api.ts                       # API communication layer
+│   ├── hooks/
+│   │   ├── useChatState.ts                # Shared chat state hook
+│   │   └── usePolling.ts                  # Interval polling hook
+│   ├── components/
+│   │   ├── subject/SubjectChat.tsx        # Patient chat UI
+│   │   ├── therapist/TherapistDashboard.tsx  # Therapist dashboard UI
+│   │   └── shared/                        # Reusable components
+│   │       ├── MessageList.tsx
+│   │       ├── MessageInput.tsx
+│   │       ├── LoadingIndicator.tsx
+│   │       ├── TaggingPanel.tsx
+│   │       └── MarkdownRenderer.tsx
+│   └── styles/therapy-chat.css            # All custom CSS (single file)
+├── js/ext/therapy-chat.umd.js             # Built JS bundle
+├── css/ext/therapy-chat.css               # Built CSS bundle
+└── doc/                                   # Documentation
 ```
 
-## Table Relationships
+## Database Schema
 
-```
-llmConversations (from sh-shp-llm)
-       │
-       ├──── llmMessages (from sh-shp-llm)
-       │           │
-       │           └──── therapyTags
-       │
-       ├──── therapyConversationMeta (1:1)
-       │
-       ├──── therapyAlerts (1:many)
-       │
-       └──── therapyNotes (1:many)
-```
+### Core Principle: Extend, Don't Modify
 
-## Service Hierarchy
+The plugin extends the `sh-shp-llm` base tables (`llmConversations`, `llmMessages`)
+without altering them. All therapy-specific data lives in separate tables.
 
-```
-LlmService (sh-shp-llm)
-    │
-    └── TherapyChatService
-            │
-            ├── TherapyMessageService
-            │       │
-            │       └── (uses parent addMessage, getMessages)
-            │
-            └── TherapyAlertService
-                    │
-                    └── TherapyTaggingService
-```
+### Tables
 
-## Component Structure
+| Table | Purpose |
+|-------|---------|
+| `therapyTherapistAssignments` | Maps therapist users → patient groups they monitor |
+| `therapyConversationMeta` | 1:1 extension of `llmConversations` with therapy metadata |
+| `therapyMessageRecipients` | Per-user message delivery / read tracking |
+| `therapyAlerts` | All notifications (danger, tags, activity, inactivity) |
+| `therapyNotes` | Clinical notes per conversation |
+| `therapyDraftMessages` | AI draft editing workflow for therapists |
 
-### Subject Chat (therapyChat style)
+### Key Design Decisions
 
-```
-TherapyChatComponent
-    │
-    ├── TherapyChatModel
-    │       │
-    │       ├── CMS field access
-    │       ├── Conversation state
-    │       └── TherapyTaggingService instance
-    │
-    ├── TherapyChatView
-    │       │
-    │       └── Renders HTML + vanilla JavaScript
-    │
-    └── TherapyChatController
-            │
-            └── API endpoints: send, messages, tag
-```
-
-### Therapist Dashboard (therapistDashboard style)
-
-```
-TherapistDashboardComponent
-    │
-    ├── TherapistDashboardModel
-    │       │
-    │       ├── Conversation list access
-    │       ├── Alert/tag retrieval
-    │       └── Notes access
-    │
-    ├── TherapistDashboardView
-    │       │
-    │       └── Dashboard layout + controls
-    │
-    └── TherapistDashboardController
-            │
-            └── API endpoints: send, toggle-ai, set-risk, add-note
-```
-
-## Access Control
-
-### Subject Access
-- Can only access their own conversations
-- Can send messages, tag therapist
-- Cannot see therapist notes
-
-### Therapist Access
-- Can access conversations in their assigned groups
-- Can send messages, toggle AI, set risk levels
-- Can add private notes
-- Full visibility in LLM Admin Console
-
-### Admin Access
-- Full access via LLM Admin Console
-- Can block/unblock conversations
-- Can view all debug data
-
-## Message Attribution
-
-All messages are stored in `llmMessages` with therapy metadata in the `sent_context` JSON field:
-
+**No `id_therapist` on conversations**: Multiple therapists can interact with one conversation.
+Sender identity is tracked in `llmMessages.sent_context` JSON:
 ```json
 {
-    "therapy_sender_type": "subject|therapist|ai",
-    "therapy_sender_id": 123,
-    "therapy_mode": "ai_hybrid|human_only"
+  "therapy_sender_type": "therapist",
+  "therapy_sender_id": 12345
 }
 ```
 
-This allows:
-- Proper sender attribution in the UI
-- Filtering by sender type
-- Full compatibility with LLM Admin Console
+**No `id_groups` on conversations**: Access control is via `therapyTherapistAssignments`.
+A therapist sees conversations from patients who belong to groups the therapist is assigned to.
 
-## Real-time Updates
+**Tags absorbed into alerts**: The `tag_received` alert type with `metadata` JSON replaces
+the old separate `therapyTags` table.
 
-The plugin uses **polling** for message updates:
+### Access Control Flow
 
-1. Client polls `/request/{section}/therapy-chat/messages?after={lastId}` every N seconds
-2. Server returns only messages newer than `lastId`
-3. Client appends new messages to the UI
+```
+Therapist opens dashboard
+  → therapyTherapistAssignments: therapist → [group_1, group_2]
+  → users_groups: find patients in those groups
+  → llmConversations: patient's conversation(s)
+  → therapyConversationMeta: therapy metadata
+```
 
-Polling interval is configurable via CMS field (default: 3 seconds).
+## Service Architecture
 
-### Future: WebSocket Support
+```
+TherapyMessageService (top-level)
+  └── extends TherapyAlertService
+        └── extends TherapyChatService
+              └── extends LlmService (from sh-shp-llm)
+```
 
-The architecture is designed to allow WebSocket upgrade in the future:
-- Same API endpoints can be used
-- Message format is already compatible
-- Only transport layer would change
+| Service | Responsibility |
+|---------|---------------|
+| `TherapyChatService` | Conversations, assignments, settings, access control |
+| `TherapyAlertService` | Alerts (danger, tag, activity), notifications |
+| `TherapyMessageService` | Sending messages, editing, deleting, drafts, recipients |
+
+## React Frontend Architecture
+
+The frontend is built as a single UMD bundle. Two React apps mount on different
+DOM containers:
+
+- `.therapy-chat-root` → `SubjectChat` (patient view)
+- `.therapist-dashboard-root` → `TherapistDashboard` (therapist view)
+
+Configuration is passed via `data-config` JSON attribute from PHP.
+
+### Component Hierarchy
+
+```
+TherapyChat.tsx (entry point)
+├── SubjectChatLoader → SubjectChat
+│   ├── MessageList
+│   ├── MessageInput
+│   ├── TaggingPanel
+│   └── LoadingIndicator
+└── TherapistDashboardLoader → TherapistDashboard
+    ├── MessageList
+    ├── MessageInput
+    ├── LoadingIndicator
+    └── StatItem (inline)
+```
+
+### Data Flow
+
+All API calls go through the current page's controller via `?action=xxx`.
+Security is handled by SelfHelp's session + ACL system.
+
+```
+React Component
+  → utils/api.ts (fetch with action param)
+  → PHP Controller (TherapyChatController / TherapistDashboardController)
+  → PHP Service layer (TherapyMessageService)
+  → Database
+```

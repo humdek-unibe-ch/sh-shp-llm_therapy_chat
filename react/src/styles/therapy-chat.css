@@ -1,0 +1,326 @@
+/**
+ * Therapy Chat Styles
+ * ====================
+ *
+ * Minimal custom CSS — most styling uses Bootstrap 4.6 utilities.
+ * Only custom rules for chat-specific layout that Bootstrap can't handle.
+ *
+ * Consistent with the sh-shp-llm plugin UI patterns.
+ *
+ * Prefix: tc- (therapy chat)
+ */
+
+/* ============================================================
+   MESSAGE LIST
+   ============================================================ */
+
+.tc-msg-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  background-color: #f8f9fa;
+}
+
+.tc-msg-list::-webkit-scrollbar {
+  width: 6px;
+}
+.tc-msg-list::-webkit-scrollbar-thumb {
+  background-color: rgba(0, 0, 0, 0.15);
+  border-radius: 3px;
+}
+
+/* ============================================================
+   MESSAGE BUBBLES
+   ============================================================ */
+
+.tc-msg {
+  max-width: 75%;
+  padding: 0.5rem 0.75rem;
+  border-radius: 0.75rem;
+  position: relative;
+}
+
+/* Header (sender + time) */
+.tc-msg__header {
+  display: flex;
+  align-items: center;
+  font-size: 0.7rem;
+  margin-bottom: 0.15rem;
+  gap: 0.25rem;
+}
+.tc-msg__sender {
+  font-weight: 600;
+}
+.tc-msg__time {
+  opacity: 0.6;
+  white-space: nowrap;
+}
+.tc-msg__icon {
+  opacity: 0.6;
+  font-size: 0.65rem;
+}
+.tc-msg__edited {
+  margin-top: 0.15rem;
+}
+
+/* Own messages — right-aligned, primary blue */
+.tc-msg--self {
+  align-self: flex-end;
+  background-color: #007bff;
+  color: #fff;
+  border-bottom-right-radius: 0.2rem;
+}
+.tc-msg--self .tc-msg__sender,
+.tc-msg--self .tc-msg__time {
+  color: rgba(255, 255, 255, 0.85);
+}
+
+/* Subject (patient) messages — left, light blue */
+.tc-msg--subject {
+  align-self: flex-start;
+  background-color: #e3f2fd;
+  color: #0d47a1;
+  border-bottom-left-radius: 0.2rem;
+}
+
+/* AI messages — left, white with border */
+.tc-msg--ai {
+  align-self: flex-start;
+  background-color: #ffffff;
+  color: #212529;
+  border: 1px solid #dee2e6;
+  border-bottom-left-radius: 0.2rem;
+}
+.tc-msg--ai .tc-msg__sender,
+.tc-msg--ai .tc-msg__time {
+  color: #6c757d;
+}
+
+/* Therapist messages (seen by patient) — left, green with accent */
+.tc-msg--therapist {
+  align-self: flex-start;
+  background-color: #d4edda;
+  color: #155724;
+  border-left: 3px solid #28a745;
+  border-radius: 0 0.75rem 0.75rem 0;
+  border-bottom-left-radius: 0;
+}
+
+/* System messages — centered, yellow */
+.tc-msg--system {
+  align-self: center;
+  max-width: 85%;
+  background-color: #fff3cd;
+  color: #856404;
+  text-align: center;
+  font-style: italic;
+  font-size: 0.85rem;
+  padding: 0.35rem 0.75rem;
+}
+
+/* Deleted messages */
+.tc-msg--deleted {
+  align-self: center;
+  padding: 0.25rem 0.75rem;
+}
+
+/* ============================================================
+   MARKDOWN IN AI MESSAGES
+   ============================================================ */
+
+.tc-markdown p:last-child {
+  margin-bottom: 0;
+}
+.tc-markdown pre {
+  background: #f1f3f5;
+  border-radius: 0.25rem;
+  padding: 0.5rem;
+  font-size: 0.8rem;
+  overflow-x: auto;
+}
+.tc-markdown code {
+  font-size: 0.8rem;
+}
+.tc-markdown ul,
+.tc-markdown ol {
+  padding-left: 1.25rem;
+  margin-bottom: 0.5rem;
+}
+
+/* ============================================================
+   MESSAGE INPUT  (matches sh-shp-llm .message-input-container)
+   ============================================================ */
+
+/* Outer container: border wraps both textarea and action bar */
+.tc-input-container {
+  border-radius: 0.5rem;
+  overflow: hidden;
+  transition: box-shadow 0.2s ease, border-color 0.2s ease;
+}
+.tc-input-container:focus-within {
+  border-color: #80bdff !important;
+  box-shadow: 0 0 0 0.2rem rgba(0, 123, 255, 0.15);
+}
+
+/* Textarea: no border (container provides it), transparent background */
+.tc-input-textarea {
+  font-size: 15px;
+  background: transparent;
+  border-radius: 0 !important;
+}
+.tc-input-textarea:focus {
+  box-shadow: none;
+  background: transparent;
+}
+
+/* Action bar: light bg, thin top border */
+.tc-input-actions {
+  border-radius: 0 0 0.5rem 0.5rem;
+}
+
+/* Action buttons in the bar */
+.tc-action-btn {
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  font-size: 14px;
+}
+
+/* Send button can be wider on larger screens */
+.tc-send-btn {
+  width: auto;
+  border-radius: 0.25rem;
+  padding: 0 0.75rem;
+}
+
+/* ============================================================
+   SPEECH-TO-TEXT  (matches sh-shp-llm pulse animations)
+   ============================================================ */
+
+.tc-speech-recording-active {
+  animation: tc-pulse-recording 1.5s ease-in-out infinite;
+}
+
+@keyframes tc-pulse-recording {
+  0%, 100% {
+    box-shadow: 0 0 0 0 rgba(220, 53, 69, 0.4);
+  }
+  50% {
+    box-shadow: 0 0 0 8px rgba(220, 53, 69, 0);
+  }
+}
+
+.tc-speech-recording-active i {
+  animation: tc-pulse-icon 1s ease-in-out infinite;
+}
+
+@keyframes tc-pulse-icon {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.2); }
+}
+
+/* Consistent icon sizes */
+.tc-action-btn .fa-microphone,
+.tc-action-btn .fa-stop,
+.tc-action-btn .fa-microphone-slash {
+  font-size: 14px;
+  width: 14px;
+}
+
+/* ============================================================
+   PATIENT LIST (Therapist Dashboard)
+   ============================================================ */
+
+.tc-patient-list {
+  overflow-y: auto;
+}
+
+.tc-patient-list .list-group-item {
+  cursor: pointer;
+  border-left: 3px solid transparent;
+  transition: background-color 0.15s, border-left-color 0.15s;
+}
+
+.tc-patient-list .list-group-item:hover:not(.active) {
+  background-color: #f8f9fa;
+}
+
+/* Unread patient highlight */
+.tc-patient-list__unread {
+  background-color: #e7f1ff !important;
+  border-left-color: #007bff !important;
+}
+.tc-patient-list__unread:hover:not(.active) {
+  background-color: #d0e3ff !important;
+}
+
+.tc-patient-list .list-group-item.active {
+  border-left-color: #fff;
+}
+
+/* ============================================================
+   NOTES LIST (Therapist Dashboard)
+   ============================================================ */
+
+.tc-notes-list {
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+.tc-note-item {
+  background-color: #fff3cd;
+  border-left: 3px solid #ffc107;
+}
+
+/* ============================================================
+   SUBJECT CHAT CONTAINER
+   ============================================================ */
+
+.tc-subject {
+  max-width: 700px;
+  margin: 0 auto;
+}
+
+/* ============================================================
+   NAV TABS (group tabs)
+   ============================================================ */
+
+.tc-dashboard .nav-tabs .nav-link {
+  cursor: pointer;
+  border: none;
+  border-bottom: 2px solid transparent;
+  color: #495057;
+  padding: 0.5rem 1rem;
+}
+.tc-dashboard .nav-tabs .nav-link.active {
+  border-bottom-color: #007bff;
+  color: #007bff;
+  font-weight: 600;
+}
+
+/* ============================================================
+   RESPONSIVE
+   ============================================================ */
+
+@media (max-width: 767px) {
+  .tc-msg {
+    max-width: 90%;
+  }
+  .tc-patient-list {
+    max-height: 250px;
+  }
+  .tc-subject {
+    max-width: 100%;
+  }
+  .tc-input-textarea {
+    font-size: 13px;
+    min-height: 36px !important;
+  }
+}

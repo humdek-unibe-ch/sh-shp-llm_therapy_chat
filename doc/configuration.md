@@ -1,164 +1,54 @@
 # Configuration Guide
 
-## Module Configuration
+## Module Page Configuration
 
-Navigate to `/admin/module_llm_therapy_chat` to configure global settings.
+The plugin registers a page type `sh_module_llm_therapy_chat` with these fields:
 
-### Subject & Therapist Groups
+| Field | Type | Description |
+|-------|------|-------------|
+| `therapy_chat_subject_group` | select-group | Group containing patients (subjects) |
+| `therapy_chat_therapist_group` | select-group | Group containing therapists (for floating button visibility) |
+| `therapy_chat_subject_page` | select-page | Page ID for the patient chat interface |
+| `therapy_chat_therapist_page` | select-page | Page ID for the therapist dashboard |
+| `therapy_chat_danger_words` | textarea | Comma-separated danger keywords |
+| `therapy_chat_floating_position` | select | Position of the floating chat button |
 
-| Field | Description |
-|-------|-------------|
-| `therapy_chat_subject_group` | The SelfHelp group containing patients/subjects |
-| `therapy_chat_therapist_group` | The SelfHelp group containing therapists |
+## Style Fields (therapyChat)
 
-**Important:** Users must be members of these groups to access the respective interfaces.
-
-### Default Settings
-
-| Field | Default | Description |
-|-------|---------|-------------|
-| `therapy_chat_default_mode` | `ai_hybrid` | Default chat mode for new conversations |
-| `therapy_chat_polling_interval` | `3` | Seconds between message polling |
-| `therapy_chat_enable_tagging` | `1` | Enable @mention tagging |
-
-### Floating Button (Optional)
+Each `therapyChat` style instance can be configured with:
 
 | Field | Default | Description |
 |-------|---------|-------------|
-| `therapy_chat_floating_icon` | `fa-comments` | Font Awesome icon class |
-| `therapy_chat_floating_label` | (empty) | Optional text label |
-| `therapy_chat_floating_position` | `bottom-right` | Screen position |
+| `therapy_enable_ai` | `1` (enabled) | When disabled, AI is off — pure human-to-human chat |
+| `therapy_chat_default_mode` | `ai_hybrid` | Default mode: `ai_hybrid` or `human_only` |
+| `therapy_chat_default_model` | `gpt-4o-mini` | LLM model for AI responses |
+| `therapy_chat_max_tokens` | `2048` | Max tokens for AI response |
+| `therapy_chat_temperature` | `0.7` | AI temperature (creativity) |
+| `therapy_chat_system_prompt` | (built-in) | Custom system prompt for the AI |
+| `therapy_chat_polling_interval` | `10000` | Polling interval in ms |
+| `therapy_chat_tagging_enabled` | `1` | Allow patients to tag therapists |
+| `therapy_chat_speech_to_text_enabled` | `0` | Enable speech input |
+| `css` | (empty) | Additional CSS class |
+| `debug` | `0` | Debug mode |
 
-## Style Configuration (Per Section)
+## Access Control
 
-When adding a `therapyChat` style to a page, configure these fields in the CMS.
+### Patient Access
+Patients must be in the configured `therapy_chat_subject_group`.
+They see a floating chat button on all pages and can access the chat page.
 
-### LLM Configuration
+### Therapist Access
+Therapists must be in the configured `therapy_chat_therapist_group`.
+They see a floating dashboard button.
 
-These fields are inherited from the `llmChat` style:
+### Patient Monitoring Scope
+**Separate from SelfHelp group membership.** Controlled by `therapyTherapistAssignments`:
+- Admin assigns therapist → patient groups via the user admin page hook
+- Therapist only sees conversations from patients in their assigned groups
+- Multiple therapists can be assigned to the same group
 
-| Field | Description |
-|-------|-------------|
-| `llm_model` | AI model to use (dropdown populated from sh-shp-llm) |
-| `llm_temperature` | Creativity level (0-2, default: 1) |
-| `llm_max_tokens` | Maximum response length |
-| `conversation_context` | System prompt for AI behavior |
+## Therapist Group Assignment
 
-### Danger Detection
-
-| Field | Description |
-|-------|-------------|
-| `enable_danger_detection` | Enable safety monitoring (recommended: ON) |
-| `danger_keywords` | Comma-separated list of trigger words |
-| `danger_notification_emails` | Email addresses for alerts |
-| `danger_blocked_message` | Message shown when danger detected |
-
-**Recommended Keywords:**
-```
-suicide,selbstmord,kill myself,mich umbringen,self-harm,selbstverletzung,harm myself,mir schaden,end my life,mein leben beenden,overdose,überdosis
-```
-
-### Labels (Translatable)
-
-These fields support translation via the CMS:
-
-| Field | Default | Description |
-|-------|---------|-------------|
-| `therapy_ai_label` | "AI Assistant" | Label for AI messages |
-| `therapy_therapist_label` | "Therapist" | Label for therapist messages |
-| `therapy_tag_button_label` | "Tag Therapist" | Tag button text |
-| `therapy_tag_reason_overwhelmed` | "I am feeling overwhelmed" | Tag reason option |
-| `therapy_tag_reason_need_talk` | "I need to talk soon" | Tag reason option |
-| `therapy_tag_reason_urgent` | "This feels urgent" | Tag reason option |
-| `therapy_empty_message` | "No messages yet..." | Empty state message |
-| `therapy_ai_thinking_text` | "AI is thinking..." | Loading indicator |
-| `therapy_mode_indicator_ai` | "AI-assisted chat" | Mode badge for AI hybrid |
-| `therapy_mode_indicator_human` | "Therapist-only mode" | Mode badge for human only |
-
-### General Labels
-
-Inherited from `llmChat`:
-
-| Field | Default |
-|-------|---------|
-| `submit_button_label` | "Send" |
-| `message_placeholder` | "Type your message..." |
-| `loading_text` | "Loading..." |
-
-## Chat Modes
-
-### AI Hybrid Mode (`ai_hybrid`)
-
-- AI responds to all subject messages
-- Therapist can observe and intervene
-- Therapist can disable AI at any time
-- Best for 24/7 support with human oversight
-
-### Human Only Mode (`human_only`)
-
-- AI does not respond automatically
-- Only therapist can send messages
-- Subject waits for human response
-- Best for sensitive situations requiring human judgment
-
-## Access Control Setup
-
-### For Subjects
-
-1. Create or use an existing group (e.g., "patients")
-2. Assign users who should have subject access to this group
-3. Set this group in `therapy_chat_subject_group`
-4. Grant the group ACL access to `therapyChatSubject` page
-
-### For Therapists
-
-1. Create or use an existing group (e.g., "therapists")
-2. Assign users who should have therapist access to this group
-3. Set this group in `therapy_chat_therapist_group`
-4. Grant the group ACL access to `therapyChatTherapist` page
-
-## AI System Prompt Example
-
-Here's a recommended system prompt for the `conversation_context` field:
-
-```markdown
-You are a supportive AI assistant in a mental health therapy context.
-
-Your role:
-- Provide empathetic, non-judgmental support
-- Use evidence-based techniques (validation, reflection, grounding)
-- Encourage the user while respecting boundaries
-- Suggest professional support when appropriate
-
-Important boundaries:
-- You are NOT a therapist
-- You cannot diagnose conditions
-- You cannot prescribe treatments
-- Always encourage speaking with the assigned therapist for clinical concerns
-
-Communication style:
-- Use warm, conversational language
-- Ask open-ended questions
-- Reflect back what you hear
-- Validate emotions before problem-solving
-
-If the user seems in distress:
-- Express genuine concern
-- Encourage them to tag their therapist
-- Remind them of crisis resources if appropriate
-```
-
-## Email Notification Setup
-
-For danger detection alerts to work:
-
-1. Ensure SelfHelp's email/job scheduler is configured
-2. Enter valid email addresses in `danger_notification_emails`
-3. Separate multiple emails with semicolons or newlines
-
-**Example:**
-```
-therapist1@clinic.com
-therapist2@clinic.com
-admin@clinic.com
-```
+Assignments are managed via the admin user edit page (`/admin/user/{id}`).
+The plugin injects a "Therapy Chat - Patient Group Monitoring" card with checkboxes
+for each available group. This is done via the `outputTherapistGroupAssignments` hook.

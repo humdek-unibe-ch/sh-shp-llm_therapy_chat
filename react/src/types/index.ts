@@ -1,112 +1,103 @@
 /**
- * TypeScript Types for Therapy Chat
- * ==================================
+ * TypeScript Type Definitions for Therapy Chat Plugin
+ * ====================================================
+ *
+ * All types align with the backend PHP services and database schema.
+ * See: server/service/TherapyMessageService.php
+ *      server/db/v1.0.0.sql
  */
 
-// Message sender types
+// ---------------------------------------------------------------------------
+// Enums / Union Types
+// ---------------------------------------------------------------------------
+
+/** Who sent the message (stored in llmMessages.sent_context.therapy_sender_type) */
 export type SenderType = 'subject' | 'therapist' | 'ai' | 'system';
 
-// Risk levels
+/** Risk levels (therapyRiskLevels lookup) */
 export type RiskLevel = 'low' | 'medium' | 'high' | 'critical';
 
-// Conversation modes
+/** Conversation modes (therapyChatModes lookup) */
 export type ConversationMode = 'ai_hybrid' | 'human_only';
 
-// Conversation status
+/** Conversation status (therapyConversationStatus lookup) */
 export type ConversationStatus = 'active' | 'paused' | 'closed';
 
-// Tag urgency
-export type TagUrgency = 'normal' | 'urgent' | 'emergency';
+/** Alert types (therapyAlertTypes lookup) */
+export type AlertType =
+  | 'danger_detected'
+  | 'tag_received'
+  | 'high_activity'
+  | 'inactivity'
+  | 'new_message';
 
-// Alert types
-export type AlertType = 'danger_detected' | 'tag_received' | 'high_activity' | 'inactivity' | 'new_message';
-
-// Alert severity
+/** Alert severity (therapyAlertSeverity lookup) */
 export type AlertSeverity = 'info' | 'warning' | 'critical' | 'emergency';
 
-/**
- * Message interface
- */
+/** Tag urgency (stored in alert metadata JSON) */
+export type TagUrgency = 'normal' | 'urgent' | 'emergency';
+
+/** Draft status (therapyDraftStatus lookup) */
+export type DraftStatus = 'draft' | 'sent' | 'discarded';
+
+/** Note types (therapyNoteTypes lookup) */
+export type NoteType = 'manual' | 'ai_summary';
+
+// ---------------------------------------------------------------------------
+// Core Data Models
+// ---------------------------------------------------------------------------
+
+/** A single chat message (from llmMessages + sent_context) */
 export interface Message {
   id: number | string;
   role: 'user' | 'assistant' | 'system';
   content: string;
+  timestamp: string;
+  /** Therapy-specific sender type from sent_context */
   sender_type?: SenderType;
   sender_id?: number;
   sender_name?: string;
+  /** Display label resolved by backend (e.g. "Therapist (Dr. Smith)") */
   label?: string;
-  timestamp: string;
-  tags?: Tag[];
-  attachments?: Attachment[];
+  /** Whether this message was edited */
+  is_edited?: boolean;
+  edited_at?: string;
+  /** Whether this message was soft-deleted */
+  is_deleted?: boolean;
 }
 
-/**
- * Attachment interface
- */
-export interface Attachment {
-  id: number;
-  name: string;
-  type: string;
-  size: number;
-  url: string;
-}
-
-/**
- * Conversation interface
- */
+/** A therapy conversation (from view_therapyConversations) */
 export interface Conversation {
   id: number | string;
+  id_llmConversations?: number;
   title?: string;
-  mode: ConversationMode;
+  mode?: ConversationMode;
   ai_enabled: boolean;
-  status: ConversationStatus;
-  risk_level: RiskLevel;
+  status?: ConversationStatus;
+  risk_level?: RiskLevel;
   model?: string;
   created_at: string;
-  last_activity?: string;
-  // Subject info (for therapist view)
+  updated_at?: string;
+  /** Patient user ID */
   id_users?: number;
   subject_name?: string;
   subject_code?: string;
-  // Therapist info
-  id_therapist?: number;
-  therapist_name?: string;
-  // Stats
+  subject_email?: string;
+  /** Aggregated counts from backend */
   message_count?: number;
   unread_count?: number;
   unread_alerts?: number;
-  pending_tags?: number;
 }
 
-/**
- * Tag interface
- */
-export interface Tag {
-  id: number;
-  id_llmMessages: number;
-  id_users: number;
-  tag_reason?: string;
-  urgency: TagUrgency;
-  acknowledged: boolean;
-  acknowledged_at?: string;
-  created_at: string;
-  tagged_name?: string;
-  message_content?: string;
-  message_time?: string;
-  conversation_id?: number;
-  subject_name?: string;
-  subject_code?: string;
-}
-
-/**
- * Alert interface
- */
+/** Alert (from view_therapyAlerts) */
 export interface Alert {
   id: number;
   id_llmConversations: number;
   id_users?: number;
   alert_type: AlertType;
+  alert_type_label?: string;
   severity: AlertSeverity;
+  severity_label?: string;
   message: string;
   metadata?: Record<string, unknown>;
   is_read: boolean;
@@ -117,92 +108,67 @@ export interface Alert {
   subject_code?: string;
 }
 
-/**
- * Note interface
- */
+/** Clinical note (from therapyNotes) */
 export interface Note {
   id: number;
   id_llmConversations: number;
   id_users: number;
   content: string;
+  note_type?: NoteType;
   author_name?: string;
   created_at: string;
 }
 
-/**
- * Tag reason (predefined)
- */
+/** AI draft message (from therapyDraftMessages) */
+export interface Draft {
+  id: number;
+  id_llmConversations: number;
+  id_users: number;
+  ai_content: string;
+  edited_content?: string;
+  status: DraftStatus;
+  created_at: string;
+  updated_at?: string;
+}
+
+/** A therapist group assignment (from therapyTherapistAssignments) */
+export interface TherapistGroup {
+  id_groups: number;
+  group_name: string;
+  patient_count?: number;
+}
+
+/** Predefined tag reason (passed from PHP config) */
 export interface TagReason {
   code: string;
   label: string;
   urgency: TagUrgency;
 }
 
-/**
- * Mention suggestion for @mentions
- */
-export interface MentionSuggestion {
-  id: string | number;
-  display: string;
-  type?: 'therapist' | 'topic';
-}
+// ---------------------------------------------------------------------------
+// Unread Tracking
+// ---------------------------------------------------------------------------
 
-/**
- * Therapist suggestion for @mentions
- */
-export interface TherapistSuggestion {
-  id: number;
-  display: string;
-  name: string;
-  email?: string;
-  role?: string;
-}
-
-/**
- * Topic suggestion for #hashtag mentions
- */
-export interface TopicSuggestion {
-  id: string;
-  display: string;
-  code: string;
-  urgency?: TagUrgency;
-  description?: string;
-}
-
-/**
- * Topic for #hashtag mentions
- */
-export interface Topic {
-  id: string;
-  name: string;
-  description?: string;
-}
-
-/**
- * Mention data extracted from message
- */
-export interface MentionData {
-  therapists: Array<{ id: string | number; display: string }>;
-  topics: Array<{ id: string | number; display: string; code?: string; urgency?: string }>;
-}
-
-/**
- * Unread message counts per subject
- */
+/** Unread counts returned by get_unread_counts endpoint */
 export interface UnreadCounts {
   total: number;
-  bySubject: Record<number | string, {
-    subjectId: number | string;
-    subjectName: string;
-    subjectCode?: string;
-    unreadCount: number;
-    lastMessageAt?: string;
-  }>;
+  totalAlerts: number;
+  bySubject: Record<
+    number | string,
+    {
+      subjectId: number | string;
+      subjectName: string;
+      subjectCode?: string;
+      unreadCount: number;
+      lastMessageAt?: string;
+    }
+  >;
 }
 
-/**
- * Dashboard stats
- */
+// ---------------------------------------------------------------------------
+// Dashboard Statistics
+// ---------------------------------------------------------------------------
+
 export interface DashboardStats {
   total: number;
   active: number;
@@ -213,17 +179,17 @@ export interface DashboardStats {
   risk_high: number;
   risk_critical: number;
   unread_alerts: number;
-  pending_tags: number;
 }
 
-/**
- * UI Labels for TherapyChat
- */
-export interface TherapyChatLabels {
+// ---------------------------------------------------------------------------
+// UI Label Interfaces
+// ---------------------------------------------------------------------------
+
+/** Labels for the subject/patient chat (snake_case to match PHP output) */
+export interface SubjectChatLabels {
   ai_label: string;
   therapist_label: string;
   tag_button_label: string;
-  tag_reasons: TagReason[];
   empty_message: string;
   ai_thinking: string;
   mode_ai: string;
@@ -233,83 +199,51 @@ export interface TherapyChatLabels {
   loading: string;
 }
 
-/**
- * UI Labels for TherapistDashboard
- */
+/** Labels for the therapist dashboard */
 export interface TherapistDashboardLabels {
-  // Headings
   title: string;
   conversationsHeading: string;
   alertsHeading: string;
   notesHeading: string;
   statsHeading: string;
   riskHeading: string;
-  
-  // Empty states
   noConversations: string;
   noAlerts: string;
   selectConversation: string;
-  
-  // Input labels
   sendPlaceholder: string;
   sendButton: string;
   addNotePlaceholder: string;
   addNoteButton: string;
   loading: string;
-  
-  // Message labels
   aiLabel: string;
   therapistLabel: string;
   subjectLabel: string;
-  
-  // Risk labels
   riskLow: string;
   riskMedium: string;
   riskHigh: string;
   riskCritical: string;
-  
-  // Status labels
   statusActive: string;
   statusPaused: string;
   statusClosed: string;
-  
-  // AI control labels
   disableAI: string;
   enableAI: string;
   aiModeIndicator: string;
   humanModeIndicator: string;
-  
-  // Action buttons
   acknowledge: string;
   dismiss: string;
-  viewInLlm: string;
-  joinConversation: string;
-  leaveConversation: string;
-  
-  // Statistics labels
-  statPatients: string;
-  statActive: string;
-  statCritical: string;
-  statAlerts: string;
-  statTags: string;
-  
-  // Filter labels
   filterAll: string;
   filterActive: string;
   filterCritical: string;
   filterUnread: string;
-  filterTagged: string;
-  
-  // Intervention messages
-  interventionMessage: string;
-  aiPausedNotice: string;
-  aiResumedNotice: string;
+  allGroupsTab: string;
+  emptyMessage: string;
 }
 
-/**
- * Feature toggles for TherapistDashboard
- */
-export interface TherapistDashboardFeatures {
+// ---------------------------------------------------------------------------
+// Feature Toggles
+// ---------------------------------------------------------------------------
+
+export interface TherapistFeatures {
   showRiskColumn: boolean;
   showStatusColumn: boolean;
   showAlertsPanel: boolean;
@@ -319,68 +253,50 @@ export interface TherapistDashboardFeatures {
   enableRiskControl: boolean;
   enableStatusControl: boolean;
   enableNotes: boolean;
-  enableInvisibleMode: boolean;
 }
 
-/**
- * Notification settings for TherapistDashboard
- */
-export interface TherapistDashboardNotifications {
-  notifyOnTag: boolean;
-  notifyOnDanger: boolean;
-  notifyOnCritical: boolean;
-}
+// ---------------------------------------------------------------------------
+// Configuration (passed from PHP via data-config JSON)
+// ---------------------------------------------------------------------------
 
-/**
- * TherapyChat configuration
- */
-export interface TherapyChatConfig {
+/** Config for subject/patient chat */
+export interface SubjectChatConfig {
   baseUrl?: string;
   userId: number;
   sectionId: number;
   conversationId?: number | string | null;
-  groupId?: number | null;
   conversationMode: ConversationMode;
   aiEnabled: boolean;
-  riskLevel: RiskLevel;
-  isSubject: boolean;
   taggingEnabled: boolean;
   dangerDetectionEnabled: boolean;
   pollingInterval: number;
-  labels: TherapyChatLabels;
+  labels: SubjectChatLabels;
   tagReasons: TagReason[];
-  configuredModel?: string;
-  // Speech-to-text configuration
   speechToTextEnabled?: boolean;
   speechToTextModel?: string;
   speechToTextLanguage?: string;
 }
 
-/**
- * TherapistDashboard configuration
- */
+/** Config for therapist dashboard */
 export interface TherapistDashboardConfig {
   baseUrl?: string;
   userId: number;
   sectionId: number;
-  selectedGroupId?: number | null;
-  selectedSubjectId?: number | null;
   stats: DashboardStats;
+  groups?: TherapistGroup[];
+  assignedGroups?: TherapistGroup[];
   pollingInterval: number;
-  messagesPerPage: number;
-  conversationsPerPage: number;
-  features: TherapistDashboardFeatures;
-  notifications: TherapistDashboardNotifications;
+  features: TherapistFeatures;
   labels: TherapistDashboardLabels;
-  // Speech-to-text configuration
   speechToTextEnabled?: boolean;
   speechToTextModel?: string;
   speechToTextLanguage?: string;
 }
 
-/**
- * API Response types
- */
+// ---------------------------------------------------------------------------
+// API Response Types
+// ---------------------------------------------------------------------------
+
 export interface ApiResponse<T = unknown> {
   success?: boolean;
   error?: string;
@@ -405,7 +321,6 @@ export interface GetConversationResponse extends ApiResponse {
   conversation: Conversation;
   messages: Message[];
   notes?: Note[];
-  tags?: Tag[];
   alerts?: Alert[];
 }
 
@@ -414,28 +329,62 @@ export interface GetConversationsResponse extends ApiResponse {
 }
 
 export interface TagTherapistResponse extends ApiResponse {
-  tag_id?: number;
+  alert_id?: number;
   alert_created?: boolean;
 }
 
-/**
- * Default configuration values
- */
-export const DEFAULT_LABELS: TherapyChatLabels = {
+// ---------------------------------------------------------------------------
+// Default Label Values
+// ---------------------------------------------------------------------------
+
+export const DEFAULT_SUBJECT_LABELS: SubjectChatLabels = {
   ai_label: 'AI Assistant',
   therapist_label: 'Therapist',
   tag_button_label: 'Tag Therapist',
-  tag_reasons: [
-    { code: 'overwhelmed', label: 'I am feeling overwhelmed', urgency: 'normal' },
-    { code: 'need_talk', label: 'I need to talk soon', urgency: 'urgent' },
-    { code: 'urgent', label: 'This feels urgent', urgency: 'urgent' },
-    { code: 'emergency', label: 'Emergency - please respond immediately', urgency: 'emergency' }
-  ],
   empty_message: 'No messages yet. Start the conversation!',
   ai_thinking: 'AI is thinking...',
   mode_ai: 'AI-assisted chat',
   mode_human: 'Therapist-only mode',
   send_button: 'Send',
   placeholder: 'Type your message...',
-  loading: 'Loading...'
+  loading: 'Loading...',
+};
+
+export const DEFAULT_THERAPIST_LABELS: TherapistDashboardLabels = {
+  title: 'Therapist Dashboard',
+  conversationsHeading: 'Patients',
+  alertsHeading: 'Alerts',
+  notesHeading: 'Clinical Notes',
+  statsHeading: 'Overview',
+  riskHeading: 'Risk Level',
+  noConversations: 'No conversations found.',
+  noAlerts: 'No alerts.',
+  selectConversation: 'Select a patient to view their conversation.',
+  sendPlaceholder: 'Type a message to this patient...',
+  sendButton: 'Send',
+  addNotePlaceholder: 'Write a clinical note...',
+  addNoteButton: 'Add Note',
+  loading: 'Loading...',
+  aiLabel: 'AI Assistant',
+  therapistLabel: 'You',
+  subjectLabel: 'Patient',
+  riskLow: 'Low',
+  riskMedium: 'Medium',
+  riskHigh: 'High',
+  riskCritical: 'Critical',
+  statusActive: 'Active',
+  statusPaused: 'Paused',
+  statusClosed: 'Closed',
+  disableAI: 'Pause AI',
+  enableAI: 'Enable AI',
+  aiModeIndicator: 'AI Active',
+  humanModeIndicator: 'Human Only',
+  acknowledge: 'Acknowledge',
+  dismiss: 'Dismiss',
+  filterAll: 'All',
+  filterActive: 'Active',
+  filterCritical: 'Critical',
+  filterUnread: 'Unread',
+  allGroupsTab: 'All Groups',
+  emptyMessage: 'No messages yet.',
 };

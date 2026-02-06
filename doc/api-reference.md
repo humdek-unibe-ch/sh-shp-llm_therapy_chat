@@ -1,302 +1,222 @@
 # API Reference
 
-## Subject Chat Endpoints
+All endpoints use the current page URL with `?action=xxx` for GET requests
+and `action` field in FormData for POST requests.
 
-All endpoints are accessed via `/request/{sectionId}/therapy-chat/{action}`.
+## Subject Chat Endpoints (TherapyChatController)
 
-### Send Message
+### GET `get_config`
+Returns the chat configuration for the current user.
 
-**POST** `/request/{sectionId}/therapy-chat/send`
+**Response**: `SubjectChatConfig` JSON
 
-Send a message from the subject.
+### GET `get_conversation`
+| Param | Type | Required | Description |
+|-------|------|----------|-------------|
+| `conversation_id` | int | No | Specific conversation (auto-creates if missing) |
 
-**Request Body:**
-```json
-{
-    "conversation_id": 123,
-    "content": "Hello, I need some help..."
-}
-```
+**Response**: `{ conversation, messages }`
 
-**Response (Success):**
-```json
-{
-    "success": true,
-    "user_message_id": 456,
-    "conversation_id": 123,
-    "ai_message": {
-        "id": 457,
-        "role": "assistant",
-        "content": "I understand. How can I help you today?",
-        "sender_type": "ai",
-        "label": "AI Assistant",
-        "timestamp": "2026-01-16T14:30:00+00:00"
-    }
-}
-```
+### GET `get_messages`
+| Param | Type | Required | Description |
+|-------|------|----------|-------------|
+| `conversation_id` | int | No | Conversation to poll |
+| `after_id` | int | No | Only messages after this ID |
 
-**Response (Blocked - Danger Detection):**
-```json
-{
-    "blocked": true,
-    "message": "I noticed some concerning content...",
-    "detected_keywords": ["keyword1", "keyword2"]
-}
-```
+**Response**: `{ messages: Message[] }`
 
-### Get Messages
+### POST `send_message`
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `message` | string | Yes | Message content |
+| `conversation_id` | int | No | Target conversation |
 
-**GET** `/request/{sectionId}/therapy-chat/messages?after={lastId}&conversation_id={id}`
+**Response**: `{ message_id, conversation_id, ai_message?, blocked? }`
 
-Get messages, optionally filtering to only new messages.
+### POST `tag_therapist`
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `conversation_id` | int | Yes | Conversation |
+| `reason` | string | No | Tag reason code |
+| `urgency` | string | No | `normal` / `urgent` / `emergency` |
 
-**Query Parameters:**
-- `after` (optional) - Only return messages with ID > this value
-- `conversation_id` (optional) - Conversation ID (uses current if omitted)
+**Response**: `{ alert_id, alert_created }`
 
-**Response:**
-```json
-{
-    "messages": [
-        {
-            "id": 458,
-            "role": "user",
-            "content": "Thank you!",
-            "sender_type": "subject",
-            "sender_id": 10,
-            "sender_name": "John Doe",
-            "label": "You",
-            "timestamp": "2026-01-16T14:31:00+00:00",
-            "tags": []
-        }
-    ],
-    "conversation_id": 123
-}
-```
+### POST `speech_transcribe`
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `audio` | file | Yes | Audio blob (webm) |
 
-### Tag Therapist
+**Response**: `{ text: string }`
 
-**POST** `/request/{sectionId}/therapy-chat/tag`
+---
 
-Tag the assigned therapist with a reason.
+## Therapist Dashboard Endpoints (TherapistDashboardController)
 
-**Request Body:**
-```json
-{
-    "conversation_id": 123,
-    "reason": "overwhelmed",
-    "urgency": "urgent"
-}
-```
+### GET `get_config`
+Returns dashboard configuration including stats, groups, features, labels.
 
-**Response:**
-```json
-{
-    "success": true,
-    "tag_id": 45,
-    "alert_created": true
-}
-```
+**Response**: `TherapistDashboardConfig` JSON
 
-## Therapist Dashboard Endpoints
+### GET `get_conversations`
+| Param | Type | Required | Description |
+|-------|------|----------|-------------|
+| `group_id` | int | No | Filter by patient group |
+| `filter` | string | No | `active`, `critical`, `unread` |
 
-All endpoints are accessed via `/request/{sectionId}/therapist-dashboard/{action}`.
+**Response**: `{ conversations: Conversation[] }`
 
-### Send Therapist Message
+### GET `get_conversation`
+| Param | Type | Required | Description |
+|-------|------|----------|-------------|
+| `conversation_id` | int | Yes | Conversation to load |
 
-**POST** `/request/{sectionId}/therapist-dashboard/send`
+**Response**: `{ conversation, messages, notes?, alerts? }`
 
-Send a message from the therapist to the subject.
+### GET `get_messages`
+| Param | Type | Required | Description |
+|-------|------|----------|-------------|
+| `conversation_id` | int | Yes | Conversation |
+| `after_id` | int | No | Messages after this ID |
 
-**Request Body:**
-```json
-{
-    "conversation_id": 123,
-    "content": "I see you're having a difficult time..."
-}
-```
+**Response**: `{ messages: Message[] }`
 
-**Response:**
-```json
-{
-    "success": true,
-    "message_id": 459
-}
-```
+### GET `get_alerts`
+| Param | Type | Required | Description |
+|-------|------|----------|-------------|
+| `unread_only` | 0/1 | No | Only unread alerts |
 
-### Toggle AI Responses
+**Response**: `{ alerts: Alert[] }`
 
-**POST** `/request/{sectionId}/therapist-dashboard/toggle-ai`
+### GET `get_stats`
+**Response**: `{ stats: DashboardStats }`
 
-Enable or disable AI responses for a conversation.
+### GET `get_notes`
+| Param | Type | Required | Description |
+|-------|------|----------|-------------|
+| `conversation_id` | int | Yes | Conversation |
 
-**Request Body:**
-```json
-{
-    "conversation_id": 123,
-    "enabled": false
-}
-```
+**Response**: `{ notes: Note[] }`
 
-**Response:**
-```json
-{
-    "success": true
-}
-```
+### GET `get_unread_counts`
+**Response**: `{ unread_counts: { total, totalAlerts, bySubject: {...} } }`
 
-### Set Risk Level
+### GET `get_groups`
+Returns therapist's assigned groups with patient counts.
 
-**POST** `/request/{sectionId}/therapist-dashboard/set-risk`
+**Response**: `{ groups: TherapistGroup[] }`
 
-Update the risk level of a conversation.
+### POST `send_message`
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `conversation_id` | int | Yes | Target conversation |
+| `message` | string | Yes | Message content |
 
-**Request Body:**
-```json
-{
-    "conversation_id": 123,
-    "risk_level": "high"
-}
-```
+**Response**: `{ message_id, conversation_id }`
 
-**Response:**
-```json
-{
-    "success": true
-}
-```
+### POST `edit_message`
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `message_id` | int | Yes | Message to edit |
+| `content` | string | Yes | New content |
 
-### Add Note
+**Response**: `{ success: boolean }`
 
-**POST** `/request/{sectionId}/therapist-dashboard/add-note`
+### POST `delete_message`
+Soft-deletes a message (sets `deleted` flag).
 
-Add a private therapist note to a conversation.
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `message_id` | int | Yes | Message to delete |
 
-**Request Body:**
-```json
-{
-    "conversation_id": 123,
-    "content": "Patient showing improvement in anxiety management..."
-}
-```
+**Response**: `{ success: boolean }`
 
-**Response:**
-```json
-{
-    "success": true,
-    "note_id": 67
-}
-```
+### POST `toggle_ai`
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `conversation_id` | int | Yes | Conversation |
+| `enabled` | 0/1 | Yes | Enable/disable AI |
 
-### Acknowledge Tag
+**Response**: `{ success, ai_enabled }`
 
-**POST** `/request/{sectionId}/therapist-dashboard/acknowledge-tag`
+### POST `set_risk`
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `conversation_id` | int | Yes | Conversation |
+| `risk_level` | string | Yes | `low`/`medium`/`high`/`critical` |
 
-Mark a tag as acknowledged.
+**Response**: `{ success }`
 
-**Request Body:**
-```json
-{
-    "tag_id": 45
-}
-```
+### POST `set_status`
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `conversation_id` | int | Yes | Conversation |
+| `status` | string | Yes | `active`/`paused`/`closed` |
 
-**Response:**
-```json
-{
-    "success": true
-}
-```
+**Response**: `{ success }`
 
-### Mark Alert Read
+### POST `add_note`
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `conversation_id` | int | Yes | Conversation |
+| `content` | string | Yes | Note text |
 
-**POST** `/request/{sectionId}/therapist-dashboard/mark-alert-read`
+**Response**: `{ success, note_id }`
 
-Mark an alert as read.
+### POST `mark_alert_read`
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `alert_id` | int | Yes | Alert to mark |
 
-**Request Body:**
-```json
-{
-    "alert_id": 89
-}
-```
+**Response**: `{ success }`
 
-**Response:**
-```json
-{
-    "success": true
-}
-```
+### POST `mark_all_read`
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `conversation_id` | int | No | Scope to conversation |
 
-### Get Messages (Polling)
+**Response**: `{ success }`
 
-**GET** `/request/{sectionId}/therapist-dashboard/messages?conversation_id={id}&after={lastId}`
+### POST `mark_messages_read`
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `conversation_id` | int | Yes | Conversation |
 
-Get messages for a conversation.
+**Response**: `{ success }`
 
-**Response:**
-```json
-{
-    "success": true,
-    "messages": [...]
-}
-```
+### POST `create_draft`
+Generates an AI draft for the therapist to edit.
 
-## Error Responses
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `conversation_id` | int | Yes | Conversation |
 
-All endpoints return errors in this format:
+**Response**: `{ success, draft: Draft }`
 
-```json
-{
-    "error": "Error message describing what went wrong"
-}
-```
+### POST `update_draft`
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `draft_id` | int | Yes | Draft to update |
+| `edited_content` | string | Yes | Edited text |
 
-Common error codes:
-- `"Access denied"` - User doesn't have permission
-- `"Conversation not found"` - Invalid conversation ID
-- `"Conversation ID is required"` - Missing required parameter
-- `"Tagging is disabled"` - Tagging feature is turned off
+**Response**: `{ success }`
 
-## Data Types
+### POST `send_draft`
+Sends the draft as a therapist message to the patient.
 
-### Message Object
-```typescript
-interface Message {
-    id: number;
-    role: 'user' | 'assistant' | 'system';
-    content: string;
-    sender_type: 'subject' | 'therapist' | 'ai' | 'system';
-    sender_id: number | null;
-    sender_name: string | null;
-    label: string;
-    timestamp: string; // ISO 8601
-    tags: Tag[];
-    attachments: Attachment[] | null;
-}
-```
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `draft_id` | int | Yes | Draft to send |
+| `conversation_id` | int | Yes | Conversation |
 
-### Tag Object
-```typescript
-interface Tag {
-    id: number;
-    id_users: number;
-    tag_reason: string | null;
-    urgency: 'normal' | 'urgent' | 'emergency';
-    acknowledged: boolean;
-    acknowledged_at: string | null;
-    created_at: string;
-    tagged_name: string;
-}
-```
+**Response**: `{ success, message_id }`
 
-### Risk Levels
-- `low` - Normal conversation
-- `medium` - Requires monitoring
-- `high` - Needs attention
-- `critical` - Immediate intervention required
+### POST `discard_draft`
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `draft_id` | int | Yes | Draft to discard |
 
-### Urgency Levels
-- `normal` - Standard tag
-- `urgent` - Needs prompt response
-- `emergency` - Immediate attention required
+**Response**: `{ success }`
+
+### POST `speech_transcribe`
+Same as subject endpoint — transcribes audio to text.

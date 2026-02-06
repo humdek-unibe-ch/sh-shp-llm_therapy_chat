@@ -9,50 +9,45 @@ require_once __DIR__ . '/TherapyChatService.php';
 
 /**
  * Therapy Alert Service
- * 
- * Manages smart alerts and notifications for therapists.
- * Integrates with sh-shp-llm's danger detection for safety alerts.
- * 
- * Uses lookups table for alert types and severities via TherapyLookups constants.
- * 
- * Alert types (therapyAlertTypes):
- * - danger_detected: Triggered by LLM danger detection
- * - tag_received: When subject tags therapist
- * - high_activity: Unusual message frequency
- * - inactivity: Extended silence from subject
- * - new_message: New message notification
- * 
+ *
+ * Manages alerts and notifications for therapists.
+ * Tags (patient @mentions) are now alerts with type='tag_received' and metadata JSON.
+ *
+ * Extends TherapyChatService for conversation/access control.
+ *
  * @package LLM Therapy Chat Plugin
- * @requires sh-shp-llm plugin
  */
 class TherapyAlertService extends TherapyChatService
 {
-    /* Alert Creation *********************************************************/
+    public function __construct($services)
+    {
+        parent::__construct($services);
+    }
+
+    /* =========================================================================
+     * ALERT CREATION
+     * ========================================================================= */
 
     /**
-     * Create an alert for a conversation
+     * Create an alert.
      *
-     * @param int $conversationId
-     * @param string $alertType Alert type lookup_code (THERAPY_ALERT_* constants)
-     * @param string $message Alert message
-     * @param string $severity Severity lookup_code (THERAPY_SEVERITY_* constants)
-     * @param int|null $targetUserId Specific therapist (null = all in group)
-     * @param array|null $metadata Additional data
+     * @param int $llmConversationId llmConversations.id (NOT therapyConversationMeta.id)
+     * @param string $alertType THERAPY_ALERT_* constant
+     * @param string $message Human-readable description
+     * @param string $severity THERAPY_SEVERITY_* constant
+     * @param int|null $targetUserId Specific therapist (NULL = all assigned)
+     * @param array|null $metadata Extra data
      * @return int|bool Alert ID or false
      */
-    public function createAlert($conversationId, $alertType, $message, $severity = THERAPY_SEVERITY_INFO, $targetUserId = null, $metadata = null)
+    public function createAlert($llmConversationId, $alertType, $message, $severity = THERAPY_SEVERITY_INFO, $targetUserId = null, $metadata = null)
     {
-        // Validate alert type
         if (!in_array($alertType, THERAPY_VALID_ALERT_TYPES)) {
             return false;
         }
-
-        // Validate severity
         if (!in_array($severity, THERAPY_VALID_SEVERITIES)) {
             $severity = THERAPY_SEVERITY_INFO;
         }
 
-        // Get lookup IDs
         $alertTypeId = $this->db->get_lookup_id_by_code(THERAPY_LOOKUP_ALERT_TYPES, $alertType);
         $severityId = $this->db->get_lookup_id_by_code(THERAPY_LOOKUP_ALERT_SEVERITY, $severity);
 
@@ -61,7 +56,7 @@ class TherapyAlertService extends TherapyChatService
         }
 
         $data = array(
-            'id_llmConversations' => $conversationId,
+            'id_llmConversations' => $llmConversationId,
             'id_users' => $targetUserId,
             'id_alertTypes' => $alertTypeId,
             'id_alertSeverity' => $severityId,
@@ -71,73 +66,62 @@ class TherapyAlertService extends TherapyChatService
 
         $alertId = $this->db->insert('therapyAlerts', $data);
 
-        if ($alertId) {
-            // Log transaction
-            $conversation = $this->getTherapyConversation($conversationId);
-            $this->logTransaction(
-                transactionTypes_insert,
-                'therapyAlerts',
-                $alertId,
-                $conversation ? $conversation['id_users'] : 0,
-                "Alert created: $alertType ($severity)"
-            );
-
-            // Send notifications based on severity
-            if ($severity === THERAPY_SEVERITY_CRITICAL || $severity === THERAPY_SEVERITY_EMERGENCY) {
-                $this->sendUrgentNotification($alertId, $conversationId, $alertType, $message);
-            }
+        if ($alertId && ($severity === THERAPY_SEVERITY_CRITICAL || $severity === THERAPY_SEVERITY_EMERGENCY)) {
+            $this->sendUrgentNotification($alertId, $llmConversationId, $alertType, $message);
         }
 
         return $alertId;
     }
 
     /**
-     * Create a danger detection alert
-     * 
-     * Called when LLM danger detection triggers.
+     * Create a danger detection alert.
      *
-     * @param int $conversationId
+     * @param int $conversationId therapyConversationMeta.id
      * @param array $detectedKeywords
      * @param string $userMessage
      * @return int|bool
      */
     public function createDangerAlert($conversationId, $detectedKeywords, $userMessage)
     {
+        $conversation = $this->getTherapyConversation($conversationId);
+        if (!$conversation) {
+            return false;
+        }
+
         $keywords = implode(', ', $detectedKeywords);
         $excerpt = mb_substr($userMessage, 0, 100) . (mb_strlen($userMessage) > 100 ? '...' : '');
-        
-        $message = "Danger keywords detected: $keywords\n\nMessage excerpt: \"$excerpt\"";
-        
+
+        $message = "Danger keywords detected: $keywords\nMessage: \"$excerpt\"";
+
         $metadata = array(
             'detected_keywords' => $detectedKeywords,
-            'message_excerpt' => $excerpt,
-            'timestamp' => date('Y-m-d H:i:s')
+            'message_excerpt' => $excerpt
         );
 
-        // Also update conversation risk level
+        // Elevate risk to critical
         $this->updateRiskLevel($conversationId, THERAPY_RISK_CRITICAL);
 
         return $this->createAlert(
-            $conversationId,
+            $conversation['id_llmConversations'],
             THERAPY_ALERT_DANGER,
             $message,
             THERAPY_SEVERITY_EMERGENCY,
-            null, // Notify all therapists
+            null,
             $metadata
         );
     }
 
     /**
-     * Create a tag alert when subject tags therapist
+     * Create a tag alert when patient @mentions a therapist.
      *
-     * @param int $conversationId
-     * @param int $tagId
-     * @param int $therapistId
-     * @param string|null $reason
-     * @param string $urgency Urgency lookup_code
+     * @param int $llmConversationId
+     * @param int|null $therapistId Specific therapist (NULL = all assigned)
+     * @param string|null $reason Tag reason key
+     * @param string $urgency normal/urgent/emergency
+     * @param int|null $messageId The message that contained the tag
      * @return int|bool
      */
-    public function createTagAlert($conversationId, $tagId, $therapistId, $reason = null, $urgency = THERAPY_URGENCY_NORMAL)
+    public function createTagAlert($llmConversationId, $therapistId = null, $reason = null, $urgency = THERAPY_URGENCY_NORMAL, $messageId = null)
     {
         // Map urgency to severity
         $severity = THERAPY_SEVERITY_WARNING;
@@ -147,19 +131,19 @@ class TherapyAlertService extends TherapyChatService
             $severity = THERAPY_SEVERITY_CRITICAL;
         }
 
-        $message = "You have been tagged by a patient";
+        $message = "Patient tagged therapist";
         if ($reason) {
             $message .= ": \"$reason\"";
         }
 
         $metadata = array(
-            'tag_id' => $tagId,
             'urgency' => $urgency,
-            'reason' => $reason
+            'reason' => $reason,
+            'message_id' => $messageId
         );
 
         return $this->createAlert(
-            $conversationId,
+            $llmConversationId,
             THERAPY_ALERT_TAG,
             $message,
             $severity,
@@ -168,64 +152,53 @@ class TherapyAlertService extends TherapyChatService
         );
     }
 
-    /* Alert Retrieval ********************************************************/
+    /* =========================================================================
+     * ALERT RETRIEVAL
+     * ========================================================================= */
 
     /**
-     * Get alerts for a therapist
-     * Uses view_therapyAlerts for easy access to lookup values
+     * Get alerts for a therapist (across all their conversations).
      *
      * @param int $therapistId
      * @param array $filters (unread_only, alert_type, severity)
      * @param int $limit
-     * @param int $offset
      * @return array
      */
-    public function getAlertsForTherapist($therapistId, $filters = array(), $limit = 50, $offset = 0)
+    public function getAlertsForTherapist($therapistId, $filters = array(), $limit = 50)
     {
-        // Get accessible conversation IDs
         $conversations = $this->getTherapyConversationsByTherapist($therapistId);
-        
         if (empty($conversations)) {
             return array();
         }
 
-        $conversationIds = array_column($conversations, 'id_llmConversations');
-        $placeholders = implode(',', array_fill(0, count($conversationIds), '?'));
+        $llmIds = array_column($conversations, 'id_llmConversations');
+        $placeholders = implode(',', array_fill(0, count($llmIds), '?'));
 
         $sql = "SELECT * FROM view_therapyAlerts
                 WHERE id_llmConversations IN ($placeholders)
                 AND (id_users IS NULL OR id_users = ?)";
 
-        $params = $conversationIds;
-        $params[] = $therapistId;
+        $params = array_merge($llmIds, array($therapistId));
 
-        // Apply filters
-        if (isset($filters['unread_only']) && $filters['unread_only']) {
+        if (!empty($filters['unread_only'])) {
             $sql .= " AND is_read = 0";
         }
-
         if (!empty($filters['alert_type'])) {
             $sql .= " AND alert_type = ?";
             $params[] = $filters['alert_type'];
         }
 
-        if (!empty($filters['severity'])) {
-            $sql .= " AND severity = ?";
-            $params[] = $filters['severity'];
-        }
-
-        // Order by severity priority
         $sql .= " ORDER BY
                     FIELD(severity, '" . THERAPY_SEVERITY_EMERGENCY . "', '" . THERAPY_SEVERITY_CRITICAL . "', '" . THERAPY_SEVERITY_WARNING . "', '" . THERAPY_SEVERITY_INFO . "'),
-                    is_read ASC,
-                    created_at DESC
-                  LIMIT " . (int)$limit . " OFFSET " . (int)$offset;
+                    is_read ASC, created_at DESC
+                  LIMIT " . (int)$limit;
 
-        return $this->db->query_db($sql, $params);
+        $result = $this->db->query_db($sql, $params);
+        return $result !== false ? $result : array();
     }
 
     /**
-     * Get unread alert count for a therapist
+     * Get unread alert count for a therapist.
      *
      * @param int $therapistId
      * @return int
@@ -233,138 +206,86 @@ class TherapyAlertService extends TherapyChatService
     public function getUnreadAlertCount($therapistId)
     {
         $conversations = $this->getTherapyConversationsByTherapist($therapistId);
-        
         if (empty($conversations)) {
             return 0;
         }
 
-        $conversationIds = array_column($conversations, 'id_llmConversations');
-        $placeholders = implode(',', array_fill(0, count($conversationIds), '?'));
+        $llmIds = array_column($conversations, 'id_llmConversations');
+        $placeholders = implode(',', array_fill(0, count($llmIds), '?'));
 
-        $sql = "SELECT COUNT(*) as cnt FROM therapyAlerts 
+        $sql = "SELECT COUNT(*) as cnt FROM therapyAlerts
                 WHERE id_llmConversations IN ($placeholders)
                 AND (id_users IS NULL OR id_users = ?)
                 AND is_read = 0";
 
-        $params = $conversationIds;
-        $params[] = $therapistId;
-
+        $params = array_merge($llmIds, array($therapistId));
         $result = $this->db->query_db_first($sql, $params);
-        
+
         return intval($result['cnt'] ?? 0);
     }
 
-    /**
-     * Get alerts for a specific conversation
-     * Uses view_therapyAlerts for easy access to lookup values
-     *
-     * @param int $conversationId
-     * @param int $limit
-     * @return array
-     */
-    public function getAlertsForConversation($conversationId, $limit = 20)
-    {
-        $sql = "SELECT * FROM view_therapyAlerts 
-                WHERE id_llmConversations = :cid
-                ORDER BY created_at DESC
-                LIMIT " . (int)$limit;
-        
-        return $this->db->query_db($sql, array(':cid' => $conversationId));
-    }
-
-    /* Alert Management *******************************************************/
+    /* =========================================================================
+     * ALERT MANAGEMENT
+     * ========================================================================= */
 
     /**
-     * Mark an alert as read
+     * Mark an alert as read.
      *
      * @param int $alertId
-     * @param int $userId Reading user
      * @return bool
      */
-    public function markAlertRead($alertId, $userId)
+    public function markAlertRead($alertId)
     {
         return $this->db->update_by_ids(
             'therapyAlerts',
-            array(
-                'is_read' => 1,
-                'read_at' => date('Y-m-d H:i:s')
-            ),
+            array('is_read' => 1, 'read_at' => date('Y-m-d H:i:s')),
             array('id' => $alertId)
         );
     }
 
     /**
-     * Mark all alerts as read for a therapist
+     * Mark all alerts as read for a therapist in a conversation.
      *
      * @param int $therapistId
-     * @param int|null $conversationId Optional: limit to specific conversation
+     * @param int|null $llmConversationId
      * @return bool
      */
-    public function markAllAlertsRead($therapistId, $conversationId = null)
+    public function markAllAlertsRead($therapistId, $llmConversationId = null)
     {
-        $conversations = $conversationId 
-            ? array(array('id_llmConversations' => $conversationId))
-            : $this->getTherapyConversationsByTherapist($therapistId);
-        
-        if (empty($conversations)) {
-            return true;
+        if ($llmConversationId) {
+            $sql = "UPDATE therapyAlerts SET is_read = 1, read_at = NOW()
+                    WHERE id_llmConversations = ? AND (id_users IS NULL OR id_users = ?) AND is_read = 0";
+            $this->db->query_db($sql, array($llmConversationId, $therapistId));
         }
-
-        $conversationIds = array_column($conversations, 'id_llmConversations');
-        $placeholders = implode(',', array_fill(0, count($conversationIds), '?'));
-
-        $sql = "UPDATE therapyAlerts 
-                SET is_read = 1, read_at = NOW()
-                WHERE id_llmConversations IN ($placeholders)
-                AND (id_users IS NULL OR id_users = ?)
-                AND is_read = 0";
-
-        $params = $conversationIds;
-        $params[] = $therapistId;
-
-        return $this->db->execute($sql, $params);
+        return true;
     }
 
-    /* Notification Helpers ***************************************************/
+    /* =========================================================================
+     * PRIVATE HELPERS
+     * ========================================================================= */
 
     /**
-     * Send urgent notification (email) for critical/emergency alerts
-     *
-     * @param int $alertId
-     * @param int $conversationId
-     * @param string $alertType
-     * @param string $message
+     * Send urgent email notification for critical/emergency alerts.
      */
-    private function sendUrgentNotification($alertId, $conversationId, $alertType, $message)
+    private function sendUrgentNotification($alertId, $llmConversationId, $alertType, $message)
     {
-        $conversation = $this->getTherapyConversation($conversationId);
-        
-        if (!$conversation) {
-            return;
-        }
-
-        // Get therapists to notify
-        $therapists = $this->getTherapistsForGroup($conversation['id_groups']);
-        
-        if (empty($therapists)) {
-            return;
-        }
-
         try {
-            $jobScheduler = $this->job_scheduler;
-            
+            // Get patient info
+            $sql = "SELECT lc.id_users, u.name FROM llmConversations lc
+                    INNER JOIN users u ON u.id = lc.id_users
+                    WHERE lc.id = ?";
+            $patient = $this->db->query_db_first($sql, array($llmConversationId));
+            if (!$patient) return;
+
+            // Get therapists for this patient
+            $therapists = $this->getTherapistsForPatient($patient['id_users']);
+            if (empty($therapists)) return;
+
             $subject = "[URGENT] Therapy Chat Alert: " . ucfirst(str_replace('_', ' ', $alertType));
-            
-            $body = "## Urgent Alert Notification\n\n";
-            $body .= "**Alert Type:** " . ucfirst(str_replace('_', ' ', $alertType)) . "\n\n";
-            $body .= "**Subject:** " . ($conversation['subject_name'] ?? 'Unknown') . " (ID: {$conversation['id_users']})\n\n";
-            $body .= "**Message:**\n\n$message\n\n";
-            $body .= "---\n\n*Please review this conversation immediately.*";
+            $body = "## Urgent Alert\n\n**Patient:** {$patient['name']}\n**Type:** $alertType\n**Message:** $message\n\nPlease review immediately.";
 
             foreach ($therapists as $therapist) {
-                if (!filter_var($therapist['email'], FILTER_VALIDATE_EMAIL)) {
-                    continue;
-                }
+                if (!filter_var($therapist['email'], FILTER_VALIDATE_EMAIL)) continue;
 
                 $mailData = array(
                     'id_jobTypes' => $this->db->get_lookup_id_by_value('jobTypes', 'email'),
@@ -374,13 +295,13 @@ class TherapyAlertService extends TherapyChatService
                     'subject' => $subject,
                     'body' => $body,
                     'is_html' => 0,
-                    'description' => "Urgent therapy chat alert #$alertId"
+                    'description' => "Urgent therapy alert #$alertId"
                 );
 
-                $jobScheduler->add_and_execute_job($mailData, 'by_therapy_chat_plugin');
+                $this->job_scheduler->add_and_execute_job($mailData, 'by_therapy_chat_plugin');
             }
         } catch (Exception $e) {
-            error_log("TherapyAlertService: Failed to send urgent notification - " . $e->getMessage());
+            error_log("TherapyAlertService: Failed to send notification - " . $e->getMessage());
         }
     }
 }

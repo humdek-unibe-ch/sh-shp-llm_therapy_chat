@@ -44,6 +44,15 @@ class TherapyChatView extends StyleView
         $user_id = $this->model->getUserId();
         $section_id = $this->model->getSectionId();
 
+        // Check if user is logged in
+        if (!$user_id) {
+            echo '<div class="alert alert-warning">'
+               . '<i class="fa fa-exclamation-triangle"></i> '
+               . 'Please log in to use the therapy chat.'
+               . '</div>';
+            return;
+        }
+
         // Get conversation data
         $conversation = $this->model->getOrCreateConversation();
         $conversation_id = $conversation ? $conversation['id'] : null;

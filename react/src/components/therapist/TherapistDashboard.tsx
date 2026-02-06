@@ -1,774 +1,745 @@
 /**
- * Therapist Dashboard Component
+ * TherapistDashboard Component
  * ==============================
- * 
- * Dashboard for therapists to monitor and communicate with patients.
- * Features:
- * - Conversation list with filtering
- * - Real-time message viewing with unread counts
- * - Alert management
- * - Notes and controls
- * - AI toggle and risk management
- * - Invisible monitoring mode
- * - Per-subject unread message tracking
+ *
+ * Full therapist monitoring dashboard with:
+ *   - Group tabs (patients separated by assigned groups)
+ *   - Patient list with unread counts + message totals
+ *   - Full conversation viewer with AI / therapist / patient distinction
+ *   - Message seen/unseen indicators
+ *   - Message edit & soft-delete
+ *   - AI draft generation
+ *   - Clinical notes sidebar
+ *   - Alert banner
+ *   - Risk & status controls
+ *   - URL state: ?gid=...&uid=... persisted in the address bar
+ *
+ * Bootstrap 4.6 classes + minimal custom CSS.
  */
 
-import React, { useState, useEffect, useCallback } from 'react';
-import { Container, Row, Col, Card, ListGroup, Badge, Button, Form, Alert, ButtonGroup, Dropdown } from 'react-bootstrap';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { MessageList } from '../shared/MessageList';
 import { MessageInput } from '../shared/MessageInput';
 import { LoadingIndicator } from '../shared/LoadingIndicator';
 import { useChatState } from '../../hooks/useChatState';
 import { usePolling } from '../../hooks/usePolling';
-import { therapistDashboardApi } from '../../utils/api';
-import type { TherapistDashboardConfig, Conversation, Alert as AlertType, Tag, Note, RiskLevel, ConversationStatus, UnreadCounts } from '../../types';
-import './TherapistDashboard.css';
+import { createTherapistApi } from '../../utils/api';
+import type {
+  TherapistDashboardConfig,
+  Conversation,
+  Alert as AlertT,
+  Note,
+  RiskLevel,
+  ConversationStatus,
+  UnreadCounts,
+  TherapistGroup,
+  Draft,
+} from '../../types';
 
-// Filter types
-type FilterType = 'all' | 'active' | 'critical' | 'unread' | 'tagged';
+// ---------------------------------------------------------------------------
+// Types
+// ---------------------------------------------------------------------------
 
-interface TherapistDashboardProps {
+type FilterType = 'all' | 'active' | 'critical' | 'unread';
+
+interface Props {
   config: TherapistDashboardConfig;
 }
 
-export const TherapistDashboard: React.FC<TherapistDashboardProps> = ({ config }) => {
+// ---------------------------------------------------------------------------
+// URL helpers – read/write ?gid=...&uid=... without full page navigation
+// ---------------------------------------------------------------------------
+
+function readUrlState(): { gid: number | null; uid: number | string | null } {
+  const sp = new URLSearchParams(window.location.search);
+  const gidStr = sp.get('gid');
+  const uidStr = sp.get('uid');
+  return {
+    gid: gidStr != null ? Number(gidStr) : null,
+    uid: uidStr != null ? (isNaN(Number(uidStr)) ? uidStr : Number(uidStr)) : null,
+  };
+}
+
+function pushUrlState(gid: number | null, uid: number | string | null) {
+  const sp = new URLSearchParams(window.location.search);
+  if (gid != null) sp.set('gid', String(gid)); else sp.delete('gid');
+  if (uid != null) sp.set('uid', String(uid)); else sp.delete('uid');
+  // Keep existing params like section_id
+  const newUrl = `${window.location.pathname}?${sp.toString()}${window.location.hash}`;
+  window.history.replaceState(null, '', newUrl);
+}
+
+// ---------------------------------------------------------------------------
+// Component
+// ---------------------------------------------------------------------------
+
+export const TherapistDashboard: React.FC<Props> = ({ config }) => {
+  const api = useMemo(() => createTherapistApi(config.sectionId), [config.sectionId]);
+  const { features, labels } = config;
+  const initRef = useRef(false);
+
+  // ---- URL-seeded state ----
+  const urlState = useMemo(() => readUrlState(), []);
+
   const [conversations, setConversations] = useState<Conversation[]>([]);
-  const [selectedConversationId, setSelectedConversationId] = useState<number | string | null>(
-    config.selectedSubjectId ?? null
-  );
-  const [alerts, setAlerts] = useState<AlertType[]>([]);
-  const [tags, setTags] = useState<Tag[]>([]);
+  const [selectedId, setSelectedId] = useState<number | string | null>(urlState.uid);
+  const [alerts, setAlerts] = useState<AlertT[]>([]);
   const [notes, setNotes] = useState<Note[]>([]);
   const [newNote, setNewNote] = useState('');
-  const [isLoadingList, setIsLoadingList] = useState(true);
-  const [listError, setListError] = useState<string | null>(null);
+  const [unreadCounts, setUnreadCounts] = useState<UnreadCounts>({ total: 0, totalAlerts: 0, bySubject: {} });
+  const [groups, setGroups] = useState<TherapistGroup[]>(config.groups || config.assignedGroups || []);
+  const [activeGroupId, setActiveGroupId] = useState<number | null>(urlState.gid);
   const [activeFilter, setActiveFilter] = useState<FilterType>('all');
-  const [isInvisibleMode, setIsInvisibleMode] = useState(false);
-  const [unreadCounts, setUnreadCounts] = useState<UnreadCounts>({ total: 0, bySubject: {} });
+  const [listLoading, setListLoading] = useState(true);
+  const [listError, setListError] = useState<string | null>(null);
+  const [activeDraft, setActiveDraft] = useState<Draft | null>(null);
+  const [draftText, setDraftText] = useState('');
 
-  // Feature toggles from config
-  const { features, labels } = config;
+  // Refs for values used inside stable callbacks
+  const activeGroupIdRef = useRef(activeGroupId);
+  const activeFilterRef = useRef(activeFilter);
+  const selectedIdRef = useRef(selectedId);
+  useEffect(() => { activeGroupIdRef.current = activeGroupId; }, [activeGroupId]);
+  useEffect(() => { activeFilterRef.current = activeFilter; }, [activeFilter]);
+  useEffect(() => { selectedIdRef.current = selectedId; }, [selectedId]);
 
-  const {
-    conversation,
-    messages,
-    isLoading,
-    isSending,
-    error,
-    loadConversation,
-    sendMessage,
-    clearError,
-  } = useChatState({ config, isTherapist: true });
+  // Chat state for selected conversation
+  const chat = useChatState({
+    loadFn: (convId) => api.getConversation(convId as number | string),
+    sendFn: (convId, msg) => api.sendMessage(convId, msg),
+    pollFn: (convId, afterId) => api.getMessages(convId, afterId),
+    senderType: 'therapist',
+  });
 
-  /**
-   * Load conversations list with optional filter
-   */
-  const loadConversations = useCallback(async (filter?: FilterType) => {
-    setIsLoadingList(true);
-    try {
-      const response = await therapistDashboardApi.getConversations(config.sectionId, {
-        filter: filter || activeFilter,
-        limit: config.conversationsPerPage || 20,
-      });
-      setConversations(response.conversations || []);
-    } catch (err) {
-      const message = err instanceof Error ? err.message : 'Failed to load conversations';
-      setListError(message);
-    } finally {
-      setIsLoadingList(false);
-    }
-  }, [config.sectionId, config.conversationsPerPage, activeFilter]);
+  // ---- Data loading (stable callbacks) ----
 
-  /**
-   * Load alerts
-   */
+  const loadConversations = useCallback(
+    async (groupId?: number | null, filter?: FilterType) => {
+      setListLoading(true);
+      setListError(null);
+      try {
+        const filters: Record<string, string | number> = {};
+        if (groupId != null) filters.group_id = groupId;
+        if (filter && filter !== 'all') filters.filter = filter;
+        const res = await api.getConversations(filters);
+        setConversations(res.conversations || []);
+      } catch (err) {
+        setListError(err instanceof Error ? err.message : 'Failed to load conversations');
+      } finally {
+        setListLoading(false);
+      }
+    },
+    [api],
+  );
+
   const loadAlerts = useCallback(async () => {
     try {
-      const response = await therapistDashboardApi.getAlerts(config.sectionId, true);
-      setAlerts(response.alerts || []);
+      const res = await api.getAlerts(true);
+      setAlerts(res.alerts || []);
     } catch (err) {
       console.error('Load alerts error:', err);
     }
-  }, [config.sectionId]);
+  }, [api]);
 
-  /**
-   * Load tags
-   */
-  const loadTags = useCallback(async () => {
-    try {
-      const response = await therapistDashboardApi.getTags(config.sectionId);
-      setTags(response.tags || []);
-    } catch (err) {
-      console.error('Load tags error:', err);
-    }
-  }, [config.sectionId]);
-
-  /**
-   * Load unread counts per subject
-   */
   const loadUnreadCounts = useCallback(async () => {
     try {
-      const response = await therapistDashboardApi.getUnreadCounts(config.sectionId);
-      setUnreadCounts(response.unread_counts || { total: 0, bySubject: {} });
+      const res = await api.getUnreadCounts();
+      const uc = res?.unread_counts;
+      setUnreadCounts({
+        total: uc?.total ?? 0,
+        totalAlerts: uc?.totalAlerts ?? 0,
+        bySubject: uc?.bySubject ?? {},
+      });
     } catch (err) {
-      console.error('Load unread counts error:', err);
+      console.error('Unread counts error:', err);
     }
-  }, [config.sectionId]);
+  }, [api]);
 
-  /**
-   * Load notes for selected conversation
-   */
-  const loadNotes = useCallback(async (conversationId: number | string) => {
-    try {
-      const response = await therapistDashboardApi.getNotes(config.sectionId, conversationId);
-      setNotes(response.notes || []);
-    } catch (err) {
-      console.error('Load notes error:', err);
-    }
-  }, [config.sectionId]);
-
-  /**
-   * Initial load
-   */
-  useEffect(() => {
-    loadConversations();
-    loadAlerts();
-    loadTags();
-    loadUnreadCounts();
-  }, [loadConversations, loadAlerts, loadTags, loadUnreadCounts]);
-
-  /**
-   * Load selected conversation
-   */
-  useEffect(() => {
-    if (selectedConversationId) {
-      loadConversation(selectedConversationId);
-      loadNotes(selectedConversationId);
-    }
-  }, [selectedConversationId, loadConversation, loadNotes]);
-
-  /**
-   * Set up polling for alerts, tags, and unread counts
-   */
-  usePolling({
-    callback: async () => {
-      await loadAlerts();
-      await loadTags();
-      await loadUnreadCounts();
-      if (selectedConversationId) {
-        // Poll messages handled by useChatState
+  const loadNotes = useCallback(
+    async (convId: number | string) => {
+      try {
+        const res = await api.getNotes(convId);
+        setNotes(res.notes || []);
+      } catch (err) {
+        console.error('Notes error:', err);
       }
     },
+    [api],
+  );
+
+  const loadGroups = useCallback(async () => {
+    try {
+      const res = await api.getGroups();
+      setGroups(res.groups || []);
+    } catch (err) {
+      console.error('Groups error:', err);
+    }
+  }, [api]);
+
+  // ---- Initial load (once) ----
+
+  useEffect(() => {
+    if (initRef.current) return;
+    initRef.current = true;
+
+    loadConversations(activeGroupId, activeFilter);
+    loadAlerts();
+    loadUnreadCounts();
+    loadGroups();
+
+    // If URL has a selected conversation, load it
+    if (urlState.uid) {
+      chat.loadConversation(urlState.uid);
+      loadNotes(urlState.uid);
+    }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ---- Polling (stable) ----
+
+  const pollingCb = useCallback(async () => {
+    await Promise.all([
+      loadConversations(activeGroupIdRef.current, activeFilterRef.current),
+      loadAlerts(),
+      loadUnreadCounts(),
+    ]);
+    if (selectedIdRef.current) await chat.pollMessages();
+  }, [loadConversations, loadAlerts, loadUnreadCounts, chat.pollMessages]);
+
+  usePolling({
+    callback: pollingCb,
     interval: config.pollingInterval,
     enabled: true,
   });
 
-  /**
-   * Handle conversation selection
-   */
-  const handleSelectConversation = useCallback(async (convId: number | string) => {
-    setSelectedConversationId(convId);
-    
-    // Mark messages as read when conversation is selected
-    try {
-      await therapistDashboardApi.markMessagesRead(config.sectionId, convId);
-      // Refresh unread counts
-      loadUnreadCounts();
-    } catch (err) {
-      console.error('Mark messages read error:', err);
-    }
-  }, [config.sectionId, loadUnreadCounts]);
+  // ---- Conversation selection ----
 
-  /**
-   * Handle toggle AI
-   */
+  const selectConversation = useCallback(
+    async (convId: number | string) => {
+      setSelectedId(convId);
+      pushUrlState(activeGroupIdRef.current, convId);
+      chat.loadConversation(convId);
+      loadNotes(convId);
+      setActiveDraft(null);
+      setDraftText('');
+      // Mark messages as read
+      try {
+        await api.markMessagesRead(convId);
+        loadUnreadCounts();
+      } catch { /* ignore */ }
+    },
+    [api, chat.loadConversation, loadNotes, loadUnreadCounts],
+  );
+
+  // ---- Group tab switch ----
+
+  const switchGroup = useCallback(
+    (groupId: number | null) => {
+      setActiveGroupId(groupId);
+      setSelectedId(null);
+      pushUrlState(groupId, null);
+      loadConversations(groupId, activeFilterRef.current);
+    },
+    [loadConversations],
+  );
+
+  // ---- Filter switch ----
+
+  const switchFilter = useCallback(
+    (f: FilterType) => {
+      setActiveFilter(f);
+      loadConversations(activeGroupIdRef.current, f);
+    },
+    [loadConversations],
+  );
+
+  // ---- Actions ----
+
   const handleToggleAI = useCallback(async () => {
-    if (!conversation?.id) return;
+    if (!chat.conversation?.id) return;
+    const newVal = !chat.conversation.ai_enabled;
+    await api.toggleAI(chat.conversation.id, newVal);
+    chat.loadConversation(chat.conversation.id);
+  }, [api, chat.conversation?.id, chat.conversation?.ai_enabled, chat.loadConversation]);
 
-    try {
-      const newEnabled = !conversation.ai_enabled;
-      await therapistDashboardApi.toggleAI(config.sectionId, conversation.id, newEnabled);
-      loadConversation(conversation.id);
-    } catch (err) {
-      console.error('Toggle AI error:', err);
-    }
-  }, [config.sectionId, conversation, loadConversation]);
+  const handleSetRisk = useCallback(
+    async (risk: RiskLevel) => {
+      if (!chat.conversation?.id) return;
+      await api.setRiskLevel(chat.conversation.id, risk);
+      chat.loadConversation(chat.conversation.id);
+      loadConversations(activeGroupIdRef.current, activeFilterRef.current);
+    },
+    [api, chat.conversation?.id, chat.loadConversation, loadConversations],
+  );
 
-  /**
-   * Handle set risk level
-   */
-  const handleSetRisk = useCallback(async (riskLevel: RiskLevel) => {
-    if (!conversation?.id || !features.enableRiskControl) return;
+  const handleSetStatus = useCallback(
+    async (status: ConversationStatus) => {
+      if (!chat.conversation?.id) return;
+      await api.setStatus(chat.conversation.id, status);
+      chat.loadConversation(chat.conversation.id);
+      loadConversations(activeGroupIdRef.current, activeFilterRef.current);
+    },
+    [api, chat.conversation?.id, chat.loadConversation, loadConversations],
+  );
 
-    try {
-      await therapistDashboardApi.setRiskLevel(config.sectionId, conversation.id, riskLevel);
-      loadConversation(conversation.id);
-      loadConversations();
-    } catch (err) {
-      console.error('Set risk error:', err);
-    }
-  }, [config.sectionId, conversation, loadConversation, loadConversations, features.enableRiskControl]);
-
-  /**
-   * Handle set status
-   */
-  const handleSetStatus = useCallback(async (status: ConversationStatus) => {
-    if (!conversation?.id || !features.enableStatusControl) return;
-
-    try {
-      await therapistDashboardApi.setStatus(config.sectionId, conversation.id, status);
-      loadConversation(conversation.id);
-      loadConversations();
-    } catch (err) {
-      console.error('Set status error:', err);
-    }
-  }, [config.sectionId, conversation, loadConversation, loadConversations, features.enableStatusControl]);
-
-  /**
-   * Handle filter change
-   */
-  const handleFilterChange = useCallback((filter: FilterType) => {
-    setActiveFilter(filter);
-    loadConversations(filter);
-  }, [loadConversations]);
-
-  /**
-   * Get filtered conversations
-   */
-  const getFilteredConversations = useCallback(() => {
-    // Filtering is done server-side, but we can do client-side backup
-    return conversations;
-  }, [conversations]);
-
-  /**
-   * Handle add note
-   */
   const handleAddNote = useCallback(async () => {
-    if (!conversation?.id || !newNote.trim()) return;
+    if (!chat.conversation?.id || !newNote.trim()) return;
+    await api.addNote(chat.conversation.id, newNote.trim());
+    setNewNote('');
+    loadNotes(chat.conversation.id);
+  }, [api, chat.conversation?.id, newNote, loadNotes]);
 
-    try {
-      await therapistDashboardApi.addNote(config.sectionId, conversation.id, newNote.trim());
-      setNewNote('');
-      loadNotes(conversation.id);
-    } catch (err) {
-      console.error('Add note error:', err);
-    }
-  }, [config.sectionId, conversation, newNote, loadNotes]);
-
-  /**
-   * Handle acknowledge tag
-   */
-  const handleAcknowledgeTag = useCallback(async (tagId: number) => {
-    try {
-      await therapistDashboardApi.acknowledgeTag(config.sectionId, tagId);
-      loadTags();
-    } catch (err) {
-      console.error('Acknowledge tag error:', err);
-    }
-  }, [config.sectionId, loadTags]);
-
-  /**
-   * Handle mark alert read
-   */
-  const handleMarkAlertRead = useCallback(async (alertId: number) => {
-    try {
-      await therapistDashboardApi.markAlertRead(config.sectionId, alertId);
+  const handleMarkAlertRead = useCallback(
+    async (alertId: number) => {
+      await api.markAlertRead(alertId);
       loadAlerts();
+    },
+    [api, loadAlerts],
+  );
+
+  // ---- Draft actions ----
+
+  const handleCreateDraft = useCallback(async () => {
+    if (!chat.conversation?.id) return;
+    try {
+      const res = await api.createDraft(chat.conversation.id);
+      if (res.draft) {
+        setActiveDraft(res.draft);
+        setDraftText(res.draft.edited_content || res.draft.ai_content);
+      }
     } catch (err) {
-      console.error('Mark alert read error:', err);
+      console.error('Create draft error:', err);
     }
-  }, [config.sectionId, loadAlerts]);
+  }, [api, chat.conversation?.id]);
 
-  /**
-   * Get risk badge
-   */
-  const getRiskBadge = (risk: RiskLevel) => {
-    const variants: Record<RiskLevel, string> = {
-      low: 'success',
-      medium: 'warning',
-      high: 'danger',
-      critical: 'danger',
-    };
-    
-    const riskLabels: Record<RiskLevel, string> = {
-      low: labels.riskLow,
-      medium: labels.riskMedium,
-      high: labels.riskHigh,
-      critical: labels.riskCritical,
-    };
-    
+  const handleSendDraft = useCallback(async () => {
+    if (!activeDraft || !chat.conversation?.id) return;
+    // Update draft text first if changed
+    if (draftText !== (activeDraft.edited_content || activeDraft.ai_content)) {
+      await api.updateDraft(activeDraft.id, draftText);
+    }
+    await api.sendDraft(activeDraft.id, chat.conversation.id);
+    setActiveDraft(null);
+    setDraftText('');
+    chat.loadConversation(chat.conversation.id);
+  }, [api, activeDraft, draftText, chat.conversation?.id, chat.loadConversation]);
+
+  const handleDiscardDraft = useCallback(async () => {
+    if (!activeDraft) return;
+    await api.discardDraft(activeDraft.id);
+    setActiveDraft(null);
+    setDraftText('');
+  }, [api, activeDraft]);
+
+  // ---- Badge helpers ----
+
+  const riskBadge = (r?: RiskLevel) => {
+    if (!r) return null;
+    const v: Record<RiskLevel, string> = { low: 'badge-success', medium: 'badge-warning', high: 'badge-danger', critical: 'badge-danger' };
     return (
-      <Badge variant={variants[risk]} className={risk === 'critical' ? 'font-weight-bold' : ''}>
-        {risk === 'critical' && <i className="fas fa-exclamation-triangle mr-1"></i>}
-        {riskLabels[risk] || risk}
-      </Badge>
+      <span className={`badge ${v[r]}`}>
+        {r === 'critical' && <i className="fas fa-exclamation-triangle mr-1" />}
+        {labels[`risk${r.charAt(0).toUpperCase() + r.slice(1)}` as keyof typeof labels] || r}
+      </span>
     );
   };
 
-  /**
-   * Get status badge
-   */
-  const getStatusBadge = (status: ConversationStatus) => {
-    const variants: Record<ConversationStatus, string> = {
-      active: 'success',
-      paused: 'warning',
-      closed: 'secondary',
-    };
-    
-    const statusLabels: Record<ConversationStatus, string> = {
-      active: labels.statusActive,
-      paused: labels.statusPaused,
-      closed: labels.statusClosed,
-    };
-    
-    return (
-      <Badge variant={variants[status]}>
-        {statusLabels[status] || status}
-      </Badge>
-    );
+  const statusBadge = (s?: ConversationStatus) => {
+    if (!s) return null;
+    const v: Record<ConversationStatus, string> = { active: 'badge-success', paused: 'badge-warning', closed: 'badge-secondary' };
+    return <span className={`badge ${v[s]}`}>{labels[`status${s.charAt(0).toUpperCase() + s.slice(1)}` as keyof typeof labels] || s}</span>;
   };
+
+  // ---- Filtered critical alerts ----
+  const criticalAlerts = alerts.filter((a) => a.severity === 'critical' || a.severity === 'emergency');
+
+  // ---- Render ----
 
   return (
-    <Container fluid className="therapist-dashboard py-3">
-      {/* Header with Stats */}
+    <div className="tc-dashboard container-fluid py-3">
+      {/* ============ Stats Header ============ */}
       {features.showStatsHeader && (
-        <Row className="mb-3">
-          <Col>
-            <Card className="border-0 shadow-sm">
-              <Card.Body className="d-flex justify-content-between align-items-center flex-wrap">
-                <h4 className="mb-0">
-                  <i className="fas fa-stethoscope text-primary mr-2"></i>
-                  {labels.title}
-                </h4>
-                <div className="d-flex gap-4 flex-wrap">
-                  <div className="text-center px-3">
-                    <div className="h4 mb-0">{config.stats.total}</div>
-                    <small className="text-muted">{labels.statPatients}</small>
-                  </div>
-                  <div className="text-center px-3">
-                    <div className="h4 mb-0 text-success">{config.stats.active}</div>
-                    <small className="text-muted">{labels.statActive}</small>
-                  </div>
-                  {/* Unread messages count - NEW */}
-                  <div className="text-center px-3">
-                    <div className={`h4 mb-0 ${unreadCounts.total > 0 ? 'text-primary font-weight-bold' : ''}`}>
-                      {unreadCounts.total}
-                    </div>
-                    <small className="text-muted">Unread</small>
-                  </div>
-                  <div className="text-center px-3">
-                    <div className="h4 mb-0 text-danger">{config.stats.risk_critical}</div>
-                    <small className="text-muted">{labels.statCritical}</small>
-                  </div>
-                  <div className="text-center px-3">
-                    <div className="h4 mb-0 text-warning">{alerts.length}</div>
-                    <small className="text-muted">{labels.statAlerts}</small>
-                  </div>
-                  <div className="text-center px-3">
-                    <div className="h4 mb-0 text-info">{tags.length}</div>
-                    <small className="text-muted">{labels.statTags}</small>
-                  </div>
-                </div>
-              </Card.Body>
-            </Card>
-          </Col>
-        </Row>
+        <div className="card border-0 shadow-sm mb-3">
+          <div className="card-body d-flex justify-content-between align-items-center flex-wrap py-2">
+            <h5 className="mb-0">
+              <i className="fas fa-stethoscope text-primary mr-2" />
+              {labels.title}
+            </h5>
+            <div className="d-flex flex-wrap" style={{ gap: '1.5rem' }}>
+              <StatItem value={config.stats.total} label="Patients" />
+              <StatItem value={config.stats.active} label={labels.statusActive} className="text-success" />
+              <StatItem value={unreadCounts.total} label="Unread" className={unreadCounts.total > 0 ? 'text-primary font-weight-bold' : ''} />
+              <StatItem value={config.stats.risk_critical} label={labels.riskCritical} className="text-danger" />
+              <StatItem value={alerts.length} label="Alerts" className="text-warning" />
+            </div>
+          </div>
+        </div>
       )}
 
-      {/* Alerts Banner */}
-      {features.showAlertsPanel && (alerts.length > 0 || tags.length > 0) && (
-        <Row className="mb-3">
-          <Col>
-            {alerts.filter(a => a.severity === 'critical' || a.severity === 'emergency').map((alert) => (
-              <Alert key={alert.id} variant="danger" className="mb-2 d-flex justify-content-between align-items-center">
-                <div>
-                  <i className="fas fa-exclamation-triangle mr-2"></i>
-                  <strong>{alert.subject_name}:</strong> {alert.message}
-                </div>
-                <Button variant="outline-light" size="sm" onClick={() => handleMarkAlertRead(alert.id)}>
-                  <i className="fas fa-check mr-1"></i> {labels.dismiss}
-                </Button>
-              </Alert>
-            ))}
-            {tags.filter(t => !t.acknowledged).map((tag) => (
-              <Alert key={tag.id} variant="warning" className="mb-2 d-flex justify-content-between align-items-center">
-                <div>
-                  <i className="fas fa-at mr-2"></i>
-                  <strong>{tag.subject_name}:</strong> {tag.tag_reason || 'Tagged you'}
-                </div>
-                <Button variant="outline-dark" size="sm" onClick={() => handleAcknowledgeTag(tag.id)}>
-                  <i className="fas fa-check mr-1"></i> {labels.acknowledge}
-                </Button>
-              </Alert>
-            ))}
-          </Col>
-        </Row>
+      {/* ============ Alert Banner ============ */}
+      {features.showAlertsPanel && criticalAlerts.length > 0 && (
+        <div className="mb-3">
+          {criticalAlerts.map((a) => (
+            <div key={a.id} className="alert alert-danger d-flex justify-content-between align-items-center mb-2">
+              <div>
+                <i className="fas fa-exclamation-triangle mr-2" />
+                <strong>{a.subject_name}:</strong> {a.message}
+              </div>
+              <button className="btn btn-outline-light btn-sm" onClick={() => handleMarkAlertRead(a.id)}>
+                <i className="fas fa-check mr-1" />
+                {labels.dismiss}
+              </button>
+            </div>
+          ))}
+        </div>
       )}
 
-      <Row className="h-100">
-        {/* Conversations Sidebar */}
-        <Col md={4} lg={3}>
-          <Card className="border-0 shadow-sm h-100">
-            <Card.Header className="bg-light">
+      {/* ============ Group Tabs ============ */}
+      {groups.length > 0 && (
+        <ul className="nav nav-tabs mb-3">
+          <li className="nav-item">
+            <button
+              className={`nav-link ${activeGroupId === null ? 'active' : ''}`}
+              onClick={() => switchGroup(null)}
+            >
+              {labels.allGroupsTab}
+              {unreadCounts.total > 0 && (
+                <span className="badge badge-primary ml-1">{unreadCounts.total}</span>
+              )}
+            </button>
+          </li>
+          {groups.map((g) => (
+            <li key={g.id_groups} className="nav-item">
+              <button
+                className={`nav-link ${activeGroupId === g.id_groups ? 'active' : ''}`}
+                onClick={() => switchGroup(g.id_groups)}
+              >
+                {g.group_name}
+                {g.patient_count != null && (
+                  <span className="badge badge-light ml-1">{g.patient_count}</span>
+                )}
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+
+      <div className="row" style={{ minHeight: 500 }}>
+        {/* ============ Patient List Sidebar ============ */}
+        <div className="col-md-4 col-lg-3 mb-3 mb-md-0">
+          <div className="card border-0 shadow-sm h-100">
+            <div className="card-header bg-light py-2">
               <div className="d-flex justify-content-between align-items-center mb-2">
                 <h6 className="mb-0">
-                  <i className="fas fa-comments mr-2"></i>
+                  <i className="fas fa-users mr-2" />
                   {labels.conversationsHeading}
                 </h6>
-                {features.enableInvisibleMode && (
-                  <Button
-                    variant={isInvisibleMode ? 'outline-secondary' : 'outline-primary'}
-                    size="sm"
-                    onClick={() => setIsInvisibleMode(!isInvisibleMode)}
-                    title={isInvisibleMode ? 'Visible mode' : 'Invisible mode - observe without notification'}
-                  >
-                    <i className={`fas ${isInvisibleMode ? 'fa-eye-slash' : 'fa-eye'}`}></i>
-                  </Button>
-                )}
               </div>
               {/* Filter buttons */}
-              <ButtonGroup size="sm" className="w-100">
-                <Button
-                  variant={activeFilter === 'all' ? 'primary' : 'outline-secondary'}
-                  onClick={() => handleFilterChange('all')}
-                >
-                  {labels.filterAll}
-                </Button>
-                <Button
-                  variant={activeFilter === 'active' ? 'primary' : 'outline-secondary'}
-                  onClick={() => handleFilterChange('active')}
-                >
-                  {labels.filterActive}
-                </Button>
-                <Button
-                  variant={activeFilter === 'critical' ? 'danger' : 'outline-secondary'}
-                  onClick={() => handleFilterChange('critical')}
-                >
-                  {labels.filterCritical}
-                </Button>
-                <Button
-                  variant={activeFilter === 'tagged' ? 'warning' : 'outline-secondary'}
-                  onClick={() => handleFilterChange('tagged')}
-                >
-                  {labels.filterTagged}
-                </Button>
-              </ButtonGroup>
-            </Card.Header>
-            <ListGroup variant="flush" className="therapist-conversation-list">
-              {isLoadingList ? (
+              <div className="btn-group btn-group-sm w-100">
+                {(['all', 'active', 'critical', 'unread'] as FilterType[]).map((f) => (
+                  <button
+                    key={f}
+                    className={`btn ${activeFilter === f ? (f === 'critical' ? 'btn-danger' : 'btn-primary') : 'btn-outline-secondary'}`}
+                    onClick={() => switchFilter(f)}
+                  >
+                    {labels[`filter${f.charAt(0).toUpperCase() + f.slice(1)}` as keyof typeof labels] || f}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="list-group list-group-flush tc-patient-list">
+              {listLoading ? (
                 <div className="p-3 text-center text-muted">
-                  <div className="spinner-border spinner-border-sm" role="status">
-                    <span className="sr-only">{labels.loading}</span>
-                  </div>
+                  <div className="spinner-border spinner-border-sm" role="status" />
                 </div>
               ) : listError ? (
                 <div className="p-3 text-center text-danger">{listError}</div>
-              ) : getFilteredConversations().length === 0 ? (
+              ) : conversations.length === 0 ? (
                 <div className="p-3 text-center text-muted">{labels.noConversations}</div>
               ) : (
-                getFilteredConversations().map((conv) => {
-                  // Get unread count for this subject
-                  const subjectUnread = unreadCounts.bySubject[conv.id_users ?? 0];
-                  const unreadMessageCount = subjectUnread?.unreadCount ?? 0;
-                  
+                conversations.map((conv) => {
+                  // Safely access bySubject – guard against undefined/null and
+                  // handle both numeric and zero-padded string user IDs
+                  const bySubject = unreadCounts?.bySubject ?? {};
+                  const uid = conv.id_users ?? 0;
+                  const uc = bySubject[uid] ?? bySubject[String(uid)] ?? null;
+                  const unread = uc?.unreadCount ?? 0;
+                  const isActive = selectedId != null && String(selectedId) === String(conv.id);
+
                   return (
-                    <ListGroup.Item
+                    <button
                       key={conv.id}
-                      action
-                      active={selectedConversationId === conv.id}
-                      onClick={() => handleSelectConversation(conv.id)}
-                      className={`d-flex justify-content-between align-items-start ${unreadMessageCount > 0 ? 'therapist-unread-conversation' : ''}`}
+                      type="button"
+                      className={`list-group-item list-group-item-action ${isActive ? 'active' : ''} ${unread > 0 && !isActive ? 'tc-patient-list__unread' : ''}`}
+                      onClick={() => selectConversation(conv.id)}
                     >
-                      <div className="flex-grow-1">
-                        <div className="d-flex justify-content-between align-items-center mb-1">
-                          <div className="d-flex align-items-center">
-                            <strong className={unreadMessageCount > 0 ? 'font-weight-bold' : ''}>
-                              {conv.subject_name || 'Unknown'}
-                            </strong>
-                            {/* Unread message count badge - prominent display */}
-                            {unreadMessageCount > 0 && (
-                              <Badge variant="primary" className="ml-2">
-                                {unreadMessageCount} new
-                              </Badge>
-                            )}
-                          </div>
-                          <div className="d-flex gap-1">
-                            {features.showRiskColumn && getRiskBadge(conv.risk_level)}
-                            {features.showStatusColumn && getStatusBadge(conv.status)}
-                            {(conv.unread_alerts ?? 0) > 0 && (
-                              <Badge variant="danger" className="ml-1">
-                                <i className="fas fa-exclamation-triangle mr-1"></i>
-                                {conv.unread_alerts}
-                              </Badge>
-                            )}
-                            {(conv.pending_tags ?? 0) > 0 && (
-                              <Badge variant="warning" className="ml-1">
-                                <i className="fas fa-at"></i>
-                              </Badge>
-                            )}
-                          </div>
+                      <div className="d-flex justify-content-between align-items-center mb-1">
+                        <div className="d-flex align-items-center" style={{ minWidth: 0 }}>
+                          <strong className={`text-truncate ${unread > 0 ? 'font-weight-bold' : ''}`}>
+                            {conv.subject_name || 'Unknown'}
+                          </strong>
                         </div>
-                        <small className={unreadMessageCount > 0 ? 'text-dark' : 'text-muted'}>
-                          {conv.subject_code} • {conv.message_count ?? 0} messages
-                          {conv.ai_enabled ? '' : ' • 🤖❌'}
+                        <div className="d-flex flex-shrink-0 ml-2" style={{ gap: '0.25rem' }}>
+                          {unread > 0 && (
+                            <span className="badge badge-primary">{unread} new</span>
+                          )}
+                          {features.showRiskColumn && riskBadge(conv.risk_level)}
+                          {features.showStatusColumn && statusBadge(conv.status)}
+                          {(conv.unread_alerts ?? 0) > 0 && (
+                            <span className="badge badge-danger">
+                              <i className="fas fa-bell" /> {conv.unread_alerts}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                      <div className="d-flex justify-content-between align-items-center">
+                        <small className={isActive ? '' : unread > 0 ? 'text-dark' : 'text-muted'}>
+                          {conv.subject_code}
+                          {!conv.ai_enabled && <span className="ml-1">&middot; Human only</span>}
+                        </small>
+                        <small className={isActive ? '' : 'text-muted'}>
+                          <i className="fas fa-comment-dots mr-1" style={{ fontSize: '0.65rem' }} />
+                          {conv.message_count ?? 0}
                         </small>
                       </div>
-                    </ListGroup.Item>
+                    </button>
                   );
                 })
               )}
-            </ListGroup>
-          </Card>
-        </Col>
+            </div>
+          </div>
+        </div>
 
-        {/* Main Chat Area */}
-        <Col md={8} lg={6}>
-          <Card className="border-0 shadow-sm h-100 d-flex flex-column">
-            {selectedConversationId && conversation ? (
+        {/* ============ Conversation Area ============ */}
+        <div className="col-md-8 col-lg-6 mb-3 mb-md-0">
+          <div className="card border-0 shadow-sm h-100 d-flex flex-column">
+            {selectedId && chat.conversation ? (
               <>
-                {/* Conversation Header */}
-                <Card.Header className="bg-white d-flex justify-content-between align-items-center">
+                {/* Header */}
+                <div className="card-header bg-white d-flex justify-content-between align-items-center py-2">
                   <div>
-                    <h5 className="mb-0">{conversation.subject_name || labels.subjectLabel}</h5>
+                    <h5 className="mb-0">{chat.conversation.subject_name || labels.subjectLabel}</h5>
                     <small className="text-muted">
-                      {conversation.subject_code}
-                      {conversation.ai_enabled 
-                        ? <span className="ml-2 text-success"><i className="fas fa-robot mr-1"></i>{labels.aiModeIndicator}</span>
-                        : <span className="ml-2 text-warning"><i className="fas fa-user-md mr-1"></i>{labels.humanModeIndicator}</span>
-                      }
+                      {chat.conversation.subject_code}
+                      {chat.conversation.ai_enabled ? (
+                        <span className="ml-2 text-success">
+                          <i className="fas fa-robot mr-1" />
+                          {labels.aiModeIndicator}
+                        </span>
+                      ) : (
+                        <span className="ml-2 text-warning">
+                          <i className="fas fa-user-md mr-1" />
+                          {labels.humanModeIndicator}
+                        </span>
+                      )}
                     </small>
                   </div>
-                  <div className="d-flex align-items-center gap-2">
-                    {features.showRiskColumn && getRiskBadge(conversation.risk_level)}
-                    {features.showStatusColumn && getStatusBadge(conversation.status)}
-                    
-                    {/* AI Toggle */}
+                  <div className="d-flex align-items-center" style={{ gap: '0.5rem' }}>
+                    {features.showRiskColumn && riskBadge(chat.conversation.risk_level)}
+                    {features.showStatusColumn && statusBadge(chat.conversation.status)}
                     {features.enableAiToggle && (
-                      <Button
-                        variant={conversation.ai_enabled ? 'outline-warning' : 'outline-success'}
-                        size="sm"
+                      <button
+                        className={`btn btn-sm ${chat.conversation.ai_enabled ? 'btn-outline-warning' : 'btn-outline-success'}`}
                         onClick={handleToggleAI}
-                        title={conversation.ai_enabled ? labels.disableAI : labels.enableAI}
                       >
-                        <i className="fas fa-robot mr-1"></i>
-                        {conversation.ai_enabled ? labels.disableAI : labels.enableAI}
-                      </Button>
+                        <i className="fas fa-robot mr-1" />
+                        {chat.conversation.ai_enabled ? labels.disableAI : labels.enableAI}
+                      </button>
                     )}
-                    
-                    {/* Status Control Dropdown */}
                     {features.enableStatusControl && (
-                      <Dropdown>
-                        <Dropdown.Toggle variant="outline-secondary" size="sm" id="status-dropdown">
-                          <i className="fas fa-flag mr-1"></i>
-                        </Dropdown.Toggle>
-                        <Dropdown.Menu>
-                          <Dropdown.Item onClick={() => handleSetStatus('active')}>
-                            <Badge variant="success" className="mr-2">●</Badge> {labels.statusActive}
-                          </Dropdown.Item>
-                          <Dropdown.Item onClick={() => handleSetStatus('paused')}>
-                            <Badge variant="warning" className="mr-2">●</Badge> {labels.statusPaused}
-                          </Dropdown.Item>
-                          <Dropdown.Item onClick={() => handleSetStatus('closed')}>
-                            <Badge variant="secondary" className="mr-2">●</Badge> {labels.statusClosed}
-                          </Dropdown.Item>
-                        </Dropdown.Menu>
-                      </Dropdown>
+                      <div className="dropdown">
+                        <button className="btn btn-outline-secondary btn-sm dropdown-toggle" data-toggle="dropdown">
+                          <i className="fas fa-flag" />
+                        </button>
+                        <div className="dropdown-menu dropdown-menu-right">
+                          <button className="dropdown-item" onClick={() => handleSetStatus('active')}>
+                            <span className="badge badge-success mr-2">&bull;</span> {labels.statusActive}
+                          </button>
+                          <button className="dropdown-item" onClick={() => handleSetStatus('paused')}>
+                            <span className="badge badge-warning mr-2">&bull;</span> {labels.statusPaused}
+                          </button>
+                          <button className="dropdown-item" onClick={() => handleSetStatus('closed')}>
+                            <span className="badge badge-secondary mr-2">&bull;</span> {labels.statusClosed}
+                          </button>
+                        </div>
+                      </div>
                     )}
                   </div>
-                </Card.Header>
+                </div>
 
                 {/* Error */}
-                {error && (
-                  <Alert variant="danger" dismissible onClose={clearError} className="m-3 mb-0">
-                    {error}
-                  </Alert>
+                {chat.error && (
+                  <div className="alert alert-danger m-3 mb-0 alert-dismissible fade show" role="alert">
+                    {chat.error}
+                    <button type="button" className="close" onClick={chat.clearError}>
+                      <span>&times;</span>
+                    </button>
+                  </div>
                 )}
 
                 {/* Messages */}
-                <Card.Body className="p-0 flex-grow-1 d-flex flex-column overflow-hidden">
+                <div className="card-body p-0 flex-grow-1 d-flex flex-column overflow-hidden">
                   <MessageList
-                    messages={messages}
-                    isLoading={isLoading}
-                    labels={labels}
+                    messages={chat.messages}
+                    isLoading={chat.isLoading}
                     isTherapistView={true}
+                    emptyText={labels.emptyMessage}
                   />
-                  
-                  {isSending && (
+                  {chat.isSending && (
                     <div className="px-3 pb-2">
                       <LoadingIndicator text={labels.loading} />
                     </div>
                   )}
-                </Card.Body>
+                </div>
 
-                {/* Input with speech-to-text support */}
-                <Card.Footer className="bg-white">
+                {/* Draft area */}
+                {activeDraft && (
+                  <div className="card-body border-top bg-light py-2 px-3">
+                    <div className="d-flex align-items-center mb-2">
+                      <i className="fas fa-robot text-info mr-2" />
+                      <strong className="small">AI Draft</strong>
+                      <span className="badge badge-info ml-2">editable</span>
+                    </div>
+                    <textarea
+                      className="form-control form-control-sm mb-2"
+                      rows={3}
+                      value={draftText}
+                      onChange={(e) => setDraftText(e.target.value)}
+                    />
+                    <div className="d-flex" style={{ gap: '0.5rem' }}>
+                      <button className="btn btn-primary btn-sm" onClick={handleSendDraft} disabled={!draftText.trim()}>
+                        <i className="fas fa-paper-plane mr-1" />
+                        Send to Patient
+                      </button>
+                      <button className="btn btn-outline-secondary btn-sm" onClick={handleDiscardDraft}>
+                        Discard
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {/* Input */}
+                <div className="card-footer bg-white py-2">
+                  <div className="d-flex mb-2" style={{ gap: '0.5rem' }}>
+                    <button className="btn btn-outline-info btn-sm" onClick={handleCreateDraft} disabled={!!activeDraft}>
+                      <i className="fas fa-magic mr-1" />
+                      Generate AI Draft
+                    </button>
+                  </div>
                   <MessageInput
-                    onSend={sendMessage}
-                    disabled={isSending || isLoading}
+                    onSend={chat.sendMessage}
+                    disabled={chat.isSending || chat.isLoading}
                     placeholder={labels.sendPlaceholder}
                     buttonLabel={labels.sendButton}
                     speechToTextEnabled={config.speechToTextEnabled}
-                    speechToTextModel={config.speechToTextModel}
-                    speechToTextLanguage={config.speechToTextLanguage}
                     sectionId={config.sectionId}
                   />
-                </Card.Footer>
+                </div>
               </>
             ) : (
-              <Card.Body className="d-flex align-items-center justify-content-center text-muted">
+              <div className="card-body d-flex align-items-center justify-content-center text-muted">
                 <div className="text-center">
-                  <i className="fas fa-hand-pointer fa-3x mb-3 opacity-50"></i>
+                  <i className="fas fa-hand-pointer fa-3x mb-3" style={{ opacity: 0.3 }} />
                   <p>{labels.selectConversation}</p>
                 </div>
-              </Card.Body>
+              </div>
             )}
-          </Card>
-        </Col>
+          </div>
+        </div>
 
-        {/* Notes & Controls Sidebar */}
-        <Col lg={3} className="d-none d-lg-block">
-          {selectedConversationId && conversation && (
-            <div className="d-flex flex-column gap-3">
-              {/* Risk Controls */}
+        {/* ============ Notes & Controls Sidebar ============ */}
+        <div className="col-lg-3 d-none d-lg-block">
+          {selectedId && chat.conversation && (
+            <>
+              {/* Risk Control */}
               {features.enableRiskControl && (
-                <Card className="border-0 shadow-sm">
-                  <Card.Header className="bg-light">
+                <div className="card border-0 shadow-sm mb-3">
+                  <div className="card-header bg-light py-2">
                     <h6 className="mb-0">
-                      <i className="fas fa-shield-alt mr-2"></i>
+                      <i className="fas fa-shield-alt mr-2" />
                       {labels.riskHeading}
                     </h6>
-                  </Card.Header>
-                  <Card.Body className="p-2">
-                    <div className="d-flex flex-wrap gap-1">
-                      {(['low', 'medium', 'high', 'critical'] as RiskLevel[]).map((risk) => {
-                        const riskLabels: Record<RiskLevel, string> = {
-                          low: labels.riskLow,
-                          medium: labels.riskMedium,
-                          high: labels.riskHigh,
-                          critical: labels.riskCritical,
-                        };
-                        const variants: Record<RiskLevel, string> = {
-                          low: conversation.risk_level === risk ? 'success' : 'outline-success',
-                          medium: conversation.risk_level === risk ? 'warning' : 'outline-warning',
-                          high: conversation.risk_level === risk ? 'danger' : 'outline-danger',
-                          critical: conversation.risk_level === risk ? 'danger' : 'outline-danger',
-                        };
-                        return (
-                          <Button
-                            key={risk}
-                            variant={variants[risk]}
-                            size="sm"
-                            onClick={() => handleSetRisk(risk)}
-                          >
-                            {riskLabels[risk] || risk}
-                          </Button>
-                        );
-                      })}
-                    </div>
-                  </Card.Body>
-                </Card>
+                  </div>
+                  <div className="card-body p-2 d-flex flex-wrap" style={{ gap: '0.25rem' }}>
+                    {(['low', 'medium', 'high', 'critical'] as RiskLevel[]).map((r) => {
+                      const active = chat.conversation!.risk_level === r;
+                      const colors: Record<RiskLevel, string> = {
+                        low: active ? 'btn-success' : 'btn-outline-success',
+                        medium: active ? 'btn-warning' : 'btn-outline-warning',
+                        high: active ? 'btn-danger' : 'btn-outline-danger',
+                        critical: active ? 'btn-danger' : 'btn-outline-danger',
+                      };
+                      return (
+                        <button key={r} className={`btn btn-sm ${colors[r]}`} onClick={() => handleSetRisk(r)}>
+                          {labels[`risk${r.charAt(0).toUpperCase() + r.slice(1)}` as keyof typeof labels] || r}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
               )}
 
               {/* Notes */}
               {features.enableNotes && features.showNotesPanel && (
-                <Card className="border-0 shadow-sm flex-grow-1">
-                  <Card.Header className="bg-light">
+                <div className="card border-0 shadow-sm">
+                  <div className="card-header bg-light py-2">
                     <h6 className="mb-0">
-                      <i className="fas fa-sticky-note mr-2"></i>
+                      <i className="fas fa-sticky-note mr-2" />
                       {labels.notesHeading}
                     </h6>
-                  </Card.Header>
-                  <Card.Body className="p-2 therapist-notes-list">
+                  </div>
+                  <div className="card-body p-2 tc-notes-list">
                     {notes.length === 0 ? (
-                      <p className="text-muted text-center mb-0">No notes yet.</p>
+                      <p className="text-muted text-center mb-0 small">No notes yet.</p>
                     ) : (
-                      notes.map((note) => (
-                        <div key={note.id} className="therapist-note-item mb-2 p-2">
+                      notes.map((n) => (
+                        <div key={n.id} className="tc-note-item mb-2 p-2 rounded">
                           <div className="d-flex justify-content-between text-muted mb-1">
-                            <small>{note.author_name}</small>
-                            <small>{new Date(note.created_at).toLocaleDateString()}</small>
+                            <small className="font-weight-bold">{n.author_name}</small>
+                            <small>{new Date(n.created_at).toLocaleDateString()}</small>
                           </div>
-                          <p className="mb-0 small">{note.content}</p>
+                          <p className="mb-0 small">{n.content}</p>
                         </div>
                       ))
                     )}
-                  </Card.Body>
-                  <Card.Footer className="bg-white p-2">
-                    <Form.Control
-                      as="textarea"
+                  </div>
+                  <div className="card-footer bg-white p-2">
+                    <textarea
+                      className="form-control form-control-sm mb-2"
                       rows={2}
                       value={newNote}
                       onChange={(e) => setNewNote(e.target.value)}
                       placeholder={labels.addNotePlaceholder}
-                      className="mb-2"
                     />
-                    <Button
-                      variant="outline-primary"
-                      size="sm"
+                    <button
+                      className="btn btn-outline-primary btn-sm"
                       onClick={handleAddNote}
                       disabled={!newNote.trim()}
                     >
-                      <i className="fas fa-plus mr-1"></i>
+                      <i className="fas fa-plus mr-1" />
                       {labels.addNoteButton}
-                    </Button>
-                  </Card.Footer>
-                </Card>
-              )}
-
-              {/* Quick Actions */}
-              <Card className="border-0 shadow-sm">
-                <Card.Header className="bg-light">
-                  <h6 className="mb-0">
-                    <i className="fas fa-bolt mr-2"></i>
-                    Quick Actions
-                  </h6>
-                </Card.Header>
-                <Card.Body className="p-2">
-                  <div className="d-grid gap-2">
-                    <Button
-                      variant="outline-primary"
-                      size="sm"
-                      onClick={() => {
-                        // Open in LLM console
-                        window.open(`/admin/llm?conversation=${conversation.id}`, '_blank');
-                      }}
-                    >
-                      <i className="fas fa-external-link-alt mr-1"></i>
-                      {labels.viewInLlm}
-                    </Button>
-                    {conversation.ai_enabled ? (
-                      <Button
-                        variant="outline-info"
-                        size="sm"
-                        onClick={() => {
-                          handleToggleAI();
-                          // Could send intervention message
-                        }}
-                      >
-                        <i className="fas fa-user-md mr-1"></i>
-                        {labels.joinConversation}
-                      </Button>
-                    ) : (
-                      <Button
-                        variant="outline-success"
-                        size="sm"
-                        onClick={() => {
-                          handleToggleAI();
-                        }}
-                      >
-                        <i className="fas fa-robot mr-1"></i>
-                        {labels.leaveConversation}
-                      </Button>
-                    )}
+                    </button>
                   </div>
-                </Card.Body>
-              </Card>
-            </div>
+                </div>
+              )}
+            </>
           )}
-        </Col>
-      </Row>
-    </Container>
+        </div>
+      </div>
+    </div>
   );
 };
+
+// ---------------------------------------------------------------------------
+// Small stat display helper
+// ---------------------------------------------------------------------------
+
+const StatItem: React.FC<{ value: number; label: string; className?: string }> = ({ value, label, className = '' }) => (
+  <div className="text-center">
+    <div className={`h5 mb-0 ${className}`}>{value}</div>
+    <small className="text-muted">{label}</small>
+  </div>
+);
 
 export default TherapistDashboard;

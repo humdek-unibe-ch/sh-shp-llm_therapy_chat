@@ -1,149 +1,103 @@
 /**
- * Message List Component
+ * MessageList Component
  * ======================
- * 
- * Renders a list of chat messages with proper styling for different sender types.
- * Uses MarkdownRenderer for proper markdown formatting in AI responses.
+ *
+ * Renders chat messages with clear visual distinction between sender types:
+ *   - Subject (patient): left-aligned, light blue bubble
+ *   - Therapist: left-aligned, green bubble with left border
+ *   - AI: left-aligned, white bubble with subtle border
+ *   - System: centered, yellow banner
+ *   - Own messages: right-aligned, primary blue bubble
+ *
+ * Supports:
+ *   - Edited message indicator
+ *   - Soft-deleted message placeholder
+ *   - Markdown rendering for AI messages
+ *   - Auto-scroll to newest message
  */
 
 import React, { useRef, useEffect } from 'react';
-import type { Message, TherapyChatLabels, TherapistDashboardLabels } from '../../types';
+import type { Message, SenderType } from '../../types';
 import { MarkdownRenderer } from './MarkdownRenderer';
-import './MessageList.css';
-import './MarkdownRenderer.css';
+
+// ---------------------------------------------------------------------------
+// Props
+// ---------------------------------------------------------------------------
 
 interface MessageListProps {
   messages: Message[];
   isLoading?: boolean;
-  labels: TherapyChatLabels | TherapistDashboardLabels;
   isTherapistView?: boolean;
+  emptyText?: string;
 }
 
-/**
- * Format timestamp for display
- */
-function formatTime(timestamp: string): string {
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+function formatTime(ts: string): string {
   try {
-    const date = new Date(timestamp);
-    return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    return new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   } catch {
     return '';
   }
 }
 
-/**
- * Get sender label - Consistent naming for each sender type
- */
-function getSenderLabel(message: Message, labels: TherapyChatLabels | TherapistDashboardLabels, isTherapistView: boolean): string {
-  const labelsTyped = labels as TherapyChatLabels & TherapistDashboardLabels;
-  
-  // Use explicit label if provided
-  if (message.label) {
-    return message.label;
-  }
-
-  switch (message.sender_type) {
-    case 'ai':
-      return labelsTyped.ai_label || labelsTyped.aiLabel || 'AI Assistant';
-    case 'therapist':
-      // In therapist view, show "You" for therapist messages
-      if (isTherapistView) {
-        return 'You';
-      }
-      return labelsTyped.therapist_label || labelsTyped.therapistLabel || 'Therapist';
-    case 'subject':
-      // In subject view, show "You" for subject messages
-      if (!isTherapistView) {
-        return 'You';
-      }
-      return message.sender_name || labelsTyped.subjectLabel || 'Patient';
-    case 'system':
-      return 'System';
-    default:
-      // Handle legacy role-based messages
-      if (message.role === 'assistant') {
-        return labelsTyped.ai_label || labelsTyped.aiLabel || 'AI Assistant';
-      }
-      // user role - show "You" consistently
-      return 'You';
-  }
+function senderLabel(msg: Message, isTherapistView: boolean): string {
+  if (msg.label) return msg.label;
+  const st = msg.sender_type;
+  if (st === 'ai') return 'AI Assistant';
+  if (st === 'system') return 'System';
+  if (st === 'therapist') return isTherapistView ? 'You' : msg.sender_name || 'Therapist';
+  if (st === 'subject') return isTherapistView ? msg.sender_name || 'Patient' : 'You';
+  // Legacy role-based fallback
+  return msg.role === 'assistant' ? 'AI Assistant' : 'You';
 }
 
-/**
- * Get message CSS class
- * Note: For own messages, we use therapy-message-self which handles alignment (flex-end)
- * For other people's messages, we use type-specific classes (ai, therapist, subject)
- */
-function getMessageClass(message: Message, isTherapistView: boolean): string {
-  const classes = ['therapy-message'];
-
-  // Determine if this is the current user's own message
-  const isOwnMessage = isTherapistView 
-    ? message.sender_type === 'therapist' 
-    : message.sender_type === 'subject' || (message.role === 'user' && !message.sender_type);
-
-  switch (message.sender_type) {
-    case 'ai':
-      classes.push('therapy-message-ai');
-      break;
-    case 'therapist':
-      if (isOwnMessage) {
-        // Own message - right aligned, blue
-        classes.push('therapy-message-self');
-      } else {
-        // Therapist message in subject view - left aligned, green
-        classes.push('therapy-message-therapist');
-      }
-      break;
-    case 'subject':
-      if (isOwnMessage) {
-        // Own message - right aligned, blue
-        classes.push('therapy-message-self');
-      } else {
-        // Subject message in therapist view - left aligned, light blue
-        classes.push('therapy-message-subject');
-      }
-      break;
-    case 'system':
-      classes.push('therapy-message-system');
-      break;
-    default:
-      // Handle legacy role-based messages
-      if (message.role === 'assistant') {
-        classes.push('therapy-message-ai');
-      } else if (message.role === 'user') {
-        // User's own message
-        classes.push('therapy-message-self');
-      }
-  }
-
-  return classes.join(' ');
+function isOwnMessage(msg: Message, isTherapistView: boolean): boolean {
+  if (isTherapistView) return msg.sender_type === 'therapist';
+  return msg.sender_type === 'subject' || (msg.role === 'user' && !msg.sender_type);
 }
+
+function senderIcon(st?: SenderType): string {
+  if (st === 'ai') return 'fas fa-robot';
+  if (st === 'therapist') return 'fas fa-user-md';
+  if (st === 'system') return 'fas fa-info-circle';
+  return 'fas fa-user';
+}
+
+function bubbleClass(msg: Message, isTherapistView: boolean): string {
+  if (msg.sender_type === 'system') return 'tc-msg tc-msg--system';
+  if (isOwnMessage(msg, isTherapistView)) return 'tc-msg tc-msg--self';
+  if (msg.sender_type === 'ai' || msg.role === 'assistant') return 'tc-msg tc-msg--ai';
+  if (msg.sender_type === 'therapist') return 'tc-msg tc-msg--therapist';
+  if (msg.sender_type === 'subject') return 'tc-msg tc-msg--subject';
+  return 'tc-msg tc-msg--ai';
+}
+
+// ---------------------------------------------------------------------------
+// Component
+// ---------------------------------------------------------------------------
 
 export const MessageList: React.FC<MessageListProps> = ({
   messages,
   isLoading = false,
-  labels,
   isTherapistView = false,
+  emptyText = 'No messages yet. Start the conversation!',
 }) => {
-  const containerRef = useRef<HTMLDivElement>(null);
-  const labelsTyped = labels as TherapyChatLabels & TherapistDashboardLabels;
+  const endRef = useRef<HTMLDivElement>(null);
 
-  // Auto-scroll to bottom when new messages arrive
+  // Auto-scroll on new messages
   useEffect(() => {
-    if (containerRef.current) {
-      containerRef.current.scrollTop = containerRef.current.scrollHeight;
-    }
-  }, [messages]);
+    endRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [messages.length]);
 
   if (isLoading && messages.length === 0) {
     return (
-      <div className="therapy-message-list d-flex align-items-center justify-content-center">
+      <div className="tc-msg-list d-flex align-items-center justify-content-center">
         <div className="text-center text-muted">
-          <div className="spinner-border spinner-border-sm mb-2" role="status">
-            <span className="sr-only">Loading...</span>
-          </div>
-          <p className="mb-0">{labelsTyped.loading || 'Loading...'}</p>
+          <div className="spinner-border spinner-border-sm mb-2" role="status" />
+          <p className="mb-0">Loading messages...</p>
         </div>
       </div>
     );
@@ -151,40 +105,67 @@ export const MessageList: React.FC<MessageListProps> = ({
 
   if (messages.length === 0) {
     return (
-      <div className="therapy-message-list">
-        <div className="therapy-message-list-empty">
-          <i className="fas fa-comments"></i>
-          <p>{labelsTyped.empty_message || 'No messages yet. Start the conversation!'}</p>
+      <div className="tc-msg-list d-flex align-items-center justify-content-center">
+        <div className="text-center text-muted p-4">
+          <i className="fas fa-comments fa-3x mb-3 d-block" style={{ opacity: 0.3 }} />
+          <p className="mb-0">{emptyText}</p>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="therapy-message-list" ref={containerRef}>
-      {messages.map((message) => (
-        <div key={message.id} className={getMessageClass(message, isTherapistView)}>
-          <div className="therapy-message-header">
-            <span className="therapy-message-sender">
-              {getSenderLabel(message, labels, isTherapistView)}
-            </span>
-            <span className="therapy-message-time">
-              {formatTime(message.timestamp)}
-            </span>
-          </div>
-          <div className="therapy-message-content">
-            <MarkdownRenderer content={message.content} />
-          </div>
-          {message.tags && message.tags.length > 0 && (
-            <div className="therapy-message-tags">
-              <span className="badge badge-warning">
-                <i className="fas fa-at mr-1"></i>
-                Tagged
-              </span>
+    <div className="tc-msg-list">
+      {messages.map((msg) => {
+        // Soft-deleted messages
+        if (msg.is_deleted) {
+          return (
+            <div key={msg.id} className="tc-msg tc-msg--deleted text-center">
+              <small className="text-muted font-italic">
+                <i className="fas fa-ban mr-1" />
+                This message was removed.
+              </small>
             </div>
-          )}
-        </div>
-      ))}
+          );
+        }
+
+        const own = isOwnMessage(msg, isTherapistView);
+
+        return (
+          <div key={msg.id} className={bubbleClass(msg, isTherapistView)}>
+            {/* Header: sender + time */}
+            <div className="tc-msg__header">
+              {!own && (
+                <span className="tc-msg__icon mr-1">
+                  <i className={senderIcon(msg.sender_type)} />
+                </span>
+              )}
+              <span className="tc-msg__sender">{senderLabel(msg, isTherapistView)}</span>
+              <span className="tc-msg__time ml-auto">{formatTime(msg.timestamp)}</span>
+            </div>
+
+            {/* Content */}
+            <div className="tc-msg__body">
+              {msg.sender_type === 'ai' || msg.role === 'assistant' ? (
+                <MarkdownRenderer content={msg.content} />
+              ) : (
+                <span style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{msg.content}</span>
+              )}
+            </div>
+
+            {/* Edited indicator */}
+            {msg.is_edited && (
+              <div className="tc-msg__edited">
+                <small className="text-muted font-italic">
+                  <i className="fas fa-pen mr-1" style={{ fontSize: '0.6rem' }} />
+                  edited{msg.edited_at ? ` ${formatTime(msg.edited_at)}` : ''}
+                </small>
+              </div>
+            )}
+          </div>
+        );
+      })}
+      <div ref={endRef} />
     </div>
   );
 };

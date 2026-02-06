@@ -12,40 +12,45 @@
 -- =====================================================
 --
 -- Base tables (owned by sh-shp-llm, NOT modified here):
--- ┌────────────────────┐    ┌─────────────────┐
--- │ llmConversations   │    │ llmMessages      │
--- │ - id               │◄───│ - id             │
--- │ - id_users (owner) │    │ - id_llmConv...  │
--- │ - title            │    │ - role           │
--- │ - model            │    │ - content        │
--- │ - deleted/blocked  │    │ - timestamp      │
--- └────────┬───────────┘    └────────┬─────────┘
---          │                         │
--- Therapy extension tables (owned by THIS plugin):
---          │                         │
--- ┌────────▼───────────────┐ ┌──────▼──────────────────┐
--- │ therapyConversationMeta│ │ therapyMessageRecipients │
--- │ - id_llmConversations  │ │ - id_llmMessages         │
--- │ - id_therapist         │ │ - id_users (recipient)   │
--- │ - mode/status/risk     │ │ - is_new (unread flag)   │
--- │ - ai_enabled           │ │ - seen_at                │
--- └────────┬───────────────┘ └──────────────────────────┘
---          │
--- ┌────────▼───────────────┐ ┌──────────────────────────┐
--- │ therapyAlerts           │ │ therapyDraftMessages      │
--- │ - id_llmConversations   │ │ - id_llmConversations     │
--- │ - id_users (target)     │ │ - id_users (author)       │
--- │ - type/severity         │ │ - content + ai_content    │
--- │ - metadata (JSON)       │ │ - status (draft/sent/...) │
--- └────────────────────────┘ └──────────────────────────┘
---
--- ┌────────────────────────┐ ┌──────────────────────────────┐
--- │ therapyNotes            │ │ therapyTherapistAssignments   │
--- │ - id_llmConversations   │ │ - id_users (therapist)        │
--- │ - id_users (author)     │ │ - id_groups (patient group)   │
--- │ - content               │ │ PURPOSE: "Which therapists    │
--- │ - note_type             │ │  can monitor which groups?"   │
--- └────────────────────────┘ └──────────────────────────────┘
+-- ┌─────────────────────────┐   ┌─────────────────────────┐
+-- │ llmConversations         │   │ llmMessages              │
+-- │ - id                     │◄──│ - id                     │
+-- │ - id_users (patient)     │   │ - id_llmConversations    │
+-- │ - title, model           │   │ - role (user/assistant/  │
+-- │ - deleted, blocked       │   │         system)          │
+-- └────────┬────────────────┘   │ - content, timestamp     │
+--          │                     │ - sent_context (JSON)    │
+--          │                     │   ↳ therapy_sender_type  │
+--          │                     │   ↳ therapy_sender_id    │
+--          │                     └──────────┬──────────────┘
+-- Therapy extension tables:                 │
+--          │                                │
+-- ┌────────▼────────────────┐  ┌───────────▼──────────────┐
+-- │ therapyConversationMeta │  │ therapyMessageRecipients  │
+-- │ - id_llmConversations   │  │ - id_llmMessages          │
+-- │ - mode/status/risk      │  │ - id_users (recipient)    │
+-- │ - ai_enabled            │  │ - is_new (unread flag)    │
+-- │ (NO id_therapist -      │  │ - seen_at                 │
+-- │  we know who sent what  │  └───────────────────────────┘
+-- │  from sent_context in   │
+-- │  llmMessages)           │  ┌───────────────────────────┐
+-- └────────┬────────────────┘  │ therapyDraftMessages      │
+--          │                    │ - id_llmConversations     │
+-- ┌────────▼────────────────┐  │ - id_users (therapist)    │
+-- │ therapyAlerts            │  │ - ai_content + edited     │
+-- │ - id_llmConversations   │  │ - status (draft/sent/...)  │
+-- │ - id_users (target)     │  └───────────────────────────┘
+-- │ - type/severity         │
+-- │ - metadata (JSON)       │  ┌───────────────────────────┐
+-- │   (tags absorbed here)  │  │ therapyTherapistAssignments│
+-- └─────────────────────────┘  │ - id_users (therapist)    │
+--                               │ - id_groups (patient grp) │
+-- ┌─────────────────────────┐  │ PURPOSE: who monitors whom│
+-- │ therapyNotes             │  └───────────────────────────┘
+-- │ - id_llmConversations   │
+-- │ - id_users (author)     │
+-- │ - content + note_type   │
+-- └─────────────────────────┘
 --
 -- =====================================================
 -- ACCESS CONTROL FLOW
@@ -72,6 +77,39 @@
 -- 3. System creates therapyMessageRecipients for all assigned therapists
 -- 4. Therapist dashboard shows alert + unread message
 --
+-- SENDER TRACKING (how we know who sent each message):
+--
+-- All messages live in llmMessages.sent_context JSON column:
+--   { "therapy_sender_type": "subject|therapist|ai|system",
+--     "therapy_sender_id": 12345 }
+--
+-- When building AI context, therapist messages are marked with high
+-- importance so the AI knows they are authoritative clinical input.
+-- The llmMessages.role field maps:
+--   - "user"      = subject OR therapist (distinguished by sent_context)
+--   - "assistant"  = AI response
+--   - "system"     = system/context messages
+--
+-- MESSAGE EDITING/DELETION:
+-- Therapists can edit or soft-delete messages. We use llmMessages.sent_context
+-- to track: { "edited_at": "...", "edited_by": 123, "original_content": "..." }
+-- For soft-delete: llmMessages.deleted = 1 (already exists in base table)
+--
+-- =====================================================
+
+-- =====================================================
+-- DEBUG: DROP TABLES (uncomment to re-run script from scratch)
+-- WARNING: This will DELETE all therapy data!
+-- =====================================================
+DROP VIEW IF EXISTS view_therapyTherapistAssignments;
+DROP VIEW IF EXISTS view_therapyAlerts;
+DROP VIEW IF EXISTS view_therapyConversations;
+DROP TABLE IF EXISTS therapyDraftMessages;
+DROP TABLE IF EXISTS therapyNotes;
+DROP TABLE IF EXISTS therapyAlerts;
+DROP TABLE IF EXISTS therapyMessageRecipients;
+DROP TABLE IF EXISTS therapyConversationMeta;
+DROP TABLE IF EXISTS therapyTherapistAssignments;
 -- =====================================================
 
 -- Add plugin entry
@@ -206,16 +244,12 @@ CREATE TABLE IF NOT EXISTS `therapyTherapistAssignments` (
 -- =====================================================
 -- PURPOSE: Adds therapy-specific metadata to llmConversations (1:1 relationship).
 --
--- DOES NOT contain id_groups because:
--- - Access control is handled by therapyTherapistAssignments.
--- - The patient who owns the conversation is in llmConversations.id_users.
--- - The patient's group membership is in users_groups.
--- - Putting id_groups here would duplicate information and break when
---   a patient is in multiple groups or groups change.
+-- NO id_groups: Access control via therapyTherapistAssignments.
+-- NO id_therapist: We don't track "who joined". Multiple therapists can
+--   interact. Who sent what is tracked in llmMessages.sent_context JSON.
+--   This avoids the problem of "what if multiple therapists join?"
 --
 -- FIELDS:
--- - id_therapist: Currently assigned/active therapist (NULL = no one joined yet).
---   This tracks who is actively engaged, NOT who has access.
 -- - ai_enabled: Quick boolean toggle. When therapist pauses AI, this goes to 0.
 -- - id_chatModes: The overall mode (ai_hybrid or human_only).
 -- - id_conversationStatus: Lifecycle status (active/paused/closed).
@@ -226,23 +260,20 @@ CREATE TABLE IF NOT EXISTS `therapyTherapistAssignments` (
 CREATE TABLE IF NOT EXISTS `therapyConversationMeta` (
     `id` INT(10) UNSIGNED ZEROFILL NOT NULL AUTO_INCREMENT,
     `id_llmConversations` INT(10) UNSIGNED ZEROFILL NOT NULL COMMENT '1:1 link to llmConversations',
-    `id_therapist` INT(10) UNSIGNED ZEROFILL DEFAULT NULL COMMENT 'Currently active therapist (NULL = no one joined)',
     `id_chatModes` INT(10) UNSIGNED ZEROFILL DEFAULT NULL COMMENT 'FK to lookups (therapyChatModes)',
     `ai_enabled` TINYINT(1) DEFAULT 1 COMMENT '1=AI can respond, 0=AI paused by therapist',
     `id_conversationStatus` INT(10) UNSIGNED ZEROFILL DEFAULT NULL COMMENT 'FK to lookups (therapyConversationStatus)',
     `id_riskLevels` INT(10) UNSIGNED ZEROFILL DEFAULT NULL COMMENT 'FK to lookups (therapyRiskLevels)',
-    `therapist_last_seen` TIMESTAMP NULL DEFAULT NULL COMMENT 'When therapist last viewed this conversation',
+    `therapist_last_seen` TIMESTAMP NULL DEFAULT NULL COMMENT 'When any therapist last viewed this conversation',
     `subject_last_seen` TIMESTAMP NULL DEFAULT NULL COMMENT 'When subject last viewed messages',
     `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     PRIMARY KEY (`id`),
     UNIQUE KEY `idx_llm_conversation` (`id_llmConversations`),
-    KEY `idx_therapist` (`id_therapist`),
     KEY `idx_status` (`id_conversationStatus`),
     KEY `idx_risk_level` (`id_riskLevels`),
     KEY `idx_chat_mode` (`id_chatModes`),
     CONSTRAINT `fk_therapyConvMeta_llmConv` FOREIGN KEY (`id_llmConversations`) REFERENCES `llmConversations` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
-    CONSTRAINT `fk_therapyConvMeta_therapist` FOREIGN KEY (`id_therapist`) REFERENCES `users` (`id`) ON DELETE SET NULL ON UPDATE CASCADE,
     CONSTRAINT `fk_therapyConvMeta_chatModes` FOREIGN KEY (`id_chatModes`) REFERENCES `lookups` (`id`) ON DELETE SET NULL ON UPDATE CASCADE,
     CONSTRAINT `fk_therapyConvMeta_status` FOREIGN KEY (`id_conversationStatus`) REFERENCES `lookups` (`id`) ON DELETE SET NULL ON UPDATE CASCADE,
     CONSTRAINT `fk_therapyConvMeta_riskLevel` FOREIGN KEY (`id_riskLevels`) REFERENCES `lookups` (`id`) ON DELETE SET NULL ON UPDATE CASCADE
@@ -436,11 +467,11 @@ CREATE TABLE IF NOT EXISTS `therapyDraftMessages` (
 
 -- View: Therapy Conversations (main dashboard query source)
 -- Joins: therapyConversationMeta + llmConversations + users + lookups
+-- NOTE: No therapist info here - therapist identity comes from message sent_context
 CREATE OR REPLACE VIEW `view_therapyConversations` AS
 SELECT
     tcm.id,
     tcm.id_llmConversations,
-    tcm.id_therapist,
     tcm.ai_enabled,
     tcm.therapist_last_seen,
     tcm.subject_last_seen,
@@ -456,8 +487,6 @@ SELECT
     u.name AS subject_name,
     vc.code AS subject_code,
     u.email AS subject_email,
-    -- Therapist info
-    t.name AS therapist_name,
     -- Resolved lookup values
     mode_lookup.lookup_code AS mode,
     mode_lookup.lookup_value AS mode_label,
@@ -469,7 +498,6 @@ FROM therapyConversationMeta tcm
 INNER JOIN llmConversations lc ON lc.id = tcm.id_llmConversations
 INNER JOIN users u ON u.id = lc.id_users
 LEFT JOIN validation_codes vc ON vc.id_users = u.id AND vc.consumed IS NULL
-LEFT JOIN users t ON t.id = tcm.id_therapist
 LEFT JOIN lookups mode_lookup ON mode_lookup.id = tcm.id_chatModes
 LEFT JOIN lookups status_lookup ON status_lookup.id = tcm.id_conversationStatus
 LEFT JOIN lookups risk_lookup ON risk_lookup.id = tcm.id_riskLevels;
@@ -605,11 +633,19 @@ INSERT IGNORE INTO `fields` (`id`, `name`, `id_type`, `display`) VALUES
 (NULL, 'therapy_mode_indicator_ai', get_field_type_id('text'), '1'),
 (NULL, 'therapy_mode_indicator_human', get_field_type_id('text'), '1');
 
+-- Add enable_ai field: when false, AI is completely disabled and it becomes
+-- a pure therapist-patient chat (no AI involvement at all).
+INSERT IGNORE INTO `fields` (`id`, `name`, `id_type`, `display`) VALUES
+(NULL, 'therapy_enable_ai', get_field_type_id('checkbox'), '0');
+
 INSERT IGNORE INTO `styles_fields` (`id_styles`, `id_fields`, `default_value`, `help`) VALUES
 -- Core CSS
 (get_style_id('therapyChat'), get_field_id('css'), NULL, 'CSS classes for the chat container'),
 (get_style_id('therapyChat'), get_field_id('css_mobile'), NULL, 'CSS classes for mobile view'),
 (get_style_id('therapyChat'), get_field_id('debug'), '0', 'Enable debug mode for the section'),
+
+-- AI toggle: when disabled, the chat becomes pure human-to-human
+(get_style_id('therapyChat'), get_field_id('therapy_enable_ai'), '1', 'Enable AI responses. When disabled, the chat is purely between patient and therapist(s). Default: enabled.'),
 
 -- Therapy mode/feature config
 (get_style_id('therapyChat'), get_field_id('therapy_chat_default_mode'), 'ai_hybrid', 'Default chat mode for this instance'),
@@ -921,6 +957,24 @@ VALUES ((SELECT id FROM lookups WHERE lookup_code = 'hook_overwrite_return'), 'f
 
 INSERT IGNORE INTO `hooks` (`id_hookTypes`, `name`, `description`, `class`, `function`, `exec_class`, `exec_function`, `priority`)
 VALUES ((SELECT id FROM lookups WHERE lookup_code = 'hook_overwrite_return'), 'field-select-floating-position-view', 'Output select floating position field - view mode', 'CmsView', 'create_field_item', 'TherapyChatHooks', 'outputFieldSelectFloatingPositionView', 5);
+
+-- Hook for admin user page: inject therapist group assignment card
+-- When viewing a user at /admin/user/{uid}, this adds a card showing
+-- which patient groups this user (as therapist) can monitor.
+INSERT IGNORE INTO `hooks` (`id_hookTypes`, `name`, `description`, `class`, `function`, `exec_class`, `exec_function`)
+VALUES ((SELECT id FROM lookups WHERE lookup_code = 'hook_on_function_execute' LIMIT 0,1), 'therapyChat-therapist-assignments', 'Show therapy chat group assignments on admin user page. Allows admins to assign patient groups to therapists.', 'UserSelectView', 'output_user_manipulation', 'TherapyChatHooks', 'outputTherapistGroupAssignments');
+
+-- AJAX endpoint for saving therapist group assignments
+INSERT IGNORE INTO `pages` (`id`, `keyword`, `url`, `protocol`, `id_actions`, `id_navigation_section`, `parent`, `is_headless`, `nav_position`, `footer_position`, `id_type`, `id_pageAccessTypes`)
+VALUES (NULL, 'ajax_therapy_chat_save_assignments', '/request/[AjaxTherapyChat:class]/[saveTherapistAssignments:method]', 'POST', (SELECT id FROM actions WHERE `name` = 'ajax' LIMIT 1), NULL, NULL, 0, NULL, NULL, 1, (SELECT id FROM lookups WHERE type_code = "pageAccessTypes" AND lookup_code = "mobile_and_web" LIMIT 1));
+
+-- Grant admin group full ACL access to the AJAX page
+INSERT IGNORE INTO `acl_groups` (`id_groups`, `id_pages`, `acl_select`, `acl_insert`, `acl_update`, `acl_delete`)
+VALUES ((SELECT id FROM `groups` WHERE `name` = 'admin' LIMIT 1), (SELECT id FROM `pages` WHERE `keyword` = 'ajax_therapy_chat_save_assignments' LIMIT 1), 1, 1, 1, 1);
+
+-- Hook to load JS for therapy assignments on user admin pages
+INSERT IGNORE INTO `hooks` (`id_hookTypes`, `name`, `description`, `class`, `function`, `exec_class`, `exec_function`)
+VALUES ((SELECT id FROM lookups WHERE lookup_code = 'hook_overwrite_return' LIMIT 0,1), 'therapyChat-assignments-script', 'Load JS for therapy assignments on user admin pages.', 'BasePage', 'get_js_includes', 'TherapyChatHooks', 'loadTherapyAssignmentsJs');
 
 -- =====================================================
 -- TRANSACTION LOGGING

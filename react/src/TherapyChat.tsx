@@ -1,22 +1,12 @@
 /**
  * Therapy Chat React Entry Point
  * ===============================
- * 
- * Main entry point for the Therapy Chat React components.
- * Initializes either SubjectChat or TherapistDashboard based on container.
- * 
- * Usage in HTML:
- * ```html
- * <!-- Subject Chat -->
- * <div class="therapy-chat-root" data-user-id="123" data-config="...">
- * </div>
- * 
- * <!-- Therapist Dashboard -->
- * <div class="therapist-dashboard-root" data-user-id="123" data-config="...">
- * </div>
- * 
- * <script src="js/ext/therapy-chat.umd.js"></script>
- * ```
+ *
+ * Auto-initializes React components on DOM elements:
+ *   .therapy-chat-root       -> SubjectChat (patient interface)
+ *   .therapist-dashboard-root -> TherapistDashboard (therapist interface)
+ *
+ * Configuration is read from data-config JSON attribute on each container.
  */
 
 import React, { useState, useEffect } from 'react';
@@ -25,267 +15,170 @@ import 'bootstrap/dist/css/bootstrap.min.css';
 
 import { SubjectChat } from './components/subject/SubjectChat';
 import { TherapistDashboard } from './components/therapist/TherapistDashboard';
-import { therapyChatApi, therapistDashboardApi, setApiBaseUrl } from './utils/api';
-import type { TherapyChatConfig, TherapistDashboardConfig } from './types';
+import { createSubjectApi, createTherapistApi } from './utils/api';
+import type { SubjectChatConfig, TherapistDashboardConfig } from './types';
 
-// Import styles
-import './components/shared/MessageList.css';
-import './components/shared/LoadingIndicator.css';
-import './components/subject/SubjectChat.css';
-import './components/therapist/TherapistDashboard.css';
+// Global styles
+import './styles/therapy-chat.css';
 
-/**
- * Parse configuration from container data attributes
- */
-function parseSubjectConfig(container: HTMLElement): TherapyChatConfig | null {
-  const configData = container.dataset.config;
-  
-  if (!configData) {
-    console.error('Therapy Chat: No config data found');
-    return null;
-  }
+// ---------------------------------------------------------------------------
+// Loaders with config-from-API fallback
+// ---------------------------------------------------------------------------
 
-  try {
-    const config = JSON.parse(configData) as TherapyChatConfig;
-    
-    // Set the base URL for API calls if provided
-    if (config.baseUrl) {
-      setApiBaseUrl(config.baseUrl);
-    }
-    
-    return config;
-  } catch (e) {
-    console.error('Therapy Chat: Failed to parse config:', e);
-    return null;
-  }
-}
-
-function parseTherapistConfig(container: HTMLElement): TherapistDashboardConfig | null {
-  const configData = container.dataset.config;
-  
-  if (!configData) {
-    console.error('Therapist Dashboard: No config data found');
-    return null;
-  }
-
-  try {
-    const config = JSON.parse(configData) as TherapistDashboardConfig;
-    
-    // Set the base URL for API calls if provided
-    if (config.baseUrl) {
-      setApiBaseUrl(config.baseUrl);
-    }
-    
-    return config;
-  } catch (e) {
-    console.error('Therapist Dashboard: Failed to parse config:', e);
-    return null;
-  }
-}
-
-/**
- * Subject Chat Loader Component
- */
-const SubjectChatLoader: React.FC<{ fallbackConfig: TherapyChatConfig | null }> = ({ fallbackConfig }) => {
-  const [config, setConfig] = useState<TherapyChatConfig | null>(fallbackConfig);
-  const [loading, setLoading] = useState(!fallbackConfig);
+const SubjectChatLoader: React.FC<{ fallback: SubjectChatConfig | null }> = ({ fallback }) => {
+  const [config, setConfig] = useState<SubjectChatConfig | null>(fallback);
+  const [loading, setLoading] = useState(!fallback);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!fallbackConfig?.sectionId) {
-      setError('Section ID not provided');
+    if (!fallback?.sectionId) {
+      // No sectionId from data-config, just use fallback as-is
       setLoading(false);
       return;
     }
-
-    // Try to load fresh config from API
-    async function loadConfig() {
+    (async () => {
       try {
-        const config = await therapyChatApi.getConfig(fallbackConfig!.sectionId);
-        setConfig(config);
-      } catch (err) {
-        console.warn('Failed to load config from API, using fallback:', err);
-        // Keep using fallback config
+        const api = createSubjectApi(fallback.sectionId);
+        const resp = await api.getConfig();
+        // API returns {config: {...}} - extract inner config
+        const cfg = (resp as unknown as { config?: SubjectChatConfig })?.config ?? resp;
+        setConfig(cfg);
+      } catch {
+        // keep fallback
       } finally {
         setLoading(false);
       }
-    }
+    })();
+  }, [fallback]);
 
-    loadConfig();
-  }, [fallbackConfig]);
-
-  if (loading) {
-    return (
-      <div className="d-flex justify-content-center align-items-center p-5">
-        <div className="spinner-border text-primary" role="status">
-          <span className="sr-only">Loading...</span>
-        </div>
-      </div>
-    );
-  }
-
-  if (error || !config) {
-    return (
-      <div className="alert alert-danger m-3">
-        <i className="fas fa-exclamation-circle mr-2"></i>
-        {error || 'Configuration not available.'}
-      </div>
-    );
-  }
-
-  if (!config.userId || config.userId === 0) {
-    return (
-      <div className="alert alert-warning m-3">
-        <i className="fas fa-exclamation-triangle mr-2"></i>
-        Please log in to use the therapy chat.
-      </div>
-    );
-  }
-
+  if (loading) return <Spinner />;
+  if (error || !config) return <ErrorMsg text={error || 'Configuration not available.'} />;
+  if (!config.userId) return <WarningMsg text="Please log in to use the therapy chat." />;
   return <SubjectChat config={config} />;
 };
 
-/**
- * Therapist Dashboard Loader Component
- */
-const TherapistDashboardLoader: React.FC<{ fallbackConfig: TherapistDashboardConfig | null }> = ({ fallbackConfig }) => {
-  const [config, setConfig] = useState<TherapistDashboardConfig | null>(fallbackConfig);
-  const [loading, setLoading] = useState(!fallbackConfig);
+const TherapistDashboardLoader: React.FC<{ fallback: TherapistDashboardConfig | null }> = ({ fallback }) => {
+  const [config, setConfig] = useState<TherapistDashboardConfig | null>(fallback);
+  const [loading, setLoading] = useState(!fallback);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!fallbackConfig?.sectionId) {
-      setError('Section ID not provided');
+    if (!fallback?.sectionId) {
+      // No sectionId from data-config, just use fallback as-is
       setLoading(false);
       return;
     }
-
-    // Try to load fresh config from API
-    async function loadConfig() {
+    (async () => {
       try {
-        const config = await therapistDashboardApi.getConfig(fallbackConfig!.sectionId);
-        setConfig(config);
-      } catch (err) {
-        console.warn('Failed to load config from API, using fallback:', err);
-        // Keep using fallback config
+        const api = createTherapistApi(fallback.sectionId);
+        const resp = await api.getConfig();
+        // API returns {config: {...}} - extract inner config
+        const cfg = (resp as unknown as { config?: TherapistDashboardConfig })?.config ?? resp;
+        setConfig(cfg);
+      } catch {
+        // keep fallback
       } finally {
         setLoading(false);
       }
-    }
+    })();
+  }, [fallback]);
 
-    loadConfig();
-  }, [fallbackConfig]);
-
-  if (loading) {
-    return (
-      <div className="d-flex justify-content-center align-items-center p-5">
-        <div className="spinner-border text-primary" role="status">
-          <span className="sr-only">Loading...</span>
-        </div>
-      </div>
-    );
-  }
-
-  if (error || !config) {
-    return (
-      <div className="alert alert-danger m-3">
-        <i className="fas fa-exclamation-circle mr-2"></i>
-        {error || 'Configuration not available.'}
-      </div>
-    );
-  }
-
-  if (!config.userId || config.userId === 0) {
-    return (
-      <div className="alert alert-warning m-3">
-        <i className="fas fa-exclamation-triangle mr-2"></i>
-        Please log in to access the therapist dashboard.
-      </div>
-    );
-  }
-
+  if (loading) return <Spinner />;
+  if (error || !config) return <ErrorMsg text={error || 'Configuration not available.'} />;
+  if (!config.userId) return <WarningMsg text="Please log in to access the therapist dashboard." />;
   return <TherapistDashboard config={config} />;
 };
 
-/**
- * Initialize Subject Chat instances
- */
-function initializeSubjectChat(): void {
-  const containers = document.querySelectorAll('.therapy-chat-root');
-  
-  containers.forEach((container, index) => {
-    const element = container as HTMLElement;
-    const config = parseSubjectConfig(element);
+// ---------------------------------------------------------------------------
+// Small helper components
+// ---------------------------------------------------------------------------
 
+const Spinner = () => (
+  <div className="d-flex justify-content-center align-items-center p-5">
+    <div className="spinner-border text-primary" role="status">
+      <span className="sr-only">Loading...</span>
+    </div>
+  </div>
+);
+
+const ErrorMsg: React.FC<{ text: string }> = ({ text }) => (
+  <div className="alert alert-danger m-3">
+    <i className="fas fa-exclamation-circle mr-2" />
+    {text}
+  </div>
+);
+
+const WarningMsg: React.FC<{ text: string }> = ({ text }) => (
+  <div className="alert alert-warning m-3">
+    <i className="fas fa-exclamation-triangle mr-2" />
+    {text}
+  </div>
+);
+
+// ---------------------------------------------------------------------------
+// Parse JSON config from data attribute
+// ---------------------------------------------------------------------------
+
+function parseConfig<T>(el: HTMLElement): T | null {
+  try {
+    return JSON.parse(el.dataset.config || '') as T;
+  } catch {
+    console.error('Therapy Chat: Failed to parse data-config');
+    return null;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Mount functions
+// ---------------------------------------------------------------------------
+
+function mountSubjectChats(): void {
+  document.querySelectorAll<HTMLElement>('.therapy-chat-root').forEach((el, i) => {
+    const cfg = parseConfig<SubjectChatConfig>(el);
     try {
-      const root = ReactDOM.createRoot(element);
-      root.render(
+      ReactDOM.createRoot(el).render(
         <React.StrictMode>
-          <SubjectChatLoader fallbackConfig={config} />
-        </React.StrictMode>
+          <SubjectChatLoader fallback={cfg} />
+        </React.StrictMode>,
       );
-      console.debug(`Therapy Chat [${index}]: Initialized successfully`);
-    } catch (error) {
-      console.error(`Therapy Chat [${index}]: Failed to initialize`, error);
-      element.innerHTML = `
-        <div class="alert alert-danger m-3">
-          <i class="fas fa-exclamation-circle mr-2"></i>
-          Failed to load chat interface. Please refresh the page.
-        </div>
-      `;
+    } catch (err) {
+      console.error(`SubjectChat [${i}] mount failed`, err);
+      el.innerHTML = '<div class="alert alert-danger m-3">Failed to load chat. Please refresh.</div>';
     }
   });
 }
 
-/**
- * Initialize Therapist Dashboard instances
- */
-function initializeTherapistDashboard(): void {
-  const containers = document.querySelectorAll('.therapist-dashboard-root');
-  
-  containers.forEach((container, index) => {
-    const element = container as HTMLElement;
-    const config = parseTherapistConfig(element);
-
+function mountTherapistDashboards(): void {
+  document.querySelectorAll<HTMLElement>('.therapist-dashboard-root').forEach((el, i) => {
+    const cfg = parseConfig<TherapistDashboardConfig>(el);
     try {
-      const root = ReactDOM.createRoot(element);
-      root.render(
+      ReactDOM.createRoot(el).render(
         <React.StrictMode>
-          <TherapistDashboardLoader fallbackConfig={config} />
-        </React.StrictMode>
+          <TherapistDashboardLoader fallback={cfg} />
+        </React.StrictMode>,
       );
-      console.debug(`Therapist Dashboard [${index}]: Initialized successfully`);
-    } catch (error) {
-      console.error(`Therapist Dashboard [${index}]: Failed to initialize`, error);
-      element.innerHTML = `
-        <div class="alert alert-danger m-3">
-          <i class="fas fa-exclamation-circle mr-2"></i>
-          Failed to load dashboard. Please refresh the page.
-        </div>
-      `;
+    } catch (err) {
+      console.error(`TherapistDashboard [${i}] mount failed`, err);
+      el.innerHTML = '<div class="alert alert-danger m-3">Failed to load dashboard. Please refresh.</div>';
     }
   });
 }
 
-/**
- * Main initialization
- */
-function initialize(): void {
-  initializeSubjectChat();
-  initializeTherapistDashboard();
+// ---------------------------------------------------------------------------
+// Auto-initialize
+// ---------------------------------------------------------------------------
+
+function init(): void {
+  mountSubjectChats();
+  mountTherapistDashboards();
 }
 
-/**
- * Auto-initialize when DOM is ready
- */
 if (document.readyState === 'loading') {
-  document.addEventListener('DOMContentLoaded', initialize);
+  document.addEventListener('DOMContentLoaded', init);
 } else {
-  initialize();
+  init();
 }
 
-/**
- * Export components for direct usage
- */
+// Exports
 export { SubjectChat, TherapistDashboard };
-export type { TherapyChatConfig, TherapistDashboardConfig };
+export type { SubjectChatConfig, TherapistDashboardConfig };

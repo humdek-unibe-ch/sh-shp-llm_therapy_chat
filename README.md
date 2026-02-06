@@ -1,333 +1,54 @@
-# SelfHelp Plugin: LLM Therapy Chat
+# sh-shp-llm_therapy_chat
 
-**Version:** 1.1.0  
-**Author:** SelfHelp Team  
-**License:** MPL-2.0
+SelfHelp plugin providing AI-assisted therapy chat between patients and therapists.
 
 ## Overview
 
-The LLM Therapy Chat plugin extends the [sh-shp-llm](../sh-shp-llm/) plugin to provide AI-assisted therapeutic conversations with therapist monitoring and intervention capabilities. This system is designed to extend therapeutic support between sessions, **not replace professional care**.
+This plugin extends the `sh-shp-llm` base LLM plugin with therapy-specific features:
 
-## ⚠️ Dependency: sh-shp-llm Plugin Required
+- **Patient Chat**: Patients converse with an AI assistant; therapists can intervene
+- **Therapist Dashboard**: Monitor multiple patients, manage conversations, add notes
+- **Group-Based Access**: Therapists are assigned to patient groups they can monitor
+- **AI Drafts**: AI generates draft responses for therapists to edit and send
+- **Risk Management**: Rate patient risk levels, track alerts and tags
+- **Unread Tracking**: Per-patient unread message counts with visual indicators
 
-**IMPORTANT:** This plugin requires the `sh-shp-llm` plugin to be installed first!
-
-All conversations and messages are stored in the LLM plugin's tables (`llmConversations` and `llmMessages`). This ensures:
-- Single source of truth for all chat data
-- Full compatibility with LLM Admin Console
-- No code duplication for message/conversation management
-- Access to all LLM features (danger detection, context management, etc.)
-
-## Architecture
-
-```
-┌─────────────────────────────────────────────────────────────┐
-│                    sh-shp-llm Plugin                        │
-│  ┌──────────────────┐  ┌──────────────────┐                │
-│  │ llmConversations │  │   llmMessages    │                │
-│  │    (Table)       │  │     (Table)      │                │
-│  └────────┬─────────┘  └────────┬─────────┘                │
-│           │                     │                          │
-│  ┌────────┴─────────────────────┴─────────────────────┐    │
-│  │              LlmService (Base)                     │    │
-│  │  - Conversation CRUD                               │    │
-│  │  - Message management                              │    │
-│  │  - LLM API calls                                   │    │
-│  │  - Danger detection                                │    │
-│  └────────────────────────────────────────────────────┘    │
-└─────────────────────────────────────────────────────────────┘
-                              │
-                              │ extends
-                              ▼
-┌─────────────────────────────────────────────────────────────┐
-│                sh-shp-llm_therapy_chat Plugin               │
-│                                                             │
-│  ┌─────────────────────────┐  ┌─────────────────────────┐  │
-│  │ therapyConversationMeta │  │     therapyAlerts       │  │
-│  │  - id_therapist         │  │  - alert_type           │  │
-│  │  - mode (ai/human)      │  │  - severity             │  │
-│  │  - risk_level           │  │  - is_read              │  │
-│  │  - ai_enabled           │  └─────────────────────────┘  │
-│  └─────────────────────────┘                               │
-│                                                             │
-│  ┌─────────────────────────┐  ┌─────────────────────────┐  │
-│  │      therapyTags        │  │     therapyNotes        │  │
-│  │  - @mention tags        │  │  - therapist notes      │  │
-│  │  - urgency level        │  │  - conversation notes   │  │
-│  └─────────────────────────┘  └─────────────────────────┘  │
-│                                                             │
-│  ┌────────────────────────────────────────────────────┐    │
-│  │           TherapyChatService (extends LlmService)  │    │
-│  │  - Therapy conversation management                 │    │
-│  │  - Access control (subject/therapist)              │    │
-│  │  - Mode management (AI/human)                      │    │
-│  └────────────────────────────────────────────────────┘    │
-└─────────────────────────────────────────────────────────────┘
-```
-
-## Features
-
-### For Patients (Subjects)
-
-- **AI Chat Buddy (24/7)** - Supportive AI trained in empathy, validation, and grounding
-- **Tag Therapist** - @mention to request human intervention
-  - Tag individual therapists by name
-  - Tag all therapists in your group with @All Therapists
-- **Predefined Tag Reasons:**
-  - "I'm feeling overwhelmed"
-  - "I need to talk soon"
-  - "This feels urgent"
-- **Voice Input (v1.1.0)** - Speak your messages using the microphone button
-- **Rich AI Responses** - Markdown-formatted responses with code blocks, lists, and media
-- **Safe & Private** - Encrypted, secure conversations with automatic safety monitoring
-
-### For Therapists
-
-- **Real-time Dashboard** - Monitor all patient conversations
-- **Risk Level Indicators** - Visual alerts for concerning conversations
-- **AI Control** - Enable/disable AI responses per conversation
-- **Smart Alerts** - Notifications for:
-  - Danger keyword detection
-  - Patient tags
-  - High activity
-- **Notes System** - Add private notes to conversations
-- **Voice Input (v1.1.0)** - Dictate responses using speech-to-text
-- **Rich Message Display** - View patient messages with full markdown formatting
-- **Full Conversation History** - Access via LLM Admin Console
-
-### Clinical Boundaries
-
-Clear disclaimers are shown to patients:
-- The AI is **not** a therapist
-- The AI does **not** diagnose
-- The AI does **not** replace therapy
-- The therapist remains the primary clinical decision-maker
-
-## Installation
-
-1. **Install sh-shp-llm plugin first!**
-   ```bash
-   # The llm plugin must be installed before this plugin
-   # See sh-shp-llm/README.md for installation
-   ```
-
-2. **Run the database migration:**
-   ```sql
-   SOURCE server/db/v1.0.0.sql;
-   ```
-
-3. **Build the React frontend:**
-   ```bash
-   cd gulp
-   npm install
-   gulp react-install  # Install React dependencies
-   gulp build         # Build React components
-   ```
-
-4. **Configure the plugin:**
-   - Go to `/admin/module_llm_therapy_chat`
-   - Set subject group (patients)
-   - Set therapist group
-   - Configure AI settings
-
-## Build System
-
-This plugin uses Gulp for building the React frontend components. The build process compiles TypeScript and bundles the React application into UMD modules.
-
-### Available Gulp Tasks
-
-| Task | Description |
-|------|-------------|
-| `gulp` or `gulp build` | Build React component (default) |
-| `gulp react-install` | Install React dependencies |
-| `gulp react-build` | Build React component only |
-| `gulp react-watch` | Watch React files for changes (development) |
-| `gulp clean` | Remove built files |
-| `gulp help` | Show available tasks |
-
-### First-Time Setup
+## Quick Start
 
 ```bash
-# Navigate to gulp directory
-cd gulp
+# 1. Install database
+mysql -u user -p database < server/db/v1.0.0.sql
 
-# Install gulp dependencies
-npm install
+# 2. Build frontend
+cd react && npm install && npm run build
 
-# Install React dependencies
-gulp react-install
-
-# Build the React components
-gulp build
+# 3. Configure in SelfHelp admin
+#    - Create module page (type: sh_module_llm_therapy_chat)
+#    - Create patient chat page (style: therapyChat)
+#    - Create therapist dashboard page (style: therapistDashboard)
+#    - Assign therapists to patient groups via user admin
 ```
 
-### Output Files
+## Tech Stack
 
-After building, the following files are generated:
-
-- `js/ext/therapy-chat.umd.js` - React component bundle
-- `css/ext/therapy-chat.css` - React component styles
-
-### Development Workflow
-
-For development with hot reloading:
-
-```bash
-cd gulp
-gulp react-watch
-```
-
-This will start Vite's development server and watch for changes to React files.
-
-## Configuration
-
-### Module Configuration (`/admin/module_llm_therapy_chat`)
-
-| Field | Description |
-|-------|-------------|
-| `therapy_chat_subject_group` | Group containing patients |
-| `therapy_chat_therapist_group` | Group containing therapists |
-| `therapy_chat_default_mode` | `ai_hybrid` (AI + therapist) or `human_only` |
-| `therapy_chat_polling_interval` | Real-time update interval (seconds) |
-| `therapy_chat_enable_tagging` | Allow @mention tagging |
-
-### Per-Section Configuration (Style Fields)
-
-The `therapyChat` style inherits many fields from `llmChat`:
-
-| Field | Description |
-|-------|-------------|
-| `llm_model` | AI model to use (from sh-shp-llm) |
-| `conversation_context` | System prompt for AI |
-| `enable_danger_detection` | Enable safety monitoring |
-| `danger_keywords` | Keywords that trigger alerts |
-| `danger_notification_emails` | Email addresses for alerts |
-| `enable_speech_to_text` | Enable voice input (v1.1.0) |
-| `speech_to_text_model` | Whisper model for transcription (v1.1.0) |
-| `speech_to_text_language` | Language code or "auto" (v1.1.0) |
-
-## URLs
-
-| URL | Description |
-|-----|-------------|
-| `/therapy-chat/subject/[gid]` | Patient chat interface |
-| `/therapy-chat/therapist/[gid]/[uid]` | Therapist dashboard |
-| `/admin/module_llm_therapy_chat` | Plugin configuration |
-| `/admin/module_llm/conversations` | LLM Admin Console (view all data) |
-
-## Database Tables
-
-### therapyConversationMeta
-Links to `llmConversations` and adds therapy-specific metadata.
-
-```sql
-- id_llmConversations  -- Foreign key to llmConversations
-- id_groups            -- Access group for therapist assignment
-- id_therapist         -- Assigned therapist (optional)
-- mode                 -- 'ai_hybrid' or 'human_only'
-- ai_enabled           -- Can AI respond?
-- status               -- 'active', 'paused', 'closed'
-- risk_level           -- 'low', 'medium', 'high', 'critical'
-```
-
-### therapyTags
-@mention tags created by patients.
-
-```sql
-- id_llmMessages       -- The message containing the tag
-- id_users             -- Tagged therapist
-- tag_reason           -- Predefined reason or custom text
-- urgency              -- 'normal', 'urgent', 'emergency'
-- acknowledged         -- Has therapist acknowledged?
-```
-
-### therapyAlerts
-Notifications for therapists.
-
-```sql
-- id_llmConversations  -- Related conversation
-- alert_type           -- 'danger_detected', 'tag_received', etc.
-- severity             -- 'info', 'warning', 'critical', 'emergency'
-- is_read              -- Has therapist read?
-```
-
-### therapyNotes
-Therapist notes on conversations (not visible to patients).
-
-```sql
-- id_llmConversations  -- Related conversation
-- id_users             -- Therapist who wrote note
-- content              -- Note content
-```
-
-## Services
-
-All services extend `LlmService` from sh-shp-llm:
-
-| Service | Purpose |
-|---------|---------|
-| `TherapyChatService` | Core conversation management |
-| `TherapyMessageService` | Message handling with sender attribution |
-| `TherapyAlertService` | Alert creation and management |
-| `TherapyTaggingService` | @mention tag processing |
-
-## Integration with LLM Admin Console
-
-All conversations can be viewed and managed in the LLM Admin Console at `/admin/module_llm/conversations`:
-
-- View/block conversations
-- Debug context and payload
-- Access full message history
-- See danger detections
-
-The therapy plugin adds metadata but does not duplicate core functionality.
-
-## New in v1.1.0
-
-### Markdown Rendering
-AI responses are now rendered with full Markdown support:
-- **Code blocks** with syntax highlighting and copy-to-clipboard
-- **Lists, tables, and blockquotes** with proper styling
-- **Images and videos** with responsive layout
-- **External links** open in new tab with security attributes
-
-### Speech-to-Text (Voice Input)
-Patients and therapists can now use voice input:
-- Click the microphone button to start recording
-- Speak your message (max 60 seconds)
-- Text is automatically transcribed and inserted at cursor position
-- Requires Whisper API configuration in the LLM plugin
-
-### Improved Tagging
-- **@All Therapists** option to notify all therapists in your group
-- Better suggestion dropdown UI with scrolling and visual feedback
-- Console logging for debugging tagging configuration
-
-## Security Considerations
-
-1. **Access Control** - Strict separation between patient and therapist access
-2. **Danger Detection** - Leverages sh-shp-llm's danger keyword system
-3. **Audit Trail** - All actions logged to transactions table
-4. **Group-based Permissions** - Therapists only see patients in their groups
+- **Backend**: PHP 8.2+ (vanilla, SelfHelp MVC pattern)
+- **Frontend**: React 18 + TypeScript + Bootstrap 4.6
+- **Database**: MySQL 8.0+ (InnoDB, utf8mb4)
+- **Build**: Vite (UMD bundle)
+- **Dependencies**: sh-shp-llm plugin
 
 ## Documentation
 
-Comprehensive documentation is available in the `/doc` folder:
-
 | Document | Description |
 |----------|-------------|
-| [Developer Guide](./doc/DEVELOPER_GUIDE.md) | Technical documentation for developers |
-| [User Guide](./doc/USER_GUIDE.md) | Guide for therapists and clinic users |
-| [Admin Setup Guide](./doc/ADMIN_SETUP.md) | Administrator installation and configuration |
-| [Feature Roadmap](./doc/FEATURE_ROADMAP.md) | Implementation status and future TODOs |
-| [API Reference](./doc/api-reference.md) | API endpoint documentation |
-| [Architecture](./doc/architecture.md) | System architecture overview |
-| [Configuration](./doc/configuration.md) | Configuration options reference |
-
-## Changelog
-
-See [CHANGELOG.md](./CHANGELOG.md) for version history.
+| [Architecture](doc/architecture.md) | System design, database schema, service layers |
+| [API Reference](doc/api-reference.md) | All frontend API endpoints |
+| [Configuration](doc/configuration.md) | Module and style configuration fields |
+| [Admin Setup](doc/ADMIN_SETUP.md) | Step-by-step installation and setup |
+| [Developer Guide](doc/DEVELOPER_GUIDE.md) | How to extend the plugin |
+| [User Guide](doc/USER_GUIDE.md) | Patient and therapist user guides |
+| [Feature Roadmap](doc/FEATURE_ROADMAP.md) | What's implemented and planned |
 
 ## License
 
-Mozilla Public License 2.0 - see LICENSE file.
+Mozilla Public License 2.0 (MPL-2.0)

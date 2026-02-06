@@ -47,36 +47,13 @@ class TherapyChatComponent extends BaseComponent
     }
 
     /**
-     * Output the component
-     *
-     * @return string HTML output
+     * Output the component.
+     * API requests are handled by the controller in its constructor.
+     * For normal page rendering, delegate to BaseComponent which calls view->output_content().
      */
     public function output_content()
     {
-        // Handle API requests (AJAX)
-        if ($this->controller->isApiRequest()) {
-            return $this->controller->handleApiRequest();
-        }
-
-        // Render the chat interface
-        return $this->view->render();
-    }
-
-    /**
-     * Get custom CSS classes
-     *
-     * @return string
-     */
-    public function get_css_class()
-    {
-        $classes = array('therapy-chat-component');
-        
-        $customCss = $this->model->getFieldValue('css');
-        if ($customCss) {
-            $classes[] = $customCss;
-        }
-
-        return implode(' ', $classes);
+        parent::output_content();
     }
 }
 ?>
