@@ -515,11 +515,22 @@ class TherapyChatService extends LlmService
      */
     public function setAIEnabled($conversationId, $enabled)
     {
-        return $this->db->update_by_ids(
+        $result = $this->db->update_by_ids(
             'therapyConversationMeta',
             array('ai_enabled' => $enabled ? 1 : 0),
             array('id' => $conversationId)
         );
+
+        if ($result) {
+            $conversation = $this->getTherapyConversation($conversationId);
+            $uid = $conversation ? $conversation['id_users'] : 0;
+            $this->logTransaction(
+                transactionTypes_update, 'therapyConversationMeta', $conversationId, $uid,
+                'AI ' . ($enabled ? 'enabled' : 'disabled')
+            );
+        }
+
+        return $result;
     }
 
     /**
@@ -540,11 +551,22 @@ class TherapyChatService extends LlmService
             return false;
         }
 
-        return $this->db->update_by_ids(
+        $result = $this->db->update_by_ids(
             'therapyConversationMeta',
             array('id_riskLevels' => $riskId),
             array('id' => $conversationId)
         );
+
+        if ($result) {
+            $conversation = $this->getTherapyConversation($conversationId);
+            $uid = $conversation ? $conversation['id_users'] : 0;
+            $this->logTransaction(
+                transactionTypes_update, 'therapyConversationMeta', $conversationId, $uid,
+                "Risk level changed to: $riskLevel"
+            );
+        }
+
+        return $result;
     }
 
     /**
@@ -588,15 +610,27 @@ class TherapyChatService extends LlmService
 
         $noteTypeId = $this->db->get_lookup_id_by_code(THERAPY_LOOKUP_NOTE_TYPES, $noteType);
 
+        $noteStatusId = $this->db->get_lookup_id_by_code(THERAPY_LOOKUP_NOTE_STATUS, THERAPY_NOTE_STATUS_ACTIVE);
+
         $data = array(
             'id_llmConversations' => $conversation['id_llmConversations'],
             'id_users' => $therapistId,
             'id_noteTypes' => $noteTypeId,
+            'id_noteStatus' => $noteStatusId,
             'content' => $content,
             'ai_original_content' => $aiOriginalContent
         );
 
-        return $this->db->insert('therapyNotes', $data);
+        $noteId = $this->db->insert('therapyNotes', $data);
+
+        if ($noteId) {
+            $this->logTransaction(
+                transactionTypes_insert, 'therapyNotes', $noteId, $therapistId,
+                'Clinical note added'
+            );
+        }
+
+        return $noteId;
     }
 
     /**
@@ -613,17 +647,83 @@ class TherapyChatService extends LlmService
             return array();
         }
 
-        $sql = "SELECT tn.*, u.name as therapist_name,
-                       nt.lookup_code as note_type, nt.lookup_value as note_type_label
+        $activeStatusId = $this->db->get_lookup_id_by_code(THERAPY_LOOKUP_NOTE_STATUS, THERAPY_NOTE_STATUS_ACTIVE);
+
+        $sql = "SELECT tn.*, u.name as author_name,
+                       nt.lookup_code as note_type, nt.lookup_value as note_type_label,
+                       ns.lookup_code as note_status,
+                       editor.name as last_edited_by_name
                 FROM therapyNotes tn
                 INNER JOIN users u ON u.id = tn.id_users
                 LEFT JOIN lookups nt ON nt.id = tn.id_noteTypes
+                LEFT JOIN lookups ns ON ns.id = tn.id_noteStatus
+                LEFT JOIN users editor ON editor.id = tn.id_lastEditedBy
                 WHERE tn.id_llmConversations = :llm_id
+                  AND (tn.id_noteStatus = :active_status OR tn.id_noteStatus IS NULL)
                 ORDER BY tn.created_at DESC
                 LIMIT " . (int)$limit;
 
-        $result = $this->db->query_db($sql, array(':llm_id' => $conversation['id_llmConversations']));
+        $result = $this->db->query_db($sql, array(
+            ':llm_id' => $conversation['id_llmConversations'],
+            ':active_status' => $activeStatusId
+        ));
         return $result !== false ? $result : array();
+    }
+
+    /**
+     * Update a note's content. Logs the edit via transactions.
+     *
+     * @param int $noteId
+     * @param int $therapistId ID of the therapist performing the edit
+     * @param string $newContent
+     * @return bool
+     */
+    public function updateNote($noteId, $therapistId, $newContent)
+    {
+        $this->db->update_by_ids(
+            'therapyNotes',
+            array(
+                'content' => $newContent,
+                'id_lastEditedBy' => $therapistId
+            ),
+            array('id' => $noteId)
+        );
+
+        // Transaction logging
+        $this->logTransaction(
+            transactionTypes_update, 'therapyNotes', $noteId, $therapistId,
+            'Note edited by therapist'
+        );
+
+        return true;
+    }
+
+    /**
+     * Soft-delete a note (set id_noteStatus to 'deleted' lookup). Logs via transactions.
+     *
+     * @param int $noteId
+     * @param int $therapistId
+     * @return bool
+     */
+    public function softDeleteNote($noteId, $therapistId)
+    {
+        $deletedStatusId = $this->db->get_lookup_id_by_code(THERAPY_LOOKUP_NOTE_STATUS, THERAPY_NOTE_STATUS_DELETED);
+
+        $this->db->update_by_ids(
+            'therapyNotes',
+            array(
+                'id_noteStatus' => $deletedStatusId,
+                'id_lastEditedBy' => $therapistId
+            ),
+            array('id' => $noteId)
+        );
+
+        $this->logTransaction(
+            transactionTypes_delete, 'therapyNotes', $noteId, $therapistId,
+            'Note soft-deleted by therapist'
+        );
+
+        return true;
     }
 
     /* =========================================================================

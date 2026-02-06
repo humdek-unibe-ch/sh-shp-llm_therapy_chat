@@ -243,7 +243,8 @@ class TherapyChatModel extends StyleModel
             'mode_human' => $this->get_db_field('therapy_mode_indicator_human', 'Therapist-only mode'),
             'send_button' => $this->get_db_field('submit_button_label', 'Send'),
             'placeholder' => $this->get_db_field('message_placeholder', 'Type your message...'),
-            'loading' => $this->get_db_field('loading_text', 'Loading...')
+            'loading' => $this->get_db_field('loading_text', 'Loading...'),
+            'chat_help_text' => $this->get_db_field('therapy_chat_help_text', 'Use @therapist to request your therapist, or #topic to tag a predefined topic.')
         );
     }
 

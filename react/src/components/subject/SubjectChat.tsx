@@ -6,11 +6,12 @@
  *
  * Features:
  *   - Send / receive messages (AI + therapist)
- *   - @mention tagging to alert therapist
+ *   - Help label for @mention and #hashtag usage
  *   - Mode badge (AI vs human-only)
  *   - Speech-to-text input
  *   - Polling for new messages
  *   - Auto-clears the floating chat badge on load
+ *   - Blocks sending when conversation is paused
  */
 
 import React, { useEffect, useCallback, useMemo, useRef } from 'react';
@@ -21,7 +22,7 @@ import { TaggingPanel } from '../shared/TaggingPanel';
 import { useChatState } from '../../hooks/useChatState';
 import { usePolling } from '../../hooks/usePolling';
 import { createSubjectApi } from '../../utils/api';
-import type { SubjectChatConfig, TagUrgency } from '../../types';
+import type { SubjectChatConfig } from '../../types';
 
 interface SubjectChatProps {
   config: SubjectChatConfig;
@@ -29,8 +30,6 @@ interface SubjectChatProps {
 
 /**
  * Update (or hide) the server-rendered floating chat badge in the DOM.
- * The badge is rendered by TherapyChatHooks::outputTherapyChatIcon() and
- * has the class `.therapy-chat-badge`.
  */
 function updateFloatingBadge(count: number): void {
   const badge = document.querySelector('.therapy-chat-badge');
@@ -64,6 +63,9 @@ export const SubjectChat: React.FC<SubjectChatProps> = ({ config }) => {
     senderType: 'subject',
   });
 
+  // Is the conversation paused by the therapist?
+  const isPaused = conversation?.status === 'paused';
+
   // Load conversation ONCE on mount + mark messages as read + clear badge
   useEffect(() => {
     if (loadedRef.current) return;
@@ -71,17 +73,14 @@ export const SubjectChat: React.FC<SubjectChatProps> = ({ config }) => {
 
     (async () => {
       await loadConversation(config.conversationId ?? undefined);
-      // Mark messages as read and update the floating badge
       try {
         const res = await api.markMessagesRead(config.conversationId ?? undefined);
         updateFloatingBadge(res.unread_count ?? 0);
-      } catch {
-        // non-critical – badge stays as-is
-      }
+      } catch { /* non-critical */ }
     })();
   }, []);  // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Also mark read after each poll (clears badge for new arriving messages)
+  // Also mark read after each poll
   const pollAndMark = useCallback(async () => {
     await pollMessages();
     try {
@@ -90,21 +89,11 @@ export const SubjectChat: React.FC<SubjectChatProps> = ({ config }) => {
     } catch { /* ignore */ }
   }, [pollMessages, api]);
 
-  // Poll for new messages
   usePolling({
     callback: pollAndMark,
     interval: config.pollingInterval,
     enabled: !!conversation,
   });
-
-  // Tag therapist handler
-  const handleTag = useCallback(
-    async (reason?: string, urgency?: TagUrgency) => {
-      if (!conversation?.id) return;
-      await api.tagTherapist(conversation.id, reason, urgency);
-    },
-    [api, conversation?.id],
-  );
 
   const labels = config.labels;
 
@@ -129,10 +118,18 @@ export const SubjectChat: React.FC<SubjectChatProps> = ({ config }) => {
             <h5 className="mb-0">Therapy Chat</h5>
           </div>
           {conversation && (
-            <span className={`badge ${conversation.ai_enabled ? 'badge-light' : 'badge-warning'}`}>
-              <i className={`fas ${conversation.ai_enabled ? 'fa-robot' : 'fa-user-md'} mr-1`} />
-              {conversation.ai_enabled ? labels.mode_ai : labels.mode_human}
-            </span>
+            <div className="d-flex align-items-center" style={{ gap: '0.5rem' }}>
+              {isPaused && (
+                <span className="badge badge-warning">
+                  <i className="fas fa-pause-circle mr-1" />
+                  Paused
+                </span>
+              )}
+              <span className={`badge ${conversation.ai_enabled && !isPaused ? 'badge-light' : 'badge-warning'}`}>
+                <i className={`fas ${conversation.ai_enabled && !isPaused ? 'fa-robot' : 'fa-user-md'} mr-1`} />
+                {conversation.ai_enabled && !isPaused ? labels.mode_ai : labels.mode_human}
+              </span>
+            </div>
           )}
         </div>
 
@@ -154,20 +151,27 @@ export const SubjectChat: React.FC<SubjectChatProps> = ({ config }) => {
 
         {/* Input area */}
         <div className="card-footer bg-white border-top">
-          <TaggingPanel
-            enabled={config.taggingEnabled}
-            reasons={config.tagReasons}
-            onTag={handleTag}
-            buttonLabel={labels.tag_button_label}
-          />
-          <MessageInput
-            onSend={sendMessage}
-            disabled={isSending || isLoading}
-            placeholder={labels.placeholder}
-            buttonLabel={labels.send_button}
-            speechToTextEnabled={config.speechToTextEnabled}
-            sectionId={config.sectionId}
-          />
+          {isPaused ? (
+            <div className="text-center text-muted py-2">
+              <i className="fas fa-pause-circle mr-1" />
+              This conversation is currently paused by your therapist. You will be notified when it resumes.
+            </div>
+          ) : (
+            <>
+              <TaggingPanel
+                enabled={config.taggingEnabled}
+                helpText={labels.chat_help_text}
+              />
+              <MessageInput
+                onSend={sendMessage}
+                disabled={isSending || isLoading}
+                placeholder={labels.placeholder}
+                buttonLabel={labels.send_button}
+                speechToTextEnabled={config.speechToTextEnabled}
+                sectionId={config.sectionId}
+              />
+            </>
+          )}
         </div>
       </div>
     </div>

@@ -32,6 +32,8 @@ export function useChatState({ loadFn, sendFn, pollFn, senderType }: UseChatStat
   const [isSending, setIsSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const lastMsgIdRef = useRef<number | null>(null);
+  /** Prevents poll from running while a load/send is in flight */
+  const busyRef = useRef(false);
 
   // ---- Stable refs for callback functions ----
   // This ensures loadConversation / sendMessage / pollMessages never change identity
@@ -57,6 +59,7 @@ export function useChatState({ loadFn, sendFn, pollFn, senderType }: UseChatStat
   /** Load conversation + messages  (STABLE identity) */
   const loadConversation = useCallback(
     async (conversationId?: number | string) => {
+      busyRef.current = true;
       setIsLoading(true);
       setError(null);
       try {
@@ -70,9 +73,10 @@ export function useChatState({ loadFn, sendFn, pollFn, senderType }: UseChatStat
         setError(err instanceof Error ? err.message : 'Failed to load conversation');
       } finally {
         setIsLoading(false);
+        busyRef.current = false;
       }
     },
-    [trackLastId],   // <-- NO loadFn dependency
+    [trackLastId],
   );
 
   /** Send a message with optimistic update  (STABLE identity) */
@@ -138,13 +142,13 @@ export function useChatState({ loadFn, sendFn, pollFn, senderType }: UseChatStat
   /** Poll for new messages  (STABLE identity) */
   const pollMessages = useCallback(async () => {
     const convId = conversationRef.current?.id;
-    if (!convId) return;
+    if (!convId || busyRef.current) return;
     try {
       const res = await pollFnRef.current(convId, lastMsgIdRef.current ?? undefined);
       if (res.messages?.length) {
         setMessages((prev) => {
-          const existing = new Set(prev.map((m) => m.id));
-          const fresh = res.messages.filter((m) => !existing.has(m.id));
+          const existingIds = new Set(prev.map((m) => String(m.id)));
+          const fresh = res.messages.filter((m) => !existingIds.has(String(m.id)));
           return fresh.length ? [...prev, ...fresh] : prev;
         });
         trackLastId(res.messages);
@@ -152,7 +156,7 @@ export function useChatState({ loadFn, sendFn, pollFn, senderType }: UseChatStat
     } catch (err) {
       console.error('Poll error:', err);
     }
-  }, [trackLastId]);   // <-- NO conversation?.id dependency
+  }, [trackLastId]);
 
   const clearError = useCallback(() => setError(null), []);
 

@@ -28,6 +28,7 @@ Each `therapyChat` style instance can be configured with:
 | `therapy_chat_polling_interval` | `10000` | Polling interval in ms |
 | `therapy_chat_tagging_enabled` | `1` | Allow patients to tag therapists |
 | `therapy_chat_speech_to_text_enabled` | `0` | Enable speech input |
+| `therapy_chat_help_text` | `Use @therapist to request your therapist, or #topic to tag a predefined topic.` | Help text shown below chat input explaining @mention and #hashtag usage. Supports multilingual content via field translations. |
 | `css` | (empty) | Additional CSS class |
 | `debug` | `0` | Debug mode |
 

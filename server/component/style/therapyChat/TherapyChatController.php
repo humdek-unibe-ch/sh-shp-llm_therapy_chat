@@ -259,10 +259,12 @@ class TherapyChatController extends BaseController
                 'conversation_id' => $conversation_id
             ];
 
-            // Process AI response if enabled
+            // Process AI response if enabled and conversation is not paused
             $conversation = $this->therapy_service->getTherapyConversation($conversation_id);
 
-            if ($conversation && $conversation['ai_enabled'] && $conversation['mode'] === THERAPY_MODE_AI_HYBRID) {
+            if ($conversation && $conversation['ai_enabled']
+                && $conversation['mode'] === THERAPY_MODE_AI_HYBRID
+                && ($conversation['status'] ?? '') !== THERAPY_STATUS_PAUSED) {
                 $ai_response = $this->processAIResponse($conversation_id, $conversation);
 
                 if ($ai_response && !isset($ai_response['error'])) {

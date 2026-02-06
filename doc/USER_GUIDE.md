@@ -13,17 +13,15 @@ If you are enrolled in the therapy program, you will see a floating chat button
 - **AI Assistant** may respond automatically (if enabled by your therapist)
 - **Your therapist** can also send messages directly — these appear with a green highlight
 
-### Tagging Your Therapist
+### Reaching Your Therapist
 
-If you need your therapist's attention:
-1. Click the **"Tag Therapist"** button below the message input
-2. Select a reason that best describes your need
-3. Your therapist will be notified
+Use **@therapist** or **@all** in your message to tag your therapist for attention.
+Use **#topic** to tag a predefined topic or status (configured by your therapist).
 
-**Urgency levels:**
-- **Normal**: Regular attention needed
-- **Urgent**: Needs response soon
-- **Emergency**: Immediate attention required
+A help text below the message input explains these options.
+
+> **Note**: If your conversation is paused by your therapist, you will see a notice
+> and will not be able to send messages until it is resumed.
 
 ### Voice Input
 
@@ -49,8 +47,9 @@ Click a tab to filter the patient list by group. The "All Groups" tab shows ever
 
 ### Unread Tracking
 
-- **Blue badge** on patient name = unread messages
+- **Blue badge** on patient name = unread messages from that patient
 - **Red badge** = unread alerts
+- **Group tab badge** = total unread messages from patients in that group
 - Total unread count shown in the stats header
 
 ### Reading a Conversation
@@ -76,20 +75,26 @@ directly to the patient.
 ### AI Draft Generation
 
 1. Click **"Generate AI Draft"** below the message area
-2. The AI generates a suggested response based on conversation context
-3. **Edit the draft** as needed in the text area
-4. Click **"Send to Patient"** to send, or **"Discard"** to cancel
+2. A **modal dialog** opens while the AI generates a suggested response
+3. **Review and edit** the draft in the modal text area
+4. Click **"Send to Patient"** to send the message and close the modal, or **"Discard"** to cancel
 
 ### Managing Conversations
 
 - **AI Toggle**: Pause or resume AI responses for a conversation
-- **Status**: Set conversation to Active, Paused, or Closed
+- **Status**: Set conversation to Active, Paused, or Closed (patients cannot send messages when paused)
 - **Risk Level**: Rate the patient's risk (Low / Medium / High / Critical)
+
+Risk and status changes are reflected **immediately** in the UI without a full page reload.
 
 ### Clinical Notes
 
 Add private notes about the conversation that are only visible to therapists.
 These are never shown to the patient or AI.
+
+- **Edit** a note by clicking the pencil icon
+- **Delete** a note by clicking the trash icon (soft-delete, can be recovered)
+- All note changes are logged in the audit trail with the editor's name
 
 ### Alerts
 

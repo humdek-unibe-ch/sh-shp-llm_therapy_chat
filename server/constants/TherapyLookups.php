@@ -36,6 +36,9 @@ define('THERAPY_LOOKUP_ALERT_SEVERITY', 'therapyAlertSeverity');
 /** Note type type code */
 define('THERAPY_LOOKUP_NOTE_TYPES', 'therapyNoteTypes');
 
+/** Note status type code */
+define('THERAPY_LOOKUP_NOTE_STATUS', 'therapyNoteStatus');
+
 /** Draft message status type code */
 define('THERAPY_LOOKUP_DRAFT_STATUS', 'therapyDraftStatus');
 
@@ -130,6 +133,16 @@ define('THERAPY_NOTE_MANUAL', 'manual');
 define('THERAPY_NOTE_AI_SUMMARY', 'ai_summary');
 
 // =====================================================
+// NOTE STATUS VALUES (lookup_code)
+// =====================================================
+
+/** Active note */
+define('THERAPY_NOTE_STATUS_ACTIVE', 'active');
+
+/** Soft-deleted note */
+define('THERAPY_NOTE_STATUS_DELETED', 'deleted');
+
+// =====================================================
 // DRAFT STATUS VALUES (lookup_code)
 // =====================================================
 
@@ -174,6 +187,9 @@ define('THERAPY_VALID_SEVERITIES', [
 
 /** Valid note types */
 define('THERAPY_VALID_NOTE_TYPES', [THERAPY_NOTE_MANUAL, THERAPY_NOTE_AI_SUMMARY]);
+
+/** Valid note statuses */
+define('THERAPY_VALID_NOTE_STATUSES', [THERAPY_NOTE_STATUS_ACTIVE, THERAPY_NOTE_STATUS_DELETED]);
 
 /** Valid draft statuses */
 define('THERAPY_VALID_DRAFT_STATUSES', [THERAPY_DRAFT_DRAFT, THERAPY_DRAFT_SENT, THERAPY_DRAFT_DISCARDED]);

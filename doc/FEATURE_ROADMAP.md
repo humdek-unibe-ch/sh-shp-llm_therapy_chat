@@ -8,14 +8,14 @@
 - [x] Therapist dashboard with patient list
 - [x] Group-based access control (therapyTherapistAssignments)
 - [x] Group tab filtering on dashboard
-- [x] Per-patient unread message tracking
+- [x] Per-patient and per-group unread message tracking
 - [x] Message sender type distinction (AI / therapist / patient / system)
 - [x] @mention tagging system (creates alerts)
 - [x] Danger word detection
 - [x] AI draft generation and editing workflow
 - [x] Message editing (therapist)
 - [x] Message soft-deletion (therapist)
-- [x] Clinical notes per conversation
+- [x] Clinical notes per conversation (with inline edit, soft-delete, and audit trail)
 - [x] Risk level management
 - [x] Conversation status management (active/paused/closed)
 - [x] AI toggle per conversation
@@ -40,7 +40,7 @@
 - [ ] Export conversation as PDF
 - [ ] Multi-language AI system prompts
 - [ ] Conversation archiving workflow
-- [ ] Audit logging for message edits/deletes
+- [ ] Audit logging UI for message edits/deletes (transaction logging already implemented for notes, risk, status, AI toggle)
 
 ## Future Versions
 

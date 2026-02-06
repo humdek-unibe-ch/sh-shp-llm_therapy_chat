@@ -77,6 +77,8 @@ class TherapistDashboardController extends BaseController
             case 'set_risk': $this->handleSetRisk(); break;
             case 'set_status': $this->handleSetStatus(); break;
             case 'add_note': $this->handleAddNote(); break;
+            case 'edit_note': $this->handleEditNote(); break;
+            case 'delete_note': $this->handleDeleteNote(); break;
             case 'mark_alert_read': $this->handleMarkAlertRead(); break;
             case 'mark_all_read': $this->handleMarkAllRead(); break;
             case 'mark_messages_read': $this->handleMarkMessagesRead(); break;
@@ -266,6 +268,44 @@ class TherapistDashboardController extends BaseController
         try {
             $noteId = $this->service->addNote($cid, $uid, $content, $noteType);
             $this->json(['success' => (bool)$noteId, 'note_id' => $noteId]);
+        } catch (Exception $e) {
+            $this->json(['error' => $e->getMessage()], 500);
+        }
+    }
+
+    private function handleEditNote()
+    {
+        $uid = $this->validateTherapistOrFail();
+
+        $noteId = $_POST['note_id'] ?? null;
+        $content = trim($_POST['content'] ?? '');
+
+        if (!$noteId || empty($content)) {
+            $this->json(['error' => 'Note ID and content are required'], 400);
+            return;
+        }
+
+        try {
+            $result = $this->service->updateNote($noteId, $uid, $content);
+            $this->json(['success' => $result]);
+        } catch (Exception $e) {
+            $this->json(['error' => $e->getMessage()], 500);
+        }
+    }
+
+    private function handleDeleteNote()
+    {
+        $uid = $this->validateTherapistOrFail();
+
+        $noteId = $_POST['note_id'] ?? null;
+        if (!$noteId) {
+            $this->json(['error' => 'Note ID is required'], 400);
+            return;
+        }
+
+        try {
+            $result = $this->service->softDeleteNote($noteId, $uid);
+            $this->json(['success' => $result]);
         } catch (Exception $e) {
             $this->json(['error' => $e->getMessage()], 500);
         }
@@ -551,12 +591,15 @@ class TherapistDashboardController extends BaseController
         try {
             $unreadMessages = $this->service->getUnreadCountForUser($uid);
             $unreadAlerts = $this->service->getUnreadAlertCount($uid);
+            $bySubject = $this->service->getUnreadBySubjectForTherapist($uid);
+            $byGroup = $this->service->getUnreadByGroupForTherapist($uid);
 
             $this->json([
                 'unread_counts' => [
-                    'messages' => $unreadMessages,
-                    'alerts' => $unreadAlerts,
-                    'total' => $unreadMessages + $unreadAlerts
+                    'total' => $unreadMessages,
+                    'totalAlerts' => $unreadAlerts,
+                    'bySubject' => $bySubject,
+                    'byGroup' => $byGroup
                 ]
             ]);
         } catch (Exception $e) {

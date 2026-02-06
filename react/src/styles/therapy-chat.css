@@ -283,10 +283,6 @@
    SUBJECT CHAT CONTAINER
    ============================================================ */
 
-.tc-subject {
-  max-width: 700px;
-  margin: 0 auto;
-}
 
 /* ============================================================
    NAV TABS (group tabs)
@@ -315,9 +311,6 @@
   }
   .tc-patient-list {
     max-height: 250px;
-  }
-  .tc-subject {
-    max-width: 100%;
   }
   .tc-input-textarea {
     font-size: 13px;

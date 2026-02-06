@@ -99,7 +99,9 @@ Returns dashboard configuration including stats, groups, features, labels.
 **Response**: `{ notes: Note[] }`
 
 ### GET `get_unread_counts`
-**Response**: `{ unread_counts: { total, totalAlerts, bySubject: {...} } }`
+**Response**: `{ unread_counts: { total, totalAlerts, bySubject: {...}, byGroup: {...} } }`
+
+Returns unread message counts per user and per group tab on the therapist dashboard.
 
 ### GET `get_groups`
 Returns therapist's assigned groups with patient counts.
@@ -163,6 +165,23 @@ Soft-deletes a message (sets `deleted` flag).
 
 **Response**: `{ success, note_id }`
 
+### POST `edit_note`
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `note_id` | int | Yes | Note to edit |
+| `content` | string | Yes | Updated note text |
+
+**Response**: `{ success: boolean }`
+
+### POST `delete_note`
+Soft-deletes a note (sets `id_noteStatus` to lookup `deleted` via `therapyNoteStatus`).
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `note_id` | int | Yes | Note to delete |
+
+**Response**: `{ success: boolean }`
+
 ### POST `mark_alert_read`
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
@@ -185,7 +204,7 @@ Soft-deletes a message (sets `deleted` flag).
 **Response**: `{ success }`
 
 ### POST `create_draft`
-Generates an AI draft for the therapist to edit.
+Generates an AI draft for the therapist to edit. Opens a modal dialog in the UI.
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|

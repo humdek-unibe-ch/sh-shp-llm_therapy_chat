@@ -478,6 +478,69 @@ class TherapyMessageService extends TherapyAlertService
     }
 
     /**
+     * Get per-subject unread message counts for a therapist.
+     * Returns an associative array keyed by patient user ID.
+     *
+     * @param int $therapistId
+     * @return array [ userId => ['subjectId' => .., 'subjectName' => .., 'unreadCount' => ..] ]
+     */
+    public function getUnreadBySubjectForTherapist($therapistId)
+    {
+        $sql = "SELECT tcm.id_users as subject_id,
+                       u.name as subject_name,
+                       u.code as subject_code,
+                       COUNT(tmr.id) as unread_count
+                FROM therapyMessageRecipients tmr
+                INNER JOIN llmMessages lm ON lm.id = tmr.id_llmMessages
+                INNER JOIN therapyConversationMeta tcm ON tcm.id_llmConversations = lm.id_llmConversations
+                INNER JOIN users u ON u.id = tcm.id_users
+                WHERE tmr.id_users = ? AND tmr.is_new = 1
+                GROUP BY tcm.id_users, u.name, u.code";
+
+        $rows = $this->db->query_db($sql, array($therapistId));
+        $result = array();
+        if ($rows) {
+            foreach ($rows as $row) {
+                $result[$row['subject_id']] = array(
+                    'subjectId' => $row['subject_id'],
+                    'subjectName' => $row['subject_name'],
+                    'subjectCode' => $row['subject_code'] ?? '',
+                    'unreadCount' => intval($row['unread_count'])
+                );
+            }
+        }
+        return $result;
+    }
+
+    /**
+     * Get per-group unread totals for a therapist.
+     * Returns [ groupId => totalUnread ].
+     *
+     * @param int $therapistId
+     * @return array
+     */
+    public function getUnreadByGroupForTherapist($therapistId)
+    {
+        $sql = "SELECT ug.id_groups, COUNT(tmr.id) as unread_count
+                FROM therapyMessageRecipients tmr
+                INNER JOIN llmMessages lm ON lm.id = tmr.id_llmMessages
+                INNER JOIN therapyConversationMeta tcm ON tcm.id_llmConversations = lm.id_llmConversations
+                INNER JOIN users_groups ug ON ug.id_users = tcm.id_users
+                INNER JOIN therapyTherapistAssignments tta ON tta.id_groups = ug.id_groups AND tta.id_users = :tid
+                WHERE tmr.id_users = :uid AND tmr.is_new = 1
+                GROUP BY ug.id_groups";
+
+        $rows = $this->db->query_db($sql, array(':tid' => $therapistId, ':uid' => $therapistId));
+        $result = array();
+        if ($rows) {
+            foreach ($rows as $row) {
+                $result[$row['id_groups']] = intval($row['unread_count']);
+            }
+        }
+        return $result;
+    }
+
+    /**
      * Mark messages as seen for a user in a conversation.
      *
      * @param int $conversationId therapyConversationMeta.id

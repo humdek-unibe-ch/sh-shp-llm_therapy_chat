@@ -28,7 +28,7 @@ Controllers only instantiate `TherapyMessageService` — it inherits all methods
        exit;
    ```
 
-3. **Add database changes** as a new migration file (e.g., `server/db/v1.1.0.sql`)
+3. **Add database changes** to the existing migration file (`server/db/v1.0.0.sql`) for initial release, or create a new versioned migration (e.g., `server/db/v1.1.0.sql`) for post-release updates
 
 ### Frontend
 
@@ -69,6 +69,20 @@ The `role` field in `llmMessages`:
 - `user` = subject OR therapist (distinguished by `sent_context`)
 - `assistant` = AI
 - `system` = system messages
+
+## Note Management
+
+Clinical notes (`therapyNotes` table) use lookup-based status instead of ENUM:
+
+- **`id_noteStatus`**: FK to `lookups` table (type_code: `therapyNoteStatus`, values: `active`, `deleted`)
+- **`id_lastEditedBy`**: FK to `users` table — tracks who last edited a note
+- **Constants**: `THERAPY_LOOKUP_NOTE_STATUS`, `THERAPY_NOTE_STATUS_ACTIVE`, `THERAPY_NOTE_STATUS_DELETED`
+
+Key methods in `TherapyChatService`:
+- `addNote()` — creates a note with `active` status, logs transaction
+- `updateNote()` — updates content and `id_lastEditedBy`, logs transaction
+- `softDeleteNote()` — sets `id_noteStatus` to `deleted`, logs transaction
+- `getNotesForConversation()` — filters by `active` status via lookup join
 
 ## Hook System
 

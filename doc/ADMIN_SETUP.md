@@ -19,7 +19,7 @@ Copy the `sh-shp-llm_therapy_chat` folder to `server/plugins/`.
 mysql -u <user> -p <database> < server/plugins/sh-shp-llm_therapy_chat/server/db/v1.0.0.sql
 ```
 
-This creates all required tables, views, lookups, hooks, and configuration fields.
+This creates all required tables, views, lookups, hooks, and configuration fields. All schema changes are consolidated in this single migration file.
 
 ### 3. Build React Frontend
 

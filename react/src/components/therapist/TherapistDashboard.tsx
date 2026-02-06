@@ -94,6 +94,12 @@ export const TherapistDashboard: React.FC<Props> = ({ config }) => {
   const [listError, setListError] = useState<string | null>(null);
   const [activeDraft, setActiveDraft] = useState<Draft | null>(null);
   const [draftText, setDraftText] = useState('');
+  const [draftModalOpen, setDraftModalOpen] = useState(false);
+  const [draftGenerating, setDraftGenerating] = useState(false);
+
+  // Note editing state
+  const [editingNoteId, setEditingNoteId] = useState<number | null>(null);
+  const [editingNoteText, setEditingNoteText] = useState('');
 
   // Refs for values used inside stable callbacks
   const activeGroupIdRef = useRef(activeGroupId);
@@ -113,10 +119,16 @@ export const TherapistDashboard: React.FC<Props> = ({ config }) => {
 
   // ---- Data loading (stable callbacks) ----
 
+  /**
+   * Load conversations. When `silent` is true (polling), the loading
+   * spinner is NOT shown to avoid UI flashing on the selected user.
+   */
   const loadConversations = useCallback(
-    async (groupId?: number | null, filter?: FilterType) => {
-      setListLoading(true);
-      setListError(null);
+    async (groupId?: number | null, filter?: FilterType, silent = false) => {
+      if (!silent) {
+        setListLoading(true);
+        setListError(null);
+      }
       try {
         const filters: Record<string, string | number> = {};
         if (groupId != null) filters.group_id = groupId;
@@ -124,9 +136,9 @@ export const TherapistDashboard: React.FC<Props> = ({ config }) => {
         const res = await api.getConversations(filters);
         setConversations(res.conversations || []);
       } catch (err) {
-        setListError(err instanceof Error ? err.message : 'Failed to load conversations');
+        if (!silent) setListError(err instanceof Error ? err.message : 'Failed to load conversations');
       } finally {
-        setListLoading(false);
+        if (!silent) setListLoading(false);
       }
     },
     [api],
@@ -149,6 +161,7 @@ export const TherapistDashboard: React.FC<Props> = ({ config }) => {
         total: uc?.total ?? 0,
         totalAlerts: uc?.totalAlerts ?? 0,
         bySubject: uc?.bySubject ?? {},
+        byGroup: uc?.byGroup ?? {},
       });
     } catch (err) {
       console.error('Unread counts error:', err);
@@ -198,7 +211,7 @@ export const TherapistDashboard: React.FC<Props> = ({ config }) => {
 
   const pollingCb = useCallback(async () => {
     await Promise.all([
-      loadConversations(activeGroupIdRef.current, activeFilterRef.current),
+      loadConversations(activeGroupIdRef.current, activeFilterRef.current, true),
       loadAlerts(),
       loadUnreadCounts(),
     ]);
@@ -219,6 +232,7 @@ export const TherapistDashboard: React.FC<Props> = ({ config }) => {
       pushUrlState(activeGroupIdRef.current, convId);
       chat.loadConversation(convId);
       loadNotes(convId);
+      setDraftModalOpen(false);
       setActiveDraft(null);
       setDraftText('');
       // Mark messages as read
@@ -265,20 +279,25 @@ export const TherapistDashboard: React.FC<Props> = ({ config }) => {
     async (risk: RiskLevel) => {
       if (!chat.conversation?.id) return;
       await api.setRiskLevel(chat.conversation.id, risk);
-      chat.loadConversation(chat.conversation.id);
-      loadConversations(activeGroupIdRef.current, activeFilterRef.current);
+      // Immediately update local state so the UI reflects the change
+      chat.setConversation((prev) => prev ? { ...prev, risk_level: risk } : prev);
+      setConversations((prev) =>
+        prev.map((c) => String(c.id) === String(chat.conversation!.id) ? { ...c, risk_level: risk } : c)
+      );
     },
-    [api, chat.conversation?.id, chat.loadConversation, loadConversations],
+    [api, chat.conversation?.id, chat.setConversation],
   );
 
   const handleSetStatus = useCallback(
     async (status: ConversationStatus) => {
       if (!chat.conversation?.id) return;
       await api.setStatus(chat.conversation.id, status);
-      chat.loadConversation(chat.conversation.id);
-      loadConversations(activeGroupIdRef.current, activeFilterRef.current);
+      chat.setConversation((prev) => prev ? { ...prev, status } : prev);
+      setConversations((prev) =>
+        prev.map((c) => String(c.id) === String(chat.conversation!.id) ? { ...c, status } : c)
+      );
     },
-    [api, chat.conversation?.id, chat.loadConversation, loadConversations],
+    [api, chat.conversation?.id, chat.setConversation],
   );
 
   const handleAddNote = useCallback(async () => {
@@ -287,6 +306,20 @@ export const TherapistDashboard: React.FC<Props> = ({ config }) => {
     setNewNote('');
     loadNotes(chat.conversation.id);
   }, [api, chat.conversation?.id, newNote, loadNotes]);
+
+  const handleEditNote = useCallback(async () => {
+    if (!editingNoteId || !editingNoteText.trim() || !chat.conversation?.id) return;
+    await api.editNote(editingNoteId, editingNoteText.trim());
+    setEditingNoteId(null);
+    setEditingNoteText('');
+    loadNotes(chat.conversation.id);
+  }, [api, editingNoteId, editingNoteText, chat.conversation?.id, loadNotes]);
+
+  const handleDeleteNote = useCallback(async (noteId: number) => {
+    if (!chat.conversation?.id) return;
+    await api.deleteNote(noteId);
+    loadNotes(chat.conversation.id);
+  }, [api, chat.conversation?.id, loadNotes]);
 
   const handleMarkAlertRead = useCallback(
     async (alertId: number) => {
@@ -300,6 +333,8 @@ export const TherapistDashboard: React.FC<Props> = ({ config }) => {
 
   const handleCreateDraft = useCallback(async () => {
     if (!chat.conversation?.id) return;
+    setDraftGenerating(true);
+    setDraftModalOpen(true);
     try {
       const res = await api.createDraft(chat.conversation.id);
       if (res.draft) {
@@ -308,6 +343,9 @@ export const TherapistDashboard: React.FC<Props> = ({ config }) => {
       }
     } catch (err) {
       console.error('Create draft error:', err);
+      setDraftModalOpen(false);
+    } finally {
+      setDraftGenerating(false);
     }
   }, [api, chat.conversation?.id]);
 
@@ -318,14 +356,19 @@ export const TherapistDashboard: React.FC<Props> = ({ config }) => {
       await api.updateDraft(activeDraft.id, draftText);
     }
     await api.sendDraft(activeDraft.id, chat.conversation.id);
+    // Close modal and clean up
+    setDraftModalOpen(false);
     setActiveDraft(null);
     setDraftText('');
+    // Refresh conversation to show the sent message
     chat.loadConversation(chat.conversation.id);
-  }, [api, activeDraft, draftText, chat.conversation?.id, chat.loadConversation]);
+    loadConversations(activeGroupIdRef.current, activeFilterRef.current, true);
+  }, [api, activeDraft, draftText, chat.conversation?.id, chat.loadConversation, loadConversations]);
 
   const handleDiscardDraft = useCallback(async () => {
     if (!activeDraft) return;
     await api.discardDraft(activeDraft.id);
+    setDraftModalOpen(false);
     setActiveDraft(null);
     setDraftText('');
   }, [api, activeDraft]);
@@ -407,19 +450,25 @@ export const TherapistDashboard: React.FC<Props> = ({ config }) => {
               )}
             </button>
           </li>
-          {groups.map((g) => (
-            <li key={g.id_groups} className="nav-item">
-              <button
-                className={`nav-link ${activeGroupId === g.id_groups ? 'active' : ''}`}
-                onClick={() => switchGroup(g.id_groups)}
-              >
-                {g.group_name}
-                {g.patient_count != null && (
-                  <span className="badge badge-light ml-1">{g.patient_count}</span>
-                )}
-              </button>
-            </li>
-          ))}
+          {groups.map((g) => {
+            const groupUnread = unreadCounts?.byGroup?.[g.id_groups] ?? unreadCounts?.byGroup?.[String(g.id_groups)] ?? 0;
+            return (
+              <li key={g.id_groups} className="nav-item">
+                <button
+                  className={`nav-link ${activeGroupId === g.id_groups ? 'active' : ''}`}
+                  onClick={() => switchGroup(g.id_groups)}
+                >
+                  {g.group_name}
+                  {g.patient_count != null && (
+                    <span className="badge badge-light ml-1">{g.patient_count}</span>
+                  )}
+                  {groupUnread > 0 && (
+                    <span className="badge badge-primary ml-1">{groupUnread}</span>
+                  )}
+                </button>
+              </li>
+            );
+          })}
         </ul>
       )}
 
@@ -593,36 +642,10 @@ export const TherapistDashboard: React.FC<Props> = ({ config }) => {
                   )}
                 </div>
 
-                {/* Draft area */}
-                {activeDraft && (
-                  <div className="card-body border-top bg-light py-2 px-3">
-                    <div className="d-flex align-items-center mb-2">
-                      <i className="fas fa-robot text-info mr-2" />
-                      <strong className="small">AI Draft</strong>
-                      <span className="badge badge-info ml-2">editable</span>
-                    </div>
-                    <textarea
-                      className="form-control form-control-sm mb-2"
-                      rows={3}
-                      value={draftText}
-                      onChange={(e) => setDraftText(e.target.value)}
-                    />
-                    <div className="d-flex" style={{ gap: '0.5rem' }}>
-                      <button className="btn btn-primary btn-sm" onClick={handleSendDraft} disabled={!draftText.trim()}>
-                        <i className="fas fa-paper-plane mr-1" />
-                        Send to Patient
-                      </button>
-                      <button className="btn btn-outline-secondary btn-sm" onClick={handleDiscardDraft}>
-                        Discard
-                      </button>
-                    </div>
-                  </div>
-                )}
-
                 {/* Input */}
                 <div className="card-footer bg-white py-2">
                   <div className="d-flex mb-2" style={{ gap: '0.5rem' }}>
-                    <button className="btn btn-outline-info btn-sm" onClick={handleCreateDraft} disabled={!!activeDraft}>
+                    <button className="btn btn-outline-info btn-sm" onClick={handleCreateDraft} disabled={draftModalOpen}>
                       <i className="fas fa-magic mr-1" />
                       Generate AI Draft
                     </button>
@@ -697,9 +720,52 @@ export const TherapistDashboard: React.FC<Props> = ({ config }) => {
                         <div key={n.id} className="tc-note-item mb-2 p-2 rounded">
                           <div className="d-flex justify-content-between text-muted mb-1">
                             <small className="font-weight-bold">{n.author_name}</small>
-                            <small>{new Date(n.created_at).toLocaleDateString()}</small>
+                            <div className="d-flex align-items-center" style={{ gap: '0.5rem' }}>
+                              <small>{new Date(n.created_at).toLocaleDateString()}</small>
+                              <button
+                                className="btn btn-link btn-sm p-0 text-muted"
+                                title="Edit note"
+                                onClick={() => { setEditingNoteId(n.id); setEditingNoteText(n.content); }}
+                              >
+                                <i className="fas fa-pencil-alt" style={{ fontSize: '0.7rem' }} />
+                              </button>
+                              <button
+                                className="btn btn-link btn-sm p-0 text-danger"
+                                title="Delete note"
+                                onClick={() => handleDeleteNote(n.id)}
+                              >
+                                <i className="fas fa-trash-alt" style={{ fontSize: '0.7rem' }} />
+                              </button>
+                            </div>
                           </div>
-                          <p className="mb-0 small">{n.content}</p>
+                          {editingNoteId === n.id ? (
+                            <div>
+                              <textarea
+                                className="form-control form-control-sm mb-1"
+                                rows={2}
+                                value={editingNoteText}
+                                onChange={(e) => setEditingNoteText(e.target.value)}
+                              />
+                              <div className="d-flex" style={{ gap: '0.25rem' }}>
+                                <button className="btn btn-primary btn-sm py-0 px-2" onClick={handleEditNote} disabled={!editingNoteText.trim()}>
+                                  Save
+                                </button>
+                                <button className="btn btn-outline-secondary btn-sm py-0 px-2" onClick={() => setEditingNoteId(null)}>
+                                  Cancel
+                                </button>
+                              </div>
+                            </div>
+                          ) : (
+                            <>
+                              <p className="mb-0 small">{n.content}</p>
+                              {n.last_edited_by_name && (
+                                <small className="text-muted" style={{ fontSize: '0.65rem' }}>
+                                  <i className="fas fa-edit mr-1" />
+                                  Last edited by {n.last_edited_by_name}
+                                </small>
+                              )}
+                            </>
+                          )}
                         </div>
                       ))
                     )}
@@ -727,6 +793,83 @@ export const TherapistDashboard: React.FC<Props> = ({ config }) => {
           )}
         </div>
       </div>
+
+      {/* ============ AI Draft Modal ============ */}
+      {draftModalOpen && (
+        <div className="modal d-block" tabIndex={-1} style={{ backgroundColor: 'rgba(0,0,0,0.5)' }}>
+          <div className="modal-dialog modal-lg modal-dialog-centered">
+            <div className="modal-content">
+              <div className="modal-header bg-info text-white py-2">
+                <h5 className="modal-title">
+                  <i className="fas fa-robot mr-2" />
+                  AI Draft Response
+                  {chat.conversation?.subject_name && (
+                    <small className="ml-2 font-weight-normal">
+                      for {chat.conversation.subject_name}
+                    </small>
+                  )}
+                </h5>
+                <button
+                  type="button"
+                  className="close text-white"
+                  onClick={() => {
+                    if (activeDraft) handleDiscardDraft();
+                    else setDraftModalOpen(false);
+                  }}
+                >
+                  <span>&times;</span>
+                </button>
+              </div>
+              <div className="modal-body">
+                {draftGenerating ? (
+                  <div className="text-center py-4">
+                    <div className="spinner-border text-info mb-3" role="status" />
+                    <p className="text-muted">Generating AI draft response...</p>
+                  </div>
+                ) : (
+                  <>
+                    <p className="text-muted small mb-2">
+                      <i className="fas fa-info-circle mr-1" />
+                      Review and edit the AI-generated response before sending it to the patient.
+                    </p>
+                    <textarea
+                      className="form-control"
+                      rows={8}
+                      value={draftText}
+                      onChange={(e) => setDraftText(e.target.value)}
+                      placeholder="AI draft content..."
+                    />
+                    <div className="d-flex justify-content-between mt-2">
+                      <small className="text-muted">{draftText.length} characters</small>
+                    </div>
+                  </>
+                )}
+              </div>
+              <div className="modal-footer py-2">
+                <button
+                  className="btn btn-outline-secondary"
+                  onClick={() => {
+                    if (activeDraft) handleDiscardDraft();
+                    else setDraftModalOpen(false);
+                  }}
+                  disabled={draftGenerating}
+                >
+                  <i className="fas fa-times mr-1" />
+                  Discard
+                </button>
+                <button
+                  className="btn btn-primary"
+                  onClick={handleSendDraft}
+                  disabled={draftGenerating || !draftText.trim()}
+                >
+                  <i className="fas fa-paper-plane mr-1" />
+                  Send to Patient
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

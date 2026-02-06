@@ -250,6 +250,19 @@ export function createTherapistApi(sectionId?: number) {
       return apiGet('get_notes', withSection({ conversation_id: String(conversationId) }, sectionId));
     },
 
+    async editNote(noteId: number, content: string): Promise<ApiOk> {
+      const fd = postData('edit_note', sectionId);
+      fd.append('note_id', String(noteId));
+      fd.append('content', content);
+      return apiPost(fd);
+    },
+
+    async deleteNote(noteId: number): Promise<ApiOk> {
+      const fd = postData('delete_note', sectionId);
+      fd.append('note_id', String(noteId));
+      return apiPost(fd);
+    },
+
     // ---- Alerts ----
 
     async getAlerts(unreadOnly?: boolean): Promise<{ alerts: Alert[] }> {

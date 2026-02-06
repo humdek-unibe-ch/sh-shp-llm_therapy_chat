@@ -115,8 +115,11 @@ export interface Note {
   id_users: number;
   content: string;
   note_type?: NoteType;
+  note_status?: string;
   author_name?: string;
+  last_edited_by_name?: string;
   created_at: string;
+  updated_at?: string;
 }
 
 /** AI draft message (from therapyDraftMessages) */
@@ -163,6 +166,8 @@ export interface UnreadCounts {
       lastMessageAt?: string;
     }
   >;
+  /** Per-group unread totals: groupId → count */
+  byGroup?: Record<number | string, number>;
 }
 
 // ---------------------------------------------------------------------------
@@ -197,6 +202,8 @@ export interface SubjectChatLabels {
   send_button: string;
   placeholder: string;
   loading: string;
+  /** Help text explaining @mention and #hashtag usage (from DB field) */
+  chat_help_text?: string;
 }
 
 /** Labels for the therapist dashboard */
@@ -348,6 +355,7 @@ export const DEFAULT_SUBJECT_LABELS: SubjectChatLabels = {
   send_button: 'Send',
   placeholder: 'Type your message...',
   loading: 'Loading...',
+  chat_help_text: 'Use @therapist to request your therapist, or #topic to tag a predefined topic.',
 };
 
 export const DEFAULT_THERAPIST_LABELS: TherapistDashboardLabels = {
