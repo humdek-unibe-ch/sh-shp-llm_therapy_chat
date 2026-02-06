@@ -577,8 +577,8 @@ INSERT IGNORE INTO `fields` (`id`, `name`, `id_type`, `display`) VALUES
 (NULL, 'therapy_chat_polling_interval', get_field_type_id('number'), '0'),
 (NULL, 'therapy_chat_enable_tagging', get_field_type_id('checkbox'), '0'),
 (NULL, 'therapy_tag_reasons', get_field_type_id('json'), '1'),
-(NULL, 'therapy_chat_help_text', get_field_type_id('textarea'), '1'),
-(NULL, 'therapy_summary_context', get_field_type_id('textarea'), '1');
+(NULL, 'therapy_chat_help_text', get_field_type_id('markdown'), '1'),
+(NULL, 'therapy_summary_context', get_field_type_id('markdown'), '1');
 
 -- Link fields to page type
 INSERT IGNORE INTO `pageType_fields` (`id_pageType`, `id_fields`, `default_value`, `help`) VALUES

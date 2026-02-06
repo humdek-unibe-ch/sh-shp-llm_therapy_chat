@@ -52,7 +52,12 @@ async function apiGet<T>(action: string, params: Record<string, string> = {}): P
 }
 
 async function apiPost<T>(formData: FormData): Promise<T> {
-  const res = await fetch(window.location.pathname, {
+  // Use the full current URL (including query string) so SelfHelp can route
+  // correctly. The POST body contains action + section_id for the controller.
+  const url = new URL(window.location.href);
+  // Remove volatile params that might conflict with form body
+  url.searchParams.delete('action');
+  const res = await fetch(url.toString(), {
     method: 'POST',
     body: formData,
     headers: { Accept: 'application/json', 'X-Requested-With': 'XMLHttpRequest' },

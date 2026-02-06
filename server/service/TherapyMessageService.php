@@ -486,16 +486,17 @@ class TherapyMessageService extends TherapyAlertService
      */
     public function getUnreadBySubjectForTherapist($therapistId)
     {
-        $sql = "SELECT tcm.id_users as subject_id,
+        $sql = "SELECT lc.id_users as subject_id,
                        u.name as subject_name,
                        u.code as subject_code,
                        COUNT(tmr.id) as unread_count
                 FROM therapyMessageRecipients tmr
                 INNER JOIN llmMessages lm ON lm.id = tmr.id_llmMessages
                 INNER JOIN therapyConversationMeta tcm ON tcm.id_llmConversations = lm.id_llmConversations
-                INNER JOIN users u ON u.id = tcm.id_users
+                INNER JOIN llmConversations lc ON lc.id = tcm.id_llmConversations
+                INNER JOIN users u ON u.id = lc.id_users
                 WHERE tmr.id_users = ? AND tmr.is_new = 1
-                GROUP BY tcm.id_users, u.name, u.code";
+                GROUP BY lc.id_users, u.name, u.code";
 
         $rows = $this->db->query_db($sql, array($therapistId));
         $result = array();
@@ -525,7 +526,8 @@ class TherapyMessageService extends TherapyAlertService
                 FROM therapyMessageRecipients tmr
                 INNER JOIN llmMessages lm ON lm.id = tmr.id_llmMessages
                 INNER JOIN therapyConversationMeta tcm ON tcm.id_llmConversations = lm.id_llmConversations
-                INNER JOIN users_groups ug ON ug.id_users = tcm.id_users
+                INNER JOIN llmConversations lc ON lc.id = tcm.id_llmConversations
+                INNER JOIN users_groups ug ON ug.id_users = lc.id_users
                 INNER JOIN therapyTherapistAssignments tta ON tta.id_groups = ug.id_groups AND tta.id_users = :tid
                 WHERE tmr.id_users = :uid AND tmr.is_new = 1
                 GROUP BY ug.id_groups";
@@ -695,7 +697,8 @@ class TherapyMessageService extends TherapyAlertService
         $sql = "SELECT MAX(lm.id) as latest_id
                 FROM llmMessages lm
                 INNER JOIN therapyConversationMeta tcm ON tcm.id_llmConversations = lm.id_llmConversations
-                INNER JOIN users_groups ug ON ug.id_users = tcm.id_users
+                INNER JOIN llmConversations lc ON lc.id = tcm.id_llmConversations
+                INNER JOIN users_groups ug ON ug.id_users = lc.id_users
                 INNER JOIN therapyTherapistAssignments tta ON tta.id_groups = ug.id_groups AND tta.id_users = :tid
                 WHERE 1";
         $result = $this->db->query_db_first($sql, array(':tid' => $therapistId));
@@ -721,11 +724,17 @@ class TherapyMessageService extends TherapyAlertService
      */
     public function createSummaryConversation($therapyConvId, $therapistId, $sectionId, $summaryContent, $requestMessages, $response)
     {
+        // Get LLM config for required model/temperature/max_tokens fields
+        $config = $this->getLlmConfig();
+
         // Create a new LLM conversation for audit purposes
         $llmConvId = $this->db->insert('llmConversations', array(
             'id_users' => $therapistId,
-            'section_id' => $sectionId,
-            'title' => 'Therapy Summary - Conversation #' . $therapyConvId
+            'id_sections' => $sectionId,
+            'title' => 'Therapy Summary - Conversation #' . $therapyConvId,
+            'model' => $response['model'] ?? $config['llm_default_model'],
+            'temperature' => $config['llm_temperature'],
+            'max_tokens' => $config['llm_max_tokens']
         ));
 
         if (!$llmConvId) return null;

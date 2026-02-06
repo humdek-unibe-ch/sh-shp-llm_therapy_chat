@@ -96,11 +96,13 @@ export const TherapistDashboard: React.FC<Props> = ({ config }) => {
   const [draftText, setDraftText] = useState('');
   const [draftModalOpen, setDraftModalOpen] = useState(false);
   const [draftGenerating, setDraftGenerating] = useState(false);
+  const [draftError, setDraftError] = useState<string | null>(null);
 
   // ---- Summarization state ----
   const [summaryModalOpen, setSummaryModalOpen] = useState(false);
   const [summaryGenerating, setSummaryGenerating] = useState(false);
   const [summaryText, setSummaryText] = useState('');
+  const [summaryError, setSummaryError] = useState<string | null>(null);
 
   // Note editing state
   const [editingNoteId, setEditingNoteId] = useState<number | null>(null);
@@ -264,6 +266,7 @@ export const TherapistDashboard: React.FC<Props> = ({ config }) => {
       setDraftModalOpen(false);
       setActiveDraft(null);
       setDraftText('');
+      setDraftError(null);
       setSummaryModalOpen(false);
       setSummaryText('');
       // Mark messages as read
@@ -366,15 +369,20 @@ export const TherapistDashboard: React.FC<Props> = ({ config }) => {
     if (!chat.conversation?.id) return;
     setDraftGenerating(true);
     setDraftModalOpen(true);
+    setDraftError(null);
     try {
       const res = await api.createDraft(chat.conversation.id);
       if (res.draft) {
         setActiveDraft(res.draft);
         setDraftText(res.draft.edited_content || res.draft.ai_content);
+      } else {
+        setDraftError('AI did not generate a response. Please try again.');
       }
     } catch (err) {
       console.error('Create draft error:', err);
-      setDraftModalOpen(false);
+      const msg = err instanceof Error ? err.message : 'Failed to generate draft';
+      setDraftError(msg);
+      // Keep modal open so user can see the error
     } finally {
       setDraftGenerating(false);
     }
@@ -411,16 +419,18 @@ export const TherapistDashboard: React.FC<Props> = ({ config }) => {
     setSummaryGenerating(true);
     setSummaryModalOpen(true);
     setSummaryText('');
+    setSummaryError(null);
     try {
       const res = await api.generateSummary(chat.conversation.id);
       if (res.success && res.summary) {
         setSummaryText(res.summary);
       } else {
-        setSummaryText('Failed to generate summary. Please try again.');
+        setSummaryError('Failed to generate summary. Please try again.');
       }
     } catch (err) {
       console.error('Summary error:', err);
-      setSummaryText('An error occurred while generating the summary.');
+      const msg = err instanceof Error ? err.message : 'An error occurred while generating the summary.';
+      setSummaryError(msg);
     } finally {
       setSummaryGenerating(false);
     }
@@ -864,77 +874,121 @@ export const TherapistDashboard: React.FC<Props> = ({ config }) => {
       </div>
 
       {/* ============ AI Draft Modal ============ */}
+      {/* NOTE: We use tc-modal-overlay instead of Bootstrap's .modal class
+          because Bootstrap 4.6 jQuery plugin auto-hides elements with .modal,
+          which causes the React-managed modal to close immediately. */}
       {draftModalOpen && (
-        <div className="modal d-block" tabIndex={-1} style={{ backgroundColor: 'rgba(0,0,0,0.5)' }}>
-          <div className="modal-dialog modal-lg modal-dialog-centered">
-            <div className="modal-content">
-              <div className="modal-header bg-info text-white py-2">
-                <h5 className="modal-title">
-                  <i className="fas fa-robot mr-2" />
-                  AI Draft Response
-                  {chat.conversation?.subject_name && (
-                    <small className="ml-2 font-weight-normal">
-                      for {chat.conversation.subject_name}
-                    </small>
-                  )}
-                </h5>
-                <button
-                  type="button"
-                  className="close text-white"
-                  onClick={() => {
-                    if (activeDraft) handleDiscardDraft();
-                    else setDraftModalOpen(false);
-                  }}
-                >
-                  <span>&times;</span>
-                </button>
-              </div>
-              <div className="modal-body">
-                {draftGenerating ? (
-                  <div className="text-center py-4">
-                    <div className="spinner-border text-info mb-3" role="status" />
-                    <p className="text-muted">Generating AI draft response...</p>
-                  </div>
-                ) : (
-                  <>
-                    <p className="text-muted small mb-2">
-                      <i className="fas fa-info-circle mr-1" />
-                      Review and edit the AI-generated response before sending it to the patient.
-                    </p>
-                    <textarea
-                      className="form-control"
-                      rows={8}
-                      value={draftText}
-                      onChange={(e) => setDraftText(e.target.value)}
-                      placeholder="AI draft content..."
-                    />
-                    <div className="d-flex justify-content-between mt-2">
-                      <small className="text-muted">{draftText.length} characters</small>
-                    </div>
-                  </>
+        <div className="tc-modal-overlay" tabIndex={-1}>
+          <div className="tc-modal-box">
+            <div className="tc-modal-header bg-info text-white">
+              <h5 className="mb-0">
+                <i className="fas fa-robot mr-2" />
+                AI Draft Response
+                {chat.conversation?.subject_name && (
+                  <small className="ml-2 font-weight-normal">
+                    for {chat.conversation.subject_name}
+                  </small>
                 )}
-              </div>
-              <div className="modal-footer py-2">
-                <button
-                  className="btn btn-outline-secondary"
-                  onClick={() => {
-                    if (activeDraft) handleDiscardDraft();
-                    else setDraftModalOpen(false);
-                  }}
-                  disabled={draftGenerating}
-                >
-                  <i className="fas fa-times mr-1" />
-                  Discard
-                </button>
-                <button
-                  className="btn btn-primary"
-                  onClick={handleSendDraft}
-                  disabled={draftGenerating || !draftText.trim()}
-                >
-                  <i className="fas fa-paper-plane mr-1" />
-                  Send to Patient
-                </button>
-              </div>
+              </h5>
+              <button
+                type="button"
+                className="close text-white"
+                onClick={() => {
+                  if (activeDraft) handleDiscardDraft();
+                  else { setDraftModalOpen(false); setDraftError(null); }
+                }}
+              >
+                <span>&times;</span>
+              </button>
+            </div>
+            <div className="tc-modal-body">
+              {draftGenerating ? (
+                <div className="text-center py-5 d-flex flex-column align-items-center justify-content-center" style={{ flex: 1 }}>
+                  <div className="spinner-border text-info mb-3" style={{ width: '3rem', height: '3rem' }} role="status" />
+                  <p className="text-muted mb-0">Generating AI draft response...</p>
+                  <small className="text-muted mt-1">This may take a moment.</small>
+                </div>
+              ) : draftError ? (
+                <div className="d-flex flex-column align-items-center justify-content-center" style={{ flex: 1 }}>
+                  <div className="alert alert-danger mb-3" style={{ maxWidth: '500px' }}>
+                    <i className="fas fa-exclamation-triangle mr-2" />
+                    {draftError}
+                  </div>
+                  <button
+                    className="btn btn-info"
+                    onClick={() => { setDraftError(null); handleCreateDraft(); }}
+                  >
+                    <i className="fas fa-redo mr-1" />
+                    Retry
+                  </button>
+                </div>
+              ) : (
+                <>
+                  <p className="text-muted small mb-2 flex-shrink-0">
+                    <i className="fas fa-info-circle mr-1" />
+                    Review and edit the AI-generated response before sending it to the patient.
+                  </p>
+                  {/* Rich text toolbar */}
+                  <div className="btn-toolbar mb-2 flex-shrink-0" role="toolbar">
+                    <div className="btn-group btn-group-sm mr-2">
+                      <button type="button" className="btn btn-outline-secondary" title="Bold"
+                        onMouseDown={(e) => { e.preventDefault(); document.execCommand('bold'); }}>
+                        <i className="fas fa-bold" />
+                      </button>
+                      <button type="button" className="btn btn-outline-secondary" title="Italic"
+                        onMouseDown={(e) => { e.preventDefault(); document.execCommand('italic'); }}>
+                        <i className="fas fa-italic" />
+                      </button>
+                      <button type="button" className="btn btn-outline-secondary" title="Underline"
+                        onMouseDown={(e) => { e.preventDefault(); document.execCommand('underline'); }}>
+                        <i className="fas fa-underline" />
+                      </button>
+                    </div>
+                    <div className="btn-group btn-group-sm mr-2">
+                      <button type="button" className="btn btn-outline-secondary" title="Bulleted list"
+                        onMouseDown={(e) => { e.preventDefault(); document.execCommand('insertUnorderedList'); }}>
+                        <i className="fas fa-list-ul" />
+                      </button>
+                      <button type="button" className="btn btn-outline-secondary" title="Numbered list"
+                        onMouseDown={(e) => { e.preventDefault(); document.execCommand('insertOrderedList'); }}>
+                        <i className="fas fa-list-ol" />
+                      </button>
+                    </div>
+                    <div className="btn-group btn-group-sm">
+                      <button type="button" className="btn btn-outline-secondary" title="Remove formatting"
+                        onMouseDown={(e) => { e.preventDefault(); document.execCommand('removeFormat'); }}>
+                        <i className="fas fa-eraser" />
+                      </button>
+                    </div>
+                  </div>
+                  {/* Editable content area - use ref to avoid re-render issues with contentEditable */}
+                  <DraftEditor value={draftText} onChange={setDraftText} />
+                  <div className="d-flex justify-content-between mt-2 flex-shrink-0">
+                    <small className="text-muted">{draftText.length} characters</small>
+                  </div>
+                </>
+              )}
+            </div>
+            <div className="tc-modal-footer">
+              <button
+                className="btn btn-outline-secondary"
+                onClick={() => {
+                  if (activeDraft) handleDiscardDraft();
+                  else { setDraftModalOpen(false); setDraftError(null); }
+                }}
+                disabled={draftGenerating}
+              >
+                <i className="fas fa-times mr-1" />
+                Discard
+              </button>
+              <button
+                className="btn btn-primary"
+                onClick={handleSendDraft}
+                disabled={draftGenerating || !draftText.trim() || !!draftError}
+              >
+                <i className="fas fa-paper-plane mr-1" />
+                Send to Patient
+              </button>
             </div>
           </div>
         </div>
@@ -942,66 +996,131 @@ export const TherapistDashboard: React.FC<Props> = ({ config }) => {
 
       {/* ============ Summary Modal ============ */}
       {summaryModalOpen && (
-        <div className="modal d-block" tabIndex={-1} style={{ backgroundColor: 'rgba(0,0,0,0.5)' }}>
-          <div className="modal-dialog modal-lg modal-dialog-centered">
-            <div className="modal-content">
-              <div className="modal-header bg-secondary text-white py-2">
-                <h5 className="modal-title">
-                  <i className="fas fa-file-alt mr-2" />
-                  Conversation Summary
-                  {chat.conversation?.subject_name && (
-                    <small className="ml-2 font-weight-normal">
-                      for {chat.conversation.subject_name}
-                    </small>
-                  )}
-                </h5>
-                <button
-                  type="button"
-                  className="close text-white"
-                  onClick={() => { setSummaryModalOpen(false); setSummaryText(''); }}
-                >
-                  <span>&times;</span>
-                </button>
-              </div>
-              <div className="modal-body">
-                {summaryGenerating ? (
-                  <div className="text-center py-4">
-                    <div className="spinner-border text-secondary mb-3" role="status" />
-                    <p className="text-muted">Generating conversation summary...</p>
-                  </div>
-                ) : (
-                  <>
-                    <p className="text-muted small mb-2">
-                      <i className="fas fa-info-circle mr-1" />
-                      AI-generated clinical summary. You can save it as a note.
-                    </p>
-                    <div className="border rounded p-3 bg-light" style={{ whiteSpace: 'pre-wrap', maxHeight: '400px', overflowY: 'auto' }}>
-                      {summaryText}
-                    </div>
-                  </>
+        <div className="tc-modal-overlay" tabIndex={-1}>
+          <div className="tc-modal-box">
+            <div className="tc-modal-header bg-secondary text-white">
+              <h5 className="mb-0">
+                <i className="fas fa-file-alt mr-2" />
+                Conversation Summary
+                {chat.conversation?.subject_name && (
+                  <small className="ml-2 font-weight-normal">
+                    for {chat.conversation.subject_name}
+                  </small>
                 )}
-              </div>
-              <div className="modal-footer py-2">
-                <button
-                  className="btn btn-outline-secondary"
-                  onClick={() => { setSummaryModalOpen(false); setSummaryText(''); }}
-                >
-                  Close
-                </button>
-                <button
-                  className="btn btn-success"
-                  onClick={handleSaveSummaryAsNote}
-                  disabled={summaryGenerating || !summaryText.trim()}
-                >
-                  <i className="fas fa-save mr-1" />
-                  Save as Clinical Note
-                </button>
-              </div>
+              </h5>
+              <button
+                type="button"
+                className="close text-white"
+                onClick={() => { setSummaryModalOpen(false); setSummaryText(''); setSummaryError(null); }}
+              >
+                <span>&times;</span>
+              </button>
+            </div>
+            <div className="tc-modal-body">
+              {summaryGenerating ? (
+                <div className="text-center py-5 d-flex flex-column align-items-center justify-content-center" style={{ flex: 1 }}>
+                  <div className="spinner-border text-secondary mb-3" style={{ width: '3rem', height: '3rem' }} role="status" />
+                  <p className="text-muted mb-0">Generating conversation summary...</p>
+                  <small className="text-muted mt-1">This may take a moment.</small>
+                </div>
+              ) : summaryError ? (
+                <div className="d-flex flex-column align-items-center justify-content-center" style={{ flex: 1 }}>
+                  <div className="alert alert-danger mb-3" style={{ maxWidth: '500px' }}>
+                    <i className="fas fa-exclamation-triangle mr-2" />
+                    {summaryError}
+                  </div>
+                  <button
+                    className="btn btn-secondary"
+                    onClick={() => { setSummaryError(null); handleGenerateSummary(); }}
+                  >
+                    <i className="fas fa-redo mr-1" />
+                    Retry
+                  </button>
+                </div>
+              ) : (
+                <>
+                  <p className="text-muted small mb-2 flex-shrink-0">
+                    <i className="fas fa-info-circle mr-1" />
+                    AI-generated clinical summary. You can save it as a note.
+                  </p>
+                  <div
+                    className="border rounded p-3 bg-light tc-draft-editor"
+                    style={{
+                      whiteSpace: 'pre-wrap',
+                      flex: 1,
+                      overflowY: 'auto',
+                      fontSize: '0.95rem',
+                      lineHeight: '1.6',
+                    }}
+                  >
+                    {summaryText}
+                  </div>
+                </>
+              )}
+            </div>
+            <div className="tc-modal-footer">
+              <button
+                className="btn btn-outline-secondary"
+                onClick={() => { setSummaryModalOpen(false); setSummaryText(''); setSummaryError(null); }}
+              >
+                Close
+              </button>
+              <button
+                className="btn btn-success"
+                onClick={handleSaveSummaryAsNote}
+                disabled={summaryGenerating || !summaryText.trim() || !!summaryError}
+              >
+                <i className="fas fa-save mr-1" />
+                Save as Clinical Note
+              </button>
             </div>
           </div>
         </div>
       )}
     </div>
+  );
+};
+
+// ---------------------------------------------------------------------------
+// DraftEditor — contentEditable wrapper that avoids React re-render loops.
+// Uses a ref so React never re-writes the DOM while the user is typing.
+// ---------------------------------------------------------------------------
+
+const DraftEditor: React.FC<{ value: string; onChange: (v: string) => void }> = ({ value, onChange }) => {
+  const elRef = useRef<HTMLDivElement>(null);
+  const internalRef = useRef(value);
+
+  // Sync external value → DOM only when the value changes externally
+  // (e.g. when AI draft is first loaded).
+  useEffect(() => {
+    if (elRef.current && value !== internalRef.current) {
+      internalRef.current = value;
+      elRef.current.innerText = value;
+    }
+  }, [value]);
+
+  return (
+    <div
+      ref={elRef}
+      className="form-control tc-draft-editor"
+      contentEditable
+      suppressContentEditableWarning
+      style={{
+        flex: 1,
+        overflowY: 'auto',
+        whiteSpace: 'pre-wrap',
+        minHeight: '200px',
+        fontSize: '0.95rem',
+        lineHeight: '1.6',
+      }}
+      onInput={() => {
+        if (elRef.current) {
+          const text = elRef.current.innerText;
+          internalRef.current = text;
+          onChange(text);
+        }
+      }}
+    />
   );
 };
 
