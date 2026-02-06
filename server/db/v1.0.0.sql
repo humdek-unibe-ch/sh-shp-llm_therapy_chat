@@ -2,14 +2,80 @@
 -- SelfHelp Plugin: LLM Therapy Chat
 -- Version: 1.0.0
 -- Description: Therapy chat extension for sh-shp-llm plugin
--- 
+--
 -- DEPENDENCY: Requires sh-shp-llm plugin to be installed first!
 -- This plugin extends the llmConversations and llmMessages tables
 -- with therapy-specific functionality.
+--
+-- =====================================================
+-- DATABASE ARCHITECTURE OVERVIEW
+-- =====================================================
+--
+-- Base tables (owned by sh-shp-llm, NOT modified here):
+-- ┌────────────────────┐    ┌─────────────────┐
+-- │ llmConversations   │    │ llmMessages      │
+-- │ - id               │◄───│ - id             │
+-- │ - id_users (owner) │    │ - id_llmConv...  │
+-- │ - title            │    │ - role           │
+-- │ - model            │    │ - content        │
+-- │ - deleted/blocked  │    │ - timestamp      │
+-- └────────┬───────────┘    └────────┬─────────┘
+--          │                         │
+-- Therapy extension tables (owned by THIS plugin):
+--          │                         │
+-- ┌────────▼───────────────┐ ┌──────▼──────────────────┐
+-- │ therapyConversationMeta│ │ therapyMessageRecipients │
+-- │ - id_llmConversations  │ │ - id_llmMessages         │
+-- │ - id_therapist         │ │ - id_users (recipient)   │
+-- │ - mode/status/risk     │ │ - is_new (unread flag)   │
+-- │ - ai_enabled           │ │ - seen_at                │
+-- └────────┬───────────────┘ └──────────────────────────┘
+--          │
+-- ┌────────▼───────────────┐ ┌──────────────────────────┐
+-- │ therapyAlerts           │ │ therapyDraftMessages      │
+-- │ - id_llmConversations   │ │ - id_llmConversations     │
+-- │ - id_users (target)     │ │ - id_users (author)       │
+-- │ - type/severity         │ │ - content + ai_content    │
+-- │ - metadata (JSON)       │ │ - status (draft/sent/...) │
+-- └────────────────────────┘ └──────────────────────────┘
+--
+-- ┌────────────────────────┐ ┌──────────────────────────────┐
+-- │ therapyNotes            │ │ therapyTherapistAssignments   │
+-- │ - id_llmConversations   │ │ - id_users (therapist)        │
+-- │ - id_users (author)     │ │ - id_groups (patient group)   │
+-- │ - content               │ │ PURPOSE: "Which therapists    │
+-- │ - note_type             │ │  can monitor which groups?"   │
+-- └────────────────────────┘ └──────────────────────────────┘
+--
+-- =====================================================
+-- ACCESS CONTROL FLOW
+-- =====================================================
+--
+-- "Which conversations can therapist X see?"
+--
+-- 1. therapyTherapistAssignments: therapist → [group_1, group_2, ...]
+-- 2. users_groups (core SelfHelp):  patient  → [group_1, group_3, ...]
+-- 3. Intersection: patients in groups the therapist monitors
+-- 4. llmConversations: patient's conversation(s)
+-- 5. therapyConversationMeta: therapy metadata for each conversation
+--
+-- "Can patient Y chat?"
+--
+-- 1. Patient is in therapy_chat_subject_group (config) → sees floating button
+-- 2. Opens therapyChatSubject page → getOrCreate conversation
+-- 3. Messages stored in llmMessages, recipients tracked in therapyMessageRecipients
+--
+-- "What happens when patient tags therapist?"
+--
+-- 1. Patient sends message with @mention
+-- 2. System creates therapyAlert (type='tag_received', metadata has reason/urgency)
+-- 3. System creates therapyMessageRecipients for all assigned therapists
+-- 4. Therapist dashboard shows alert + unread message
+--
 -- =====================================================
 
 -- Add plugin entry
-INSERT IGNORE INTO plugins (name, version) 
+INSERT IGNORE INTO plugins (name, version)
 VALUES ('llm_therapy_chat', 'v1.0.0');
 
 -- =====================================================
@@ -17,19 +83,18 @@ VALUES ('llm_therapy_chat', 'v1.0.0');
 -- Verify that the LLM plugin is installed
 -- =====================================================
 
--- Check for llmConversations table (created by sh-shp-llm)
 DELIMITER //
 CREATE PROCEDURE check_llm_dependency()
 BEGIN
     DECLARE llm_installed INT DEFAULT 0;
-    
-    SELECT COUNT(*) INTO llm_installed 
-    FROM information_schema.TABLES 
-    WHERE TABLE_SCHEMA = DATABASE() 
+
+    SELECT COUNT(*) INTO llm_installed
+    FROM information_schema.TABLES
+    WHERE TABLE_SCHEMA = DATABASE()
     AND TABLE_NAME = 'llmConversations';
-    
+
     IF llm_installed = 0 THEN
-        SIGNAL SQLSTATE '45000' 
+        SIGNAL SQLSTATE '45000'
         SET MESSAGE_TEXT = 'ERROR: sh-shp-llm plugin must be installed first! The llmConversations table does not exist.';
     END IF;
 END //
@@ -40,7 +105,6 @@ DROP PROCEDURE check_llm_dependency;
 
 -- =====================================================
 -- FIELD TYPES
--- Add select-page and select-floating-position field types
 -- =====================================================
 
 INSERT IGNORE INTO fieldType (`name`, `position`) VALUES ('select-page', 10);
@@ -48,47 +112,53 @@ INSERT IGNORE INTO fieldType (`name`, `position`) VALUES ('select-floating-posit
 
 -- =====================================================
 -- LOOKUP ENTRIES
--- All ENUM-like values are stored in lookups table
+-- All ENUM-like values stored in the lookups table.
+-- These are referenced by FK from therapy tables.
 -- =====================================================
 
--- Chat Modes
+-- Chat Modes: how the conversation operates
 INSERT IGNORE INTO lookups (type_code, lookup_code, lookup_value, lookup_description) VALUES
 ('therapyChatModes', 'ai_hybrid', 'AI Hybrid', 'AI responds with therapist oversight and intervention capability'),
 ('therapyChatModes', 'human_only', 'Human Only', 'Only human therapist responds, no AI involvement');
 
--- Conversation Status
+-- Conversation Status: lifecycle state of a conversation
 INSERT IGNORE INTO lookups (type_code, lookup_code, lookup_value, lookup_description) VALUES
 ('therapyConversationStatus', 'active', 'Active', 'Active conversation, messages can be sent'),
 ('therapyConversationStatus', 'paused', 'Paused', 'Paused conversation, temporarily inactive'),
 ('therapyConversationStatus', 'closed', 'Closed', 'Closed conversation, no new messages');
 
--- Risk Levels
+-- Risk Levels: therapist-assessed risk level for a conversation
 INSERT IGNORE INTO lookups (type_code, lookup_code, lookup_value, lookup_description) VALUES
 ('therapyRiskLevels', 'low', 'Low', 'Low risk - normal activity'),
 ('therapyRiskLevels', 'medium', 'Medium', 'Medium risk - requires attention'),
 ('therapyRiskLevels', 'high', 'High', 'High risk - needs review'),
 ('therapyRiskLevels', 'critical', 'Critical', 'Critical risk - immediate attention required');
 
--- Tag Urgency
-INSERT IGNORE INTO lookups (type_code, lookup_code, lookup_value, lookup_description) VALUES
-('therapyTagUrgency', 'normal', 'Normal', 'Normal urgency tag'),
-('therapyTagUrgency', 'urgent', 'Urgent', 'Urgent tag - needs attention soon'),
-('therapyTagUrgency', 'emergency', 'Emergency', 'Emergency tag - immediate attention required');
-
--- Alert Types
+-- Alert Types: what triggered the alert
 INSERT IGNORE INTO lookups (type_code, lookup_code, lookup_value, lookup_description) VALUES
 ('therapyAlertTypes', 'danger_detected', 'Danger Detected', 'Dangerous keywords detected in message'),
-('therapyAlertTypes', 'tag_received', 'Tag Received', 'Therapist was tagged by subject'),
+('therapyAlertTypes', 'tag_received', 'Tag Received', 'Patient tagged/mentioned a therapist (replaces old therapyTags table)'),
 ('therapyAlertTypes', 'high_activity', 'High Activity', 'Unusual high message activity'),
 ('therapyAlertTypes', 'inactivity', 'Inactivity', 'Extended silence from subject'),
 ('therapyAlertTypes', 'new_message', 'New Message', 'New message received');
 
--- Alert Severity
+-- Alert Severity: urgency level of the alert
 INSERT IGNORE INTO lookups (type_code, lookup_code, lookup_value, lookup_description) VALUES
 ('therapyAlertSeverity', 'info', 'Info', 'Informational alert'),
 ('therapyAlertSeverity', 'warning', 'Warning', 'Warning - needs attention'),
 ('therapyAlertSeverity', 'critical', 'Critical', 'Critical - urgent attention required'),
 ('therapyAlertSeverity', 'emergency', 'Emergency', 'Emergency - immediate action required');
+
+-- Note Types: distinguishes manual notes from AI summaries
+INSERT IGNORE INTO lookups (type_code, lookup_code, lookup_value, lookup_description) VALUES
+('therapyNoteTypes', 'manual', 'Manual Note', 'Note written manually by the therapist'),
+('therapyNoteTypes', 'ai_summary', 'AI Summary', 'Conversation summary generated by AI');
+
+-- Draft Message Statuses: lifecycle of a therapist draft
+INSERT IGNORE INTO lookups (type_code, lookup_code, lookup_value, lookup_description) VALUES
+('therapyDraftStatus', 'draft', 'Draft', 'Message is being composed or edited'),
+('therapyDraftStatus', 'sent', 'Sent', 'Message has been sent to the patient'),
+('therapyDraftStatus', 'discarded', 'Discarded', 'Draft was discarded without sending');
 
 -- Floating Button Positions
 INSERT IGNORE INTO lookups (type_code, lookup_code, lookup_value, lookup_description) VALUES
@@ -96,6 +166,356 @@ INSERT IGNORE INTO lookups (type_code, lookup_code, lookup_value, lookup_descrip
 ('floatingButtonPositions', 'bottom-left', 'Bottom Left', 'Display floating button in bottom left corner'),
 ('floatingButtonPositions', 'top-right', 'Top Right', 'Display floating button in top right corner'),
 ('floatingButtonPositions', 'top-left', 'Top Left', 'Display floating button in top left corner');
+
+-- =====================================================
+-- TABLE 1: therapyTherapistAssignments
+-- =====================================================
+-- PURPOSE: Maps therapist users to patient groups they can monitor.
+-- This is the SINGLE SOURCE OF TRUTH for therapist access control.
+--
+-- A therapist can monitor multiple groups.
+-- A group can have multiple therapists.
+--
+-- HOW IT WORKS:
+-- - Admin assigns therapist to group(s) via UI hooks on user management page.
+-- - When therapist opens dashboard, system queries:
+--     "SELECT id_groups FROM therapyTherapistAssignments WHERE id_users = ?"
+-- - Then finds patients in those groups via users_groups.
+-- - Then finds conversations for those patients via llmConversations.
+--
+-- WHY NOT use existing users_groups + ACL?
+-- - users_groups defines which SelfHelp groups a user belongs to (for ACL/pages).
+-- - A therapist might be in group "therapist" for page access, but needs to
+--   MONITOR patients in groups "study_1", "study_2", etc.
+-- - This table decouples "page access role" from "patient monitoring scope".
+-- =====================================================
+
+CREATE TABLE IF NOT EXISTS `therapyTherapistAssignments` (
+    `id_users` INT(10) UNSIGNED ZEROFILL NOT NULL COMMENT 'Therapist user ID',
+    `id_groups` INT(10) UNSIGNED ZEROFILL NOT NULL COMMENT 'Patient group this therapist can monitor',
+    `assigned_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP COMMENT 'When the assignment was created',
+    PRIMARY KEY (`id_users`, `id_groups`),
+    KEY `idx_therapist` (`id_users`),
+    KEY `idx_group` (`id_groups`),
+    CONSTRAINT `fk_therapyAssign_users` FOREIGN KEY (`id_users`) REFERENCES `users` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
+    CONSTRAINT `fk_therapyAssign_groups` FOREIGN KEY (`id_groups`) REFERENCES `groups` (`id`) ON DELETE CASCADE ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- =====================================================
+-- TABLE 2: therapyConversationMeta
+-- =====================================================
+-- PURPOSE: Adds therapy-specific metadata to llmConversations (1:1 relationship).
+--
+-- DOES NOT contain id_groups because:
+-- - Access control is handled by therapyTherapistAssignments.
+-- - The patient who owns the conversation is in llmConversations.id_users.
+-- - The patient's group membership is in users_groups.
+-- - Putting id_groups here would duplicate information and break when
+--   a patient is in multiple groups or groups change.
+--
+-- FIELDS:
+-- - id_therapist: Currently assigned/active therapist (NULL = no one joined yet).
+--   This tracks who is actively engaged, NOT who has access.
+-- - ai_enabled: Quick boolean toggle. When therapist pauses AI, this goes to 0.
+-- - id_chatModes: The overall mode (ai_hybrid or human_only).
+-- - id_conversationStatus: Lifecycle status (active/paused/closed).
+-- - id_riskLevels: Therapist-assessed risk level.
+-- - therapist_last_seen / subject_last_seen: For read tracking at conversation level.
+-- =====================================================
+
+CREATE TABLE IF NOT EXISTS `therapyConversationMeta` (
+    `id` INT(10) UNSIGNED ZEROFILL NOT NULL AUTO_INCREMENT,
+    `id_llmConversations` INT(10) UNSIGNED ZEROFILL NOT NULL COMMENT '1:1 link to llmConversations',
+    `id_therapist` INT(10) UNSIGNED ZEROFILL DEFAULT NULL COMMENT 'Currently active therapist (NULL = no one joined)',
+    `id_chatModes` INT(10) UNSIGNED ZEROFILL DEFAULT NULL COMMENT 'FK to lookups (therapyChatModes)',
+    `ai_enabled` TINYINT(1) DEFAULT 1 COMMENT '1=AI can respond, 0=AI paused by therapist',
+    `id_conversationStatus` INT(10) UNSIGNED ZEROFILL DEFAULT NULL COMMENT 'FK to lookups (therapyConversationStatus)',
+    `id_riskLevels` INT(10) UNSIGNED ZEROFILL DEFAULT NULL COMMENT 'FK to lookups (therapyRiskLevels)',
+    `therapist_last_seen` TIMESTAMP NULL DEFAULT NULL COMMENT 'When therapist last viewed this conversation',
+    `subject_last_seen` TIMESTAMP NULL DEFAULT NULL COMMENT 'When subject last viewed messages',
+    `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `idx_llm_conversation` (`id_llmConversations`),
+    KEY `idx_therapist` (`id_therapist`),
+    KEY `idx_status` (`id_conversationStatus`),
+    KEY `idx_risk_level` (`id_riskLevels`),
+    KEY `idx_chat_mode` (`id_chatModes`),
+    CONSTRAINT `fk_therapyConvMeta_llmConv` FOREIGN KEY (`id_llmConversations`) REFERENCES `llmConversations` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
+    CONSTRAINT `fk_therapyConvMeta_therapist` FOREIGN KEY (`id_therapist`) REFERENCES `users` (`id`) ON DELETE SET NULL ON UPDATE CASCADE,
+    CONSTRAINT `fk_therapyConvMeta_chatModes` FOREIGN KEY (`id_chatModes`) REFERENCES `lookups` (`id`) ON DELETE SET NULL ON UPDATE CASCADE,
+    CONSTRAINT `fk_therapyConvMeta_status` FOREIGN KEY (`id_conversationStatus`) REFERENCES `lookups` (`id`) ON DELETE SET NULL ON UPDATE CASCADE,
+    CONSTRAINT `fk_therapyConvMeta_riskLevel` FOREIGN KEY (`id_riskLevels`) REFERENCES `lookups` (`id`) ON DELETE SET NULL ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- =====================================================
+-- TABLE 3: therapyMessageRecipients
+-- =====================================================
+-- PURPOSE: Tracks per-user message delivery and read status.
+--
+-- This is the notification backbone. Every message that should be seen
+-- by a participant gets a row here.
+--
+-- FLOW:
+-- 1. Patient sends message:
+--    → Insert recipient rows for ALL therapists assigned to patient's groups
+--      (via therapyTherapistAssignments → users_groups intersection)
+--    → is_new = 1 (unread)
+--
+-- 2. Therapist sends message:
+--    → Insert recipient row for the patient (subject)
+--    → is_new = 1 (unread)
+--
+-- 3. AI sends message (assistant role):
+--    → Insert recipient row for the patient (they see the AI response)
+--    → Optionally insert for therapists monitoring the conversation
+--
+-- 4. Patient tags therapist:
+--    → Same as #1, but also creates a therapyAlert (type='tag_received')
+--
+-- 5. User opens conversation / sees message:
+--    → UPDATE therapyMessageRecipients SET is_new = 0, seen_at = NOW()
+--      WHERE id_users = ? AND id_llmMessages IN (visible message IDs)
+--
+-- QUERYING UNREAD COUNT:
+--    SELECT COUNT(*) FROM therapyMessageRecipients
+--    WHERE id_users = ? AND is_new = 1
+-- =====================================================
+
+CREATE TABLE IF NOT EXISTS `therapyMessageRecipients` (
+    `id_llmMessages` INT(10) UNSIGNED ZEROFILL NOT NULL COMMENT 'Reference to llmMessages',
+    `id_users` INT(10) UNSIGNED ZEROFILL NOT NULL COMMENT 'Recipient user ID',
+    `is_new` TINYINT(1) DEFAULT 1 COMMENT '1=unread, 0=seen',
+    `seen_at` TIMESTAMP NULL DEFAULT NULL COMMENT 'When user marked message as seen',
+    PRIMARY KEY (`id_llmMessages`, `id_users`),
+    KEY `idx_user_unread` (`id_users`, `is_new`),
+    CONSTRAINT `fk_therapyMsgRecip_llmMsg` FOREIGN KEY (`id_llmMessages`) REFERENCES `llmMessages` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
+    CONSTRAINT `fk_therapyMsgRecip_users` FOREIGN KEY (`id_users`) REFERENCES `users` (`id`) ON DELETE CASCADE ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- =====================================================
+-- TABLE 4: therapyAlerts
+-- =====================================================
+-- PURPOSE: All notifications/alerts for therapists.
+-- This table ABSORBS the old therapyTags functionality.
+--
+-- Alert types (from lookups 'therapyAlertTypes'):
+-- - danger_detected: Danger keywords found in patient message
+-- - tag_received:    Patient @mentioned a therapist (was separate therapyTags table)
+-- - high_activity:   Unusual volume of messages
+-- - inactivity:      Extended silence from patient
+-- - new_message:     Generic new message notification
+--
+-- For tag_received alerts, the `metadata` JSON column stores:
+--   {
+--     "tag_reason": "overwhelmed",        -- from configured tag reasons
+--     "urgency": "urgent",                -- normal/urgent/emergency
+--     "message_id": 12345,                -- which message contained the @mention
+--     "message_preview": "I feel..."      -- truncated message content
+--   }
+--
+-- WHY NOT keep a separate therapyTags table?
+-- - Tags are just a specialized alert with extra metadata.
+-- - The acknowledgment workflow (is_read/read_at) is identical.
+-- - Having one table for all notifications simplifies:
+--   * Dashboard queries (one table to scan)
+--   * Unread count aggregation
+--   * Email notification triggers
+--   * Alert dismissal logic
+-- =====================================================
+
+CREATE TABLE IF NOT EXISTS `therapyAlerts` (
+    `id` INT(10) UNSIGNED ZEROFILL NOT NULL AUTO_INCREMENT,
+    `id_llmConversations` INT(10) UNSIGNED ZEROFILL NOT NULL COMMENT 'Which conversation triggered this alert',
+    `id_users` INT(10) UNSIGNED ZEROFILL DEFAULT NULL COMMENT 'Target therapist (NULL = all assigned therapists)',
+    `id_alertTypes` INT(10) UNSIGNED ZEROFILL NOT NULL COMMENT 'FK to lookups (therapyAlertTypes)',
+    `id_alertSeverity` INT(10) UNSIGNED ZEROFILL DEFAULT NULL COMMENT 'FK to lookups (therapyAlertSeverity)',
+    `message` TEXT COMMENT 'Human-readable alert description',
+    `metadata` JSON DEFAULT NULL COMMENT 'Type-specific data (tag reason, urgency, message_id, etc.)',
+    `is_read` TINYINT(1) DEFAULT 0 COMMENT '0=unread, 1=read/acknowledged',
+    `read_at` TIMESTAMP NULL DEFAULT NULL COMMENT 'When alert was read/acknowledged',
+    `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (`id`),
+    KEY `idx_conversation` (`id_llmConversations`),
+    KEY `idx_user` (`id_users`),
+    KEY `idx_type` (`id_alertTypes`),
+    KEY `idx_severity` (`id_alertSeverity`),
+    KEY `idx_unread` (`is_read`, `created_at`),
+    KEY `idx_user_unread` (`id_users`, `is_read`),
+    CONSTRAINT `fk_therapyAlerts_llmConv` FOREIGN KEY (`id_llmConversations`) REFERENCES `llmConversations` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
+    CONSTRAINT `fk_therapyAlerts_users` FOREIGN KEY (`id_users`) REFERENCES `users` (`id`) ON DELETE SET NULL ON UPDATE CASCADE,
+    CONSTRAINT `fk_therapyAlerts_alertTypes` FOREIGN KEY (`id_alertTypes`) REFERENCES `lookups` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
+    CONSTRAINT `fk_therapyAlerts_severity` FOREIGN KEY (`id_alertSeverity`) REFERENCES `lookups` (`id`) ON DELETE SET NULL ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- =====================================================
+-- TABLE 5: therapyNotes
+-- =====================================================
+-- PURPOSE: Therapist-only notes and AI-generated summaries.
+-- NOT visible to patients. Internal clinical documentation.
+--
+-- note_type (from lookups 'therapyNoteTypes'):
+-- - manual:     Therapist typed this note themselves
+-- - ai_summary: AI generated this as a conversation summary
+--
+-- WORKFLOW:
+-- 1. Therapist clicks "Add Note" → manual note saved
+-- 2. Therapist clicks "Summarize with AI" → backend calls LLM API →
+--    AI summary saved with note_type = 'ai_summary'
+-- 3. Therapist can edit AI summary before saving (edited content stored)
+-- =====================================================
+
+CREATE TABLE IF NOT EXISTS `therapyNotes` (
+    `id` INT(10) UNSIGNED ZEROFILL NOT NULL AUTO_INCREMENT,
+    `id_llmConversations` INT(10) UNSIGNED ZEROFILL NOT NULL COMMENT 'Which conversation this note is about',
+    `id_users` INT(10) UNSIGNED ZEROFILL NOT NULL COMMENT 'Therapist who created/saved the note',
+    `id_noteTypes` INT(10) UNSIGNED ZEROFILL DEFAULT NULL COMMENT 'FK to lookups (therapyNoteTypes)',
+    `content` TEXT NOT NULL COMMENT 'Note content (or edited AI summary)',
+    `ai_original_content` TEXT DEFAULT NULL COMMENT 'Original AI-generated content before editing (NULL for manual notes)',
+    `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    PRIMARY KEY (`id`),
+    KEY `idx_conversation` (`id_llmConversations`),
+    KEY `idx_therapist` (`id_users`),
+    KEY `idx_note_type` (`id_noteTypes`),
+    CONSTRAINT `fk_therapyNotes_llmConv` FOREIGN KEY (`id_llmConversations`) REFERENCES `llmConversations` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
+    CONSTRAINT `fk_therapyNotes_users` FOREIGN KEY (`id_users`) REFERENCES `users` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
+    CONSTRAINT `fk_therapyNotes_noteTypes` FOREIGN KEY (`id_noteTypes`) REFERENCES `lookups` (`id`) ON DELETE SET NULL ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- =====================================================
+-- TABLE 6: therapyDraftMessages
+-- =====================================================
+-- PURPOSE: AI-assisted message drafting workflow for therapists.
+--
+-- WORKFLOW:
+-- 1. Therapist clicks "Generate AI Response" for a conversation
+-- 2. Backend calls LLM API with conversation context
+-- 3. AI response saved here as draft (status='draft')
+-- 4. Therapist sees AI draft, edits it in the UI
+-- 5. Therapist clicks "Send" → content inserted into llmMessages as
+--    role='user' (from therapist), draft status → 'sent'
+-- 6. OR therapist discards → status → 'discarded'
+--
+-- WHY a separate table?
+-- - Drafts are NOT visible to patients until sent.
+-- - Therapist may have multiple drafts, edit over time, discard.
+-- - Audit trail: we keep ai_generated_content vs final edited_content.
+-- - Once sent, the actual message lives in llmMessages. The draft
+--   is linked via id_llmMessages for traceability.
+-- =====================================================
+
+CREATE TABLE IF NOT EXISTS `therapyDraftMessages` (
+    `id` INT(10) UNSIGNED ZEROFILL NOT NULL AUTO_INCREMENT,
+    `id_llmConversations` INT(10) UNSIGNED ZEROFILL NOT NULL COMMENT 'Which conversation this draft is for',
+    `id_users` INT(10) UNSIGNED ZEROFILL NOT NULL COMMENT 'Therapist who created the draft',
+    `ai_generated_content` TEXT DEFAULT NULL COMMENT 'Original AI-generated response (NULL if therapist wrote from scratch)',
+    `edited_content` TEXT DEFAULT NULL COMMENT 'Therapist-edited version (NULL if not yet edited)',
+    `id_draftStatus` INT(10) UNSIGNED ZEROFILL DEFAULT NULL COMMENT 'FK to lookups (therapyDraftStatus)',
+    `id_llmMessages` INT(10) UNSIGNED ZEROFILL DEFAULT NULL COMMENT 'Link to sent message in llmMessages (NULL until sent)',
+    `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    `sent_at` TIMESTAMP NULL DEFAULT NULL COMMENT 'When the draft was sent as a real message',
+    PRIMARY KEY (`id`),
+    KEY `idx_conversation` (`id_llmConversations`),
+    KEY `idx_user` (`id_users`),
+    KEY `idx_status` (`id_draftStatus`),
+    KEY `idx_sent_message` (`id_llmMessages`),
+    CONSTRAINT `fk_therapyDraft_llmConv` FOREIGN KEY (`id_llmConversations`) REFERENCES `llmConversations` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
+    CONSTRAINT `fk_therapyDraft_users` FOREIGN KEY (`id_users`) REFERENCES `users` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
+    CONSTRAINT `fk_therapyDraft_status` FOREIGN KEY (`id_draftStatus`) REFERENCES `lookups` (`id`) ON DELETE SET NULL ON UPDATE CASCADE,
+    CONSTRAINT `fk_therapyDraft_llmMsg` FOREIGN KEY (`id_llmMessages`) REFERENCES `llmMessages` (`id`) ON DELETE SET NULL ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- =====================================================
+-- VIEWS
+-- =====================================================
+-- Views resolve FK lookup IDs to human-readable codes/labels
+-- so application code doesn't need to join lookups manually.
+-- =====================================================
+
+-- View: Therapy Conversations (main dashboard query source)
+-- Joins: therapyConversationMeta + llmConversations + users + lookups
+CREATE OR REPLACE VIEW `view_therapyConversations` AS
+SELECT
+    tcm.id,
+    tcm.id_llmConversations,
+    tcm.id_therapist,
+    tcm.ai_enabled,
+    tcm.therapist_last_seen,
+    tcm.subject_last_seen,
+    tcm.created_at,
+    tcm.updated_at,
+    -- From llmConversations (the patient's conversation)
+    lc.id_users,
+    lc.title,
+    lc.model,
+    lc.deleted,
+    lc.blocked,
+    -- Patient info
+    u.name AS subject_name,
+    vc.code AS subject_code,
+    u.email AS subject_email,
+    -- Therapist info
+    t.name AS therapist_name,
+    -- Resolved lookup values
+    mode_lookup.lookup_code AS mode,
+    mode_lookup.lookup_value AS mode_label,
+    status_lookup.lookup_code AS status,
+    status_lookup.lookup_value AS status_label,
+    risk_lookup.lookup_code AS risk_level,
+    risk_lookup.lookup_value AS risk_level_label
+FROM therapyConversationMeta tcm
+INNER JOIN llmConversations lc ON lc.id = tcm.id_llmConversations
+INNER JOIN users u ON u.id = lc.id_users
+LEFT JOIN validation_codes vc ON vc.id_users = u.id AND vc.consumed IS NULL
+LEFT JOIN users t ON t.id = tcm.id_therapist
+LEFT JOIN lookups mode_lookup ON mode_lookup.id = tcm.id_chatModes
+LEFT JOIN lookups status_lookup ON status_lookup.id = tcm.id_conversationStatus
+LEFT JOIN lookups risk_lookup ON risk_lookup.id = tcm.id_riskLevels;
+
+-- View: Therapy Alerts (dashboard alerts panel)
+-- Resolves alert type and severity to readable codes/labels
+CREATE OR REPLACE VIEW `view_therapyAlerts` AS
+SELECT
+    ta.id,
+    ta.id_llmConversations,
+    ta.id_users,
+    ta.message,
+    ta.metadata,
+    ta.is_read,
+    ta.read_at,
+    ta.created_at,
+    -- Conversation info
+    lc.title AS conversation_title,
+    -- Patient info (conversation owner)
+    u.name AS subject_name,
+    vc.code AS subject_code,
+    -- Resolved lookup values
+    type_lookup.lookup_code AS alert_type,
+    type_lookup.lookup_value AS alert_type_label,
+    severity_lookup.lookup_code AS severity,
+    severity_lookup.lookup_value AS severity_label
+FROM therapyAlerts ta
+INNER JOIN llmConversations lc ON lc.id = ta.id_llmConversations
+INNER JOIN users u ON u.id = lc.id_users
+LEFT JOIN validation_codes vc ON vc.id_users = u.id AND vc.consumed IS NULL
+LEFT JOIN lookups type_lookup ON type_lookup.id = ta.id_alertTypes
+LEFT JOIN lookups severity_lookup ON severity_lookup.id = ta.id_alertSeverity;
+
+-- View: Therapist Assignments (admin/management)
+-- Shows which therapists are assigned to which patient groups
+CREATE OR REPLACE VIEW `view_therapyTherapistAssignments` AS
+SELECT
+    tta.id_users,
+    tta.id_groups,
+    tta.assigned_at,
+    u.name AS therapist_name,
+    u.email AS therapist_email,
+    g.name AS group_name
+FROM therapyTherapistAssignments tta
+INNER JOIN users u ON u.id = tta.id_users
+INNER JOIN `groups` g ON g.id = tta.id_groups;
 
 -- =====================================================
 -- PAGE TYPE FOR MODULE CONFIGURATION
@@ -123,8 +543,8 @@ INSERT IGNORE INTO `fields` (`id`, `name`, `id_type`, `display`) VALUES
 -- Link fields to page type
 INSERT IGNORE INTO `pageType_fields` (`id_pageType`, `id_fields`, `default_value`, `help`) VALUES
 ((SELECT id FROM pageType WHERE `name` = 'sh_module_llm_therapy_chat'), get_field_id('title'), 'LLM Therapy Chat Configuration', 'Page title'),
-((SELECT id FROM pageType WHERE `name` = 'sh_module_llm_therapy_chat'), get_field_id('therapy_chat_subject_group'), (SELECT id FROM `groups` WHERE `name` = 'subject' LIMIT 1), 'Select the group that contains subjects (patients)'),
-((SELECT id FROM pageType WHERE `name` = 'sh_module_llm_therapy_chat'), get_field_id('therapy_chat_therapist_group'), (SELECT id FROM `groups` WHERE `name` = 'therapist' LIMIT 1), 'Select the group that contains therapists'),
+((SELECT id FROM pageType WHERE `name` = 'sh_module_llm_therapy_chat'), get_field_id('therapy_chat_subject_group'), (SELECT id FROM `groups` WHERE `name` = 'subject' LIMIT 1), 'Select the group that contains subjects (patients). Members of this group will see the floating chat button and can access the therapy chat interface.'),
+((SELECT id FROM pageType WHERE `name` = 'sh_module_llm_therapy_chat'), get_field_id('therapy_chat_therapist_group'), (SELECT id FROM `groups` WHERE `name` = 'therapist' LIMIT 1), 'Select the group that contains therapists. Members of this group will see the floating dashboard button. NOTE: Actual patient monitoring access is controlled via therapyTherapistAssignments (per-therapist group assignments).'),
 ((SELECT id FROM pageType WHERE `name` = 'sh_module_llm_therapy_chat'), get_field_id('therapy_chat_subject_page'), NULL, 'Page ID for subject/patient chat interface'),
 ((SELECT id FROM pageType WHERE `name` = 'sh_module_llm_therapy_chat'), get_field_id('therapy_chat_therapist_page'), NULL, 'Page ID for therapist dashboard'),
 ((SELECT id FROM pageType WHERE `name` = 'sh_module_llm_therapy_chat'), get_field_id('therapy_chat_floating_icon'), 'fa-comments', 'Font Awesome icon class for the floating button'),
@@ -134,11 +554,6 @@ INSERT IGNORE INTO `pageType_fields` (`id_pageType`, `id_fields`, `default_value
 ((SELECT id FROM pageType WHERE `name` = 'sh_module_llm_therapy_chat'), get_field_id('therapy_chat_polling_interval'), '3', 'Polling interval in seconds for message updates'),
 ((SELECT id FROM pageType WHERE `name` = 'sh_module_llm_therapy_chat'), get_field_id('therapy_chat_enable_tagging'), '1', 'Enable @mention tagging for therapists'),
 ((SELECT id FROM pageType WHERE `name` = 'sh_module_llm_therapy_chat'), get_field_id('therapy_tag_reasons'), '[{"key":"overwhelmed","label":"I am feeling overwhelmed","urgency":"normal"},{"key":"need_talk","label":"I need to talk soon","urgency":"urgent"},{"key":"urgent","label":"This feels urgent","urgency":"urgent"},{"key":"emergency","label":"Emergency - please respond immediately","urgency":"emergency"}]', 'JSON array of tag reasons. Each item has: key (unique identifier), label (displayed text), urgency (normal/urgent/emergency). Use @ to tag therapist, # to select reason.');
-
--- Set default values for configuration page fields
-INSERT IGNORE INTO `pages_fields` (`id_pages`, `id_fields`, `default_value`, `help`) VALUES
-(@id_page_therapy_chat_config, get_field_id('therapy_chat_subject_group'), (SELECT id FROM `groups` WHERE `name` = 'subject' LIMIT 1), 'Select the group that contains subjects (patients)'),
-(@id_page_therapy_chat_config, get_field_id('therapy_chat_therapist_group'), (SELECT id FROM `groups` WHERE `name` = 'therapist' LIMIT 1), 'Select the group that contains therapists');
 
 -- =====================================================
 -- CREATE CONFIGURATION PAGE
@@ -155,220 +570,32 @@ INSERT IGNORE INTO `acl_groups` (`id_groups`, `id_pages`, `acl_select`, `acl_ins
 VALUES ((SELECT id FROM `groups` WHERE `name` = 'admin'), @id_page_therapy_chat_config, '1', '0', '1', '0');
 
 INSERT IGNORE INTO `pages_fields_translation` (`id_pages`, `id_fields`, `id_languages`, `content`)
-VALUES 
+VALUES
 (@id_page_therapy_chat_config, get_field_id('title'), '0000000003', 'LLM Therapy Chat Configuration'),
 (@id_page_therapy_chat_config, get_field_id('title'), '0000000002', 'LLM Therapie-Chat Konfiguration');
 
--- =====================================================
--- THERAPY MESSAGE RECIPIENTS
--- Tracks per-user message seen status (similar to chatRecipiants)
--- =====================================================
-
-CREATE TABLE IF NOT EXISTS `therapyMessageRecipients` (
-    `id_llmMessages` INT(10) UNSIGNED ZEROFILL NOT NULL COMMENT 'Reference to llmMessages',
-    `id_users` INT(10) UNSIGNED ZEROFILL NOT NULL COMMENT 'Recipient user ID',
-    `is_new` TINYINT(1) DEFAULT 1 COMMENT '1=new unread, 0=seen',
-    `seen_at` TIMESTAMP NULL DEFAULT NULL COMMENT 'When user marked message as seen',
-    PRIMARY KEY (`id_llmMessages`, `id_users`),
-    KEY `idx_message` (`id_llmMessages`),
-    KEY `idx_user` (`id_users`),
-    KEY `idx_unread` (`is_new`, `id_users`),
-    CONSTRAINT `fk_therapyMessageRecipients_llmMessages` FOREIGN KEY (`id_llmMessages`) REFERENCES `llmMessages` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
-    CONSTRAINT `fk_therapyMessageRecipients_users` FOREIGN KEY (`id_users`) REFERENCES `users` (`id`) ON DELETE CASCADE ON UPDATE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
--- Therapy metadata for LLM conversations (1:1 relationship with llmConversations)
--- This table adds therapy-specific fields to conversations
-CREATE TABLE IF NOT EXISTS `therapyConversationMeta` (
-    `id` INT(10) UNSIGNED ZEROFILL NOT NULL AUTO_INCREMENT,
-    `id_llmConversations` INT(10) UNSIGNED ZEROFILL NOT NULL COMMENT 'Reference to llmConversations',
-    `id_groups` INT(10) UNSIGNED ZEROFILL NOT NULL COMMENT 'Access group for therapist assignment',
-    `id_therapist` INT(10) UNSIGNED ZEROFILL DEFAULT NULL COMMENT 'Assigned therapist user ID',
-    `id_chatModes` INT(10) UNSIGNED ZEROFILL DEFAULT NULL COMMENT 'FK to lookups (therapyChatModes)',
-    `ai_enabled` TINYINT(1) DEFAULT 1 COMMENT 'Can AI respond in this conversation',
-    `id_conversationStatus` INT(10) UNSIGNED ZEROFILL DEFAULT NULL COMMENT 'FK to lookups (therapyConversationStatus)',
-    `id_riskLevels` INT(10) UNSIGNED ZEROFILL DEFAULT NULL COMMENT 'FK to lookups (therapyRiskLevels)',
-    `therapist_last_seen` TIMESTAMP NULL DEFAULT NULL COMMENT 'When therapist last viewed this conversation',
-    `subject_last_seen` TIMESTAMP NULL DEFAULT NULL COMMENT 'When subject last viewed messages',
-    `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    PRIMARY KEY (`id`),
-    UNIQUE KEY `idx_llm_conversation` (`id_llmConversations`),
-    KEY `idx_group` (`id_groups`),
-    KEY `idx_therapist` (`id_therapist`),
-    KEY `idx_status` (`id_conversationStatus`),
-    KEY `idx_risk_level` (`id_riskLevels`),
-    KEY `idx_chat_mode` (`id_chatModes`),
-    CONSTRAINT `fk_therapyConversationMeta_llmConversations` FOREIGN KEY (`id_llmConversations`) REFERENCES `llmConversations` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
-    CONSTRAINT `fk_therapyConversationMeta_groups` FOREIGN KEY (`id_groups`) REFERENCES `groups` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
-    CONSTRAINT `fk_therapyConversationMeta_therapist` FOREIGN KEY (`id_therapist`) REFERENCES `users` (`id`) ON DELETE SET NULL ON UPDATE CASCADE,
-    CONSTRAINT `fk_therapyConversationMeta_chatModes` FOREIGN KEY (`id_chatModes`) REFERENCES `lookups` (`id`) ON DELETE SET NULL ON UPDATE CASCADE,
-    CONSTRAINT `fk_therapyConversationMeta_status` FOREIGN KEY (`id_conversationStatus`) REFERENCES `lookups` (`id`) ON DELETE SET NULL ON UPDATE CASCADE,
-    CONSTRAINT `fk_therapyConversationMeta_riskLevel` FOREIGN KEY (`id_riskLevels`) REFERENCES `lookups` (`id`) ON DELETE SET NULL ON UPDATE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
--- Tagging system for @mentions (references llmMessages)
-CREATE TABLE IF NOT EXISTS `therapyTags` (
-    `id` INT(10) UNSIGNED ZEROFILL NOT NULL AUTO_INCREMENT,
-    `id_llmMessages` INT(10) UNSIGNED ZEROFILL NOT NULL COMMENT 'Reference to llmMessages',
-    `id_users` INT(10) UNSIGNED ZEROFILL NOT NULL COMMENT 'Tagged user ID (therapist)',
-    `tag_reason` VARCHAR(255) DEFAULT NULL COMMENT 'Tag reason key from JSON config',
-    `id_tagUrgency` INT(10) UNSIGNED ZEROFILL DEFAULT NULL COMMENT 'FK to lookups (therapyTagUrgency)',
-    `acknowledged` TINYINT(1) DEFAULT 0,
-    `acknowledged_at` TIMESTAMP NULL DEFAULT NULL,
-    `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    PRIMARY KEY (`id`),
-    KEY `idx_message` (`id_llmMessages`),
-    KEY `idx_tagged_user` (`id_users`),
-    KEY `idx_acknowledged` (`acknowledged`),
-    KEY `idx_urgency` (`id_tagUrgency`),
-    CONSTRAINT `fk_therapyTags_llmMessages` FOREIGN KEY (`id_llmMessages`) REFERENCES `llmMessages` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
-    CONSTRAINT `fk_therapyTags_users` FOREIGN KEY (`id_users`) REFERENCES `users` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
-    CONSTRAINT `fk_therapyTags_urgency` FOREIGN KEY (`id_tagUrgency`) REFERENCES `lookups` (`id`) ON DELETE SET NULL ON UPDATE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
--- Alerts and notifications for therapists
-CREATE TABLE IF NOT EXISTS `therapyAlerts` (
-    `id` INT(10) UNSIGNED ZEROFILL NOT NULL AUTO_INCREMENT,
-    `id_llmConversations` INT(10) UNSIGNED ZEROFILL NOT NULL,
-    `id_users` INT(10) UNSIGNED ZEROFILL DEFAULT NULL COMMENT 'Target therapist (NULL = all in group)',
-    `id_alertTypes` INT(10) UNSIGNED ZEROFILL NOT NULL COMMENT 'FK to lookups (therapyAlertTypes)',
-    `id_alertSeverity` INT(10) UNSIGNED ZEROFILL DEFAULT NULL COMMENT 'FK to lookups (therapyAlertSeverity)',
-    `message` TEXT,
-    `metadata` JSON DEFAULT NULL COMMENT 'Additional alert data',
-    `is_read` TINYINT(1) DEFAULT 0,
-    `read_at` TIMESTAMP NULL DEFAULT NULL,
-    `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    PRIMARY KEY (`id`),
-    KEY `idx_conversation` (`id_llmConversations`),
-    KEY `idx_user` (`id_users`),
-    KEY `idx_type` (`id_alertTypes`),
-    KEY `idx_severity` (`id_alertSeverity`),
-    KEY `idx_unread` (`is_read`, `created_at`),
-    CONSTRAINT `fk_therapyAlerts_llmConversations` FOREIGN KEY (`id_llmConversations`) REFERENCES `llmConversations` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
-    CONSTRAINT `fk_therapyAlerts_users` FOREIGN KEY (`id_users`) REFERENCES `users` (`id`) ON DELETE SET NULL ON UPDATE CASCADE,
-    CONSTRAINT `fk_therapyAlerts_alertTypes` FOREIGN KEY (`id_alertTypes`) REFERENCES `lookups` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
-    CONSTRAINT `fk_therapyAlerts_alertSeverity` FOREIGN KEY (`id_alertSeverity`) REFERENCES `lookups` (`id`) ON DELETE SET NULL ON UPDATE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
--- Therapist notes on conversations (internal, not visible to subjects)
-CREATE TABLE IF NOT EXISTS `therapyNotes` (
-    `id` INT(10) UNSIGNED ZEROFILL NOT NULL AUTO_INCREMENT,
-    `id_llmConversations` INT(10) UNSIGNED ZEROFILL NOT NULL,
-    `id_users` INT(10) UNSIGNED ZEROFILL NOT NULL COMMENT 'Therapist who wrote the note',
-    `content` TEXT NOT NULL,
-    `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    PRIMARY KEY (`id`),
-    KEY `idx_conversation` (`id_llmConversations`),
-    KEY `idx_therapist` (`id_users`),
-    CONSTRAINT `fk_therapyNotes_llmConversations` FOREIGN KEY (`id_llmConversations`) REFERENCES `llmConversations` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
-    CONSTRAINT `fk_therapyNotes_users` FOREIGN KEY (`id_users`) REFERENCES `users` (`id`) ON DELETE CASCADE ON UPDATE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
--- =====================================================
--- VIEW FOR EASY QUERYING WITH LOOKUP VALUES
--- =====================================================
-
-CREATE OR REPLACE VIEW `view_therapyConversations` AS
-SELECT
-    tcm.id,
-    tcm.id_llmConversations,
-    tcm.id_groups,
-    tcm.id_therapist,
-    tcm.ai_enabled,
-    tcm.therapist_last_seen,
-    tcm.subject_last_seen,
-    tcm.created_at,
-    tcm.updated_at,
-    lc.id_users,
-    lc.title,
-    lc.model,
-    lc.deleted,
-    lc.blocked,
-    u.name as subject_name,
-    vc.code as subject_code,
-    u.email as subject_email,
-    t.name as therapist_name,
-    g.name as group_name,
-    mode_lookup.lookup_code as mode,
-    mode_lookup.lookup_value as mode_label,
-    status_lookup.lookup_code as status,
-    status_lookup.lookup_value as status_label,
-    risk_lookup.lookup_code as risk_level,
-    risk_lookup.lookup_value as risk_level_label
-FROM therapyConversationMeta tcm
-INNER JOIN llmConversations lc ON lc.id = tcm.id_llmConversations
-INNER JOIN users u ON u.id = lc.id_users
-LEFT JOIN validation_codes vc ON vc.id_users = u.id AND vc.consumed IS NULL
-INNER JOIN `groups` g ON g.id = tcm.id_groups
-LEFT JOIN users t ON t.id = tcm.id_therapist
-LEFT JOIN lookups mode_lookup ON mode_lookup.id = tcm.id_chatModes
-LEFT JOIN lookups status_lookup ON status_lookup.id = tcm.id_conversationStatus
-LEFT JOIN lookups risk_lookup ON risk_lookup.id = tcm.id_riskLevels;
-
-CREATE OR REPLACE VIEW `view_therapyTags` AS
-SELECT 
-    tt.id,
-    tt.id_llmMessages,
-    tt.id_users,
-    tt.tag_reason,
-    tt.acknowledged,
-    tt.acknowledged_at,
-    tt.created_at,
-    lm.content as message_content,
-    lm.timestamp as message_time,
-    lm.id_llmConversations as conversation_id,
-    u.name as therapist_name,
-    urgency_lookup.lookup_code as urgency,
-    urgency_lookup.lookup_value as urgency_label
-FROM therapyTags tt
-INNER JOIN llmMessages lm ON lm.id = tt.id_llmMessages
-INNER JOIN users u ON u.id = tt.id_users
-LEFT JOIN lookups urgency_lookup ON urgency_lookup.id = tt.id_tagUrgency;
-
-CREATE OR REPLACE VIEW `view_therapyAlerts` AS
-SELECT
-    ta.id,
-    ta.id_llmConversations,
-    ta.id_users,
-    ta.message,
-    ta.metadata,
-    ta.is_read,
-    ta.read_at,
-    ta.created_at,
-    lc.title as conversation_title,
-    u.name as subject_name,
-    vc.code as subject_code,
-    type_lookup.lookup_code as alert_type,
-    type_lookup.lookup_value as alert_type_label,
-    severity_lookup.lookup_code as severity,
-    severity_lookup.lookup_value as severity_label
-FROM therapyAlerts ta
-INNER JOIN llmConversations lc ON lc.id = ta.id_llmConversations
-INNER JOIN users u ON u.id = lc.id_users
-LEFT JOIN validation_codes vc ON vc.id_users = u.id AND vc.consumed IS NULL
-LEFT JOIN lookups type_lookup ON type_lookup.id = ta.id_alertTypes
-LEFT JOIN lookups severity_lookup ON severity_lookup.id = ta.id_alertSeverity;
+-- Set default values for configuration page fields
+INSERT IGNORE INTO `pages_fields` (`id_pages`, `id_fields`, `default_value`, `help`) VALUES
+(@id_page_therapy_chat_config, get_field_id('therapy_chat_subject_group'), (SELECT id FROM `groups` WHERE `name` = 'subject' LIMIT 1), 'Select the group that contains subjects (patients)'),
+(@id_page_therapy_chat_config, get_field_id('therapy_chat_therapist_group'), (SELECT id FROM `groups` WHERE `name` = 'therapist' LIMIT 1), 'Select the group that contains therapists');
 
 -- =====================================================
 -- STYLE REGISTRATION
 -- =====================================================
 
--- Add therapyChat style for subject chat interface (extends llmChat)
+-- therapyChat: subject/patient chat interface
 INSERT IGNORE INTO `styles` (`name`, `id_type`, `id_group`, `description`)
 VALUES ('therapyChat', (SELECT id FROM styleType WHERE `name` = 'component'), (SELECT id FROM styleGroup WHERE `name` = 'Form'), 'LLM Therapy Chat component for subject-therapist communication with AI support. Extends llmChat with therapy features.');
 
--- Add therapistDashboard style for therapist interface
+-- therapistDashboard: therapist monitoring interface
 INSERT IGNORE INTO `styles` (`name`, `id_type`, `id_group`, `description`)
 VALUES ('therapistDashboard', (SELECT id FROM styleType WHERE `name` = 'component'), (SELECT id FROM styleGroup WHERE `name` = 'intern'), 'Therapist dashboard for managing therapy conversations');
 
 -- =====================================================
--- STYLE FIELDS FOR therapyChat AND therapistDashboard
--- Reuses many fields from llmChat, adds therapy-specific ones
+-- STYLE FIELDS FOR therapyChat
 -- =====================================================
 
--- Add therapy-specific label fields for Subject Chat
+-- Therapy-specific label fields
 INSERT IGNORE INTO `fields` (`id`, `name`, `id_type`, `display`) VALUES
 (NULL, 'therapy_ai_label', get_field_type_id('text'), '1'),
 (NULL, 'therapy_therapist_label', get_field_type_id('text'), '1'),
@@ -378,9 +605,44 @@ INSERT IGNORE INTO `fields` (`id`, `name`, `id_type`, `display`) VALUES
 (NULL, 'therapy_mode_indicator_ai', get_field_type_id('text'), '1'),
 (NULL, 'therapy_mode_indicator_human', get_field_type_id('text'), '1');
 
+INSERT IGNORE INTO `styles_fields` (`id_styles`, `id_fields`, `default_value`, `help`) VALUES
+-- Core CSS
+(get_style_id('therapyChat'), get_field_id('css'), NULL, 'CSS classes for the chat container'),
+(get_style_id('therapyChat'), get_field_id('css_mobile'), NULL, 'CSS classes for mobile view'),
+(get_style_id('therapyChat'), get_field_id('debug'), '0', 'Enable debug mode for the section'),
+
+-- Therapy mode/feature config
+(get_style_id('therapyChat'), get_field_id('therapy_chat_default_mode'), 'ai_hybrid', 'Default chat mode for this instance'),
+(get_style_id('therapyChat'), get_field_id('therapy_chat_enable_tagging'), '1', 'Enable @mention tagging'),
+(get_style_id('therapyChat'), get_field_id('therapy_chat_polling_interval'), '3', 'Message polling interval in seconds'),
+(get_style_id('therapyChat'), get_field_id('therapy_tag_reasons'), '[{"key":"overwhelmed","label":"I am feeling overwhelmed","urgency":"normal"},{"key":"need_talk","label":"I need to talk soon","urgency":"urgent"},{"key":"urgent","label":"This feels urgent","urgency":"urgent"},{"key":"emergency","label":"Emergency - please respond immediately","urgency":"emergency"}]', 'JSON array of tag reasons with keys, labels, and urgency levels'),
+
+-- LLM configuration (reuses fields from llmChat)
+(get_style_id('therapyChat'), get_field_id('llm_model'), '', 'Select AI model'),
+(get_style_id('therapyChat'), get_field_id('llm_temperature'), '1', 'Temperature setting'),
+(get_style_id('therapyChat'), get_field_id('llm_max_tokens'), '2048', 'Max tokens'),
+(get_style_id('therapyChat'), get_field_id('conversation_context'), '', 'System context for AI (therapy-specific instructions)'),
+(get_style_id('therapyChat'), get_field_id('enable_danger_detection'), '1', 'Enable danger word detection'),
+(get_style_id('therapyChat'), get_field_id('danger_keywords'), 'suicide,selbstmord,kill myself,mich umbringen,self-harm,selbstverletzung,harm myself,mir schaden,end my life,mein leben beenden,overdose,überdosis', 'Danger keywords'),
+(get_style_id('therapyChat'), get_field_id('danger_notification_emails'), '', 'Alert email addresses'),
+(get_style_id('therapyChat'), get_field_id('danger_blocked_message'), 'I noticed some concerning content in your message. While I want to help, please consider reaching out to a trusted person or crisis hotline. Your well-being is important.', 'Message shown when danger detected'),
+
+-- Therapy-specific labels
+(get_style_id('therapyChat'), get_field_id('therapy_ai_label'), 'AI Assistant', 'Label for AI messages'),
+(get_style_id('therapyChat'), get_field_id('therapy_therapist_label'), 'Therapist', 'Label for therapist messages'),
+(get_style_id('therapyChat'), get_field_id('therapy_tag_button_label'), 'Tag Therapist', 'Tag button label'),
+(get_style_id('therapyChat'), get_field_id('therapy_empty_message'), 'No messages yet. Start the conversation!', 'Empty state message'),
+(get_style_id('therapyChat'), get_field_id('therapy_ai_thinking_text'), 'AI is thinking...', 'AI processing indicator'),
+(get_style_id('therapyChat'), get_field_id('therapy_mode_indicator_ai'), 'AI-assisted chat', 'Mode indicator for AI hybrid'),
+(get_style_id('therapyChat'), get_field_id('therapy_mode_indicator_human'), 'Therapist-only mode', 'Mode indicator for human only'),
+
+-- Reuse existing llmChat labels
+(get_style_id('therapyChat'), get_field_id('submit_button_label'), 'Send', 'Send button label'),
+(get_style_id('therapyChat'), get_field_id('message_placeholder'), 'Type your message...', 'Input placeholder'),
+(get_style_id('therapyChat'), get_field_id('loading_text'), 'Loading...', 'Loading text');
+
 -- =====================================================
 -- FIELDS FOR therapistDashboard
--- Comprehensive dashboard configuration for therapists
 -- =====================================================
 
 -- Dashboard UI labels and headings
@@ -476,50 +738,27 @@ INSERT IGNORE INTO `fields` (`id`, `name`, `id_type`, `display`) VALUES
 (NULL, 'dashboard_ai_paused_notice', get_field_type_id('text'), '1'),
 (NULL, 'dashboard_ai_resumed_notice', get_field_type_id('text'), '1');
 
-INSERT IGNORE INTO `styles_fields` (`id_styles`, `id_fields`, `default_value`, `help`) VALUES
--- Inherit core fields from llmChat pattern
-(get_style_id('therapyChat'), get_field_id('css'), NULL, 'CSS classes for the chat container'),
-(get_style_id('therapyChat'), get_field_id('css_mobile'), NULL, 'CSS classes for mobile view'),
-(get_style_id('therapyChat'), get_field_id('debug'), '0', 'Enable debug mode for the section'),
-(get_style_id('therapyChat'), get_field_id('therapy_chat_default_mode'), 'ai_hybrid', 'Default chat mode for this instance'),
-(get_style_id('therapyChat'), get_field_id('therapy_chat_enable_tagging'), '1', 'Enable @mention tagging'),
-(get_style_id('therapyChat'), get_field_id('therapy_chat_polling_interval'), '3', 'Message polling interval in seconds'),
-(get_style_id('therapyChat'), get_field_id('therapy_tag_reasons'), '[{"key":"overwhelmed","label":"I am feeling overwhelmed","urgency":"normal"},{"key":"need_talk","label":"I need to talk soon","urgency":"urgent"},{"key":"urgent","label":"This feels urgent","urgency":"urgent"},{"key":"emergency","label":"Emergency - please respond immediately","urgency":"emergency"}]', 'JSON array of tag reasons with keys, labels, and urgency levels'),
+-- Draft message labels
+INSERT IGNORE INTO `fields` (`id`, `name`, `id_type`, `display`) VALUES
+(NULL, 'dashboard_generate_draft_button', get_field_type_id('text'), '1'),
+(NULL, 'dashboard_edit_draft_button', get_field_type_id('text'), '1'),
+(NULL, 'dashboard_send_draft_button', get_field_type_id('text'), '1'),
+(NULL, 'dashboard_discard_draft_button', get_field_type_id('text'), '1'),
+(NULL, 'dashboard_draft_placeholder', get_field_type_id('text'), '1');
 
--- LLM configuration (uses same fields as llmChat)
-(get_style_id('therapyChat'), get_field_id('llm_model'), '', 'Select AI model'),
-(get_style_id('therapyChat'), get_field_id('llm_temperature'), '1', 'Temperature setting'),
-(get_style_id('therapyChat'), get_field_id('llm_max_tokens'), '2048', 'Max tokens'),
-(get_style_id('therapyChat'), get_field_id('conversation_context'), '', 'System context for AI (therapy-specific instructions)'),
-(get_style_id('therapyChat'), get_field_id('enable_danger_detection'), '1', 'Enable danger word detection'),
-(get_style_id('therapyChat'), get_field_id('danger_keywords'), 'suicide,selbstmord,kill myself,mich umbringen,self-harm,selbstverletzung,harm myself,mir schaden,end my life,mein leben beenden,overdose,überdosis', 'Danger keywords'),
-(get_style_id('therapyChat'), get_field_id('danger_notification_emails'), '', 'Alert email addresses'),
-(get_style_id('therapyChat'), get_field_id('danger_blocked_message'), 'I noticed some concerning content in your message. While I want to help, please consider reaching out to a trusted person or crisis hotline. Your well-being is important.', 'Message shown when danger detected'),
-
--- Therapy-specific labels
-(get_style_id('therapyChat'), get_field_id('therapy_ai_label'), 'AI Assistant', 'Label for AI messages'),
-(get_style_id('therapyChat'), get_field_id('therapy_therapist_label'), 'Therapist', 'Label for therapist messages'),
-(get_style_id('therapyChat'), get_field_id('therapy_tag_button_label'), 'Tag Therapist', 'Tag button label'),
-(get_style_id('therapyChat'), get_field_id('therapy_empty_message'), 'No messages yet. Start the conversation!', 'Empty state message'),
-(get_style_id('therapyChat'), get_field_id('therapy_ai_thinking_text'), 'AI is thinking...', 'AI processing indicator'),
-(get_style_id('therapyChat'), get_field_id('therapy_mode_indicator_ai'), 'AI-assisted chat', 'Mode indicator for AI hybrid'),
-(get_style_id('therapyChat'), get_field_id('therapy_mode_indicator_human'), 'Therapist-only mode', 'Mode indicator for human only'),
-
--- Reuse existing llmChat labels where applicable
-(get_style_id('therapyChat'), get_field_id('submit_button_label'), 'Send', 'Send button label'),
-(get_style_id('therapyChat'), get_field_id('message_placeholder'), 'Type your message...', 'Input placeholder'),
-(get_style_id('therapyChat'), get_field_id('loading_text'), 'Loading...', 'Loading text');
+-- Summarize labels
+INSERT IGNORE INTO `fields` (`id`, `name`, `id_type`, `display`) VALUES
+(NULL, 'dashboard_summarize_button', get_field_type_id('text'), '1'),
+(NULL, 'dashboard_summarize_save_button', get_field_type_id('text'), '1');
 
 -- =====================================================
 -- STYLE FIELDS FOR therapistDashboard
--- Comprehensive dashboard configuration for therapist monitoring
 -- =====================================================
 
 INSERT IGNORE INTO `styles_fields` (`id_styles`, `id_fields`, `default_value`, `help`) VALUES
 -- Core CSS
 (get_style_id('therapistDashboard'), get_field_id('css'), NULL, 'CSS classes for the dashboard container'),
 (get_style_id('therapistDashboard'), get_field_id('css_mobile'), NULL, 'CSS classes for mobile view'),
-
 (get_style_id('therapistDashboard'), get_field_id('debug'), '0', 'Enable debug mode for the section'),
 
 -- Dashboard UI labels and headings
@@ -563,7 +802,7 @@ INSERT IGNORE INTO `styles_fields` (`id_styles`, `id_fields`, `default_value`, `
 (get_style_id('therapistDashboard'), get_field_id('dashboard_human_mode_indicator'), 'Therapist-only mode', 'Indicator when AI is paused'),
 
 -- Action button labels
-(get_style_id('therapistDashboard'), get_field_id('dashboard_acknowledge_button'), 'Acknowledge', 'Button to acknowledge a tag'),
+(get_style_id('therapistDashboard'), get_field_id('dashboard_acknowledge_button'), 'Acknowledge', 'Button to acknowledge an alert/tag'),
 (get_style_id('therapistDashboard'), get_field_id('dashboard_dismiss_button'), 'Dismiss', 'Button to dismiss an alert'),
 (get_style_id('therapistDashboard'), get_field_id('dashboard_view_llm_button'), 'View in LLM Console', 'Button to open conversation in LLM console'),
 (get_style_id('therapistDashboard'), get_field_id('dashboard_join_conversation'), 'Join Conversation', 'Button to actively join a conversation'),
@@ -608,17 +847,28 @@ INSERT IGNORE INTO `styles_fields` (`id_styles`, `id_fields`, `default_value`, `
 -- Intervention messages
 (get_style_id('therapistDashboard'), get_field_id('dashboard_intervention_message'), 'Your therapist has joined the conversation.', 'Message shown to patient when therapist joins'),
 (get_style_id('therapistDashboard'), get_field_id('dashboard_ai_paused_notice'), 'AI responses have been paused. Your therapist will respond directly.', 'Message when AI is paused'),
-(get_style_id('therapistDashboard'), get_field_id('dashboard_ai_resumed_notice'), 'AI-assisted support has been resumed.', 'Message when AI is resumed');
+(get_style_id('therapistDashboard'), get_field_id('dashboard_ai_resumed_notice'), 'AI-assisted support has been resumed.', 'Message when AI is resumed'),
+
+-- Draft message labels
+(get_style_id('therapistDashboard'), get_field_id('dashboard_generate_draft_button'), 'Generate AI Draft', 'Button to generate AI response draft'),
+(get_style_id('therapistDashboard'), get_field_id('dashboard_edit_draft_button'), 'Edit Draft', 'Button to edit AI draft'),
+(get_style_id('therapistDashboard'), get_field_id('dashboard_send_draft_button'), 'Send Draft', 'Button to send edited draft'),
+(get_style_id('therapistDashboard'), get_field_id('dashboard_discard_draft_button'), 'Discard', 'Button to discard draft'),
+(get_style_id('therapistDashboard'), get_field_id('dashboard_draft_placeholder'), 'AI-generated response will appear here for your review...', 'Placeholder for draft area'),
+
+-- Summarize labels
+(get_style_id('therapistDashboard'), get_field_id('dashboard_summarize_button'), 'Summarize Conversation', 'Button to generate AI summary'),
+(get_style_id('therapistDashboard'), get_field_id('dashboard_summarize_save_button'), 'Save Summary', 'Button to save AI summary as note');
 
 -- =====================================================
 -- PAGES FOR SUBJECT AND THERAPIST
 -- =====================================================
 
 -- Subject chat page
-INSERT IGNORE INTO pages (`id`, `keyword`, `url`, `protocol`, `id_actions`, `id_navigation_section`, `parent`, `is_headless`, `nav_position`, `footer_position`, `id_type`, `id_pageAccessTypes`) 
+INSERT IGNORE INTO pages (`id`, `keyword`, `url`, `protocol`, `id_actions`, `id_navigation_section`, `parent`, `is_headless`, `nav_position`, `footer_position`, `id_type`, `id_pageAccessTypes`)
 VALUES (NULL, 'therapyChatSubject', '/therapy-chat/subject/[i:gid]?', 'GET|POST', '0000000003', NULL, NULL, '0', NULL, NULL, '0000000003', (SELECT id FROM lookups WHERE lookup_code = "mobile_and_web" LIMIT 0, 1));
 
-INSERT IGNORE INTO `acl_groups` (`id_groups`, `id_pages`, `acl_select`, `acl_insert`, `acl_update`, `acl_delete`) 
+INSERT IGNORE INTO `acl_groups` (`id_groups`, `id_pages`, `acl_select`, `acl_insert`, `acl_update`, `acl_delete`)
 VALUES ((SELECT id FROM `groups` WHERE `name` = 'admin'), (SELECT id FROM pages WHERE keyword = 'therapyChatSubject'), '1', '1', '1', '1');
 
 INSERT IGNORE INTO sections (id_styles, name) VALUES(get_style_id('container'), 'therapyChatSubject-container');
@@ -626,19 +876,18 @@ INSERT IGNORE INTO sections (id_styles, name) VALUES(get_style_id('therapyChat')
 INSERT IGNORE INTO pages_sections (id_pages, id_Sections, position) VALUES((SELECT id FROM pages WHERE keyword = 'therapyChatSubject'), (SELECT id FROM sections WHERE `name` = 'therapyChatSubject-container'), 1);
 INSERT IGNORE INTO sections_hierarchy (parent, child, position) VALUES((SELECT id FROM sections WHERE name = 'therapyChatSubject-container'), (SELECT id FROM sections WHERE `name` = 'therapyChatSubject-chat'), 1);
 
--- Add title translations for subject chat page
 INSERT IGNORE INTO `pages_fields_translation` (`id_pages`, `id_fields`, `id_languages`, `content`)
 VALUES
 ((SELECT id FROM pages WHERE keyword = 'therapyChatSubject'), get_field_id('title'), '0000000003', 'Therapy Chat'),
 ((SELECT id FROM pages WHERE keyword = 'therapyChatSubject'), get_field_id('title'), '0000000002', 'Therapie-Chat');
 
 -- Therapist dashboard page
-INSERT IGNORE INTO pages (`id`, `keyword`, `url`, `protocol`, `id_actions`, `id_navigation_section`, `parent`, `is_headless`, `nav_position`, `footer_position`, `id_type`, `id_pageAccessTypes`) 
+INSERT IGNORE INTO pages (`id`, `keyword`, `url`, `protocol`, `id_actions`, `id_navigation_section`, `parent`, `is_headless`, `nav_position`, `footer_position`, `id_type`, `id_pageAccessTypes`)
 VALUES (NULL, 'therapyChatTherapist', '/therapy-chat/therapist/[i:gid]?/[i:uid]?', 'GET|POST', '0000000003', NULL, NULL, '0', NULL, NULL, '0000000003', (SELECT id FROM lookups WHERE lookup_code = "mobile_and_web" LIMIT 0, 1));
 
-INSERT IGNORE INTO `acl_groups` (`id_groups`, `id_pages`, `acl_select`, `acl_insert`, `acl_update`, `acl_delete`) 
+INSERT IGNORE INTO `acl_groups` (`id_groups`, `id_pages`, `acl_select`, `acl_insert`, `acl_update`, `acl_delete`)
 VALUES ((SELECT id FROM `groups` WHERE `name` = 'admin'), (SELECT id FROM pages WHERE keyword = 'therapyChatTherapist'), '1', '1', '1', '1');
-INSERT IGNORE INTO `acl_groups` (`id_groups`, `id_pages`, `acl_select`, `acl_insert`, `acl_update`, `acl_delete`) 
+INSERT IGNORE INTO `acl_groups` (`id_groups`, `id_pages`, `acl_select`, `acl_insert`, `acl_update`, `acl_delete`)
 VALUES ((SELECT id FROM `groups` WHERE `name` = 'therapist'), (SELECT id FROM pages WHERE keyword = 'therapyChatTherapist'), '1', '1', '0', '0');
 
 INSERT IGNORE INTO sections (id_styles, name) VALUES(get_style_id('container'), 'therapyChatTherapist-container');
@@ -646,32 +895,27 @@ INSERT IGNORE INTO sections (id_styles, name) VALUES(get_style_id('therapistDash
 INSERT IGNORE INTO pages_sections (id_pages, id_Sections, position) VALUES((SELECT id FROM pages WHERE keyword = 'therapyChatTherapist'), (SELECT id FROM sections WHERE `name` = 'therapyChatTherapist-container'), 1);
 INSERT IGNORE INTO sections_hierarchy (parent, child, position) VALUES((SELECT id FROM sections WHERE name = 'therapyChatTherapist-container'), (SELECT id FROM sections WHERE `name` = 'therapyChatTherapist-dashboard'), 1);
 
--- Add title translations for therapist dashboard page
 INSERT IGNORE INTO `pages_fields_translation` (`id_pages`, `id_fields`, `id_languages`, `content`)
 VALUES
 ((SELECT id FROM pages WHERE keyword = 'therapyChatTherapist'), get_field_id('title'), '0000000003', 'Therapist Dashboard'),
 ((SELECT id FROM pages WHERE keyword = 'therapyChatTherapist'), get_field_id('title'), '0000000002', 'Therapeuten Dashboard');
 
 -- =====================================================
--- UPDATE PAGETYPE DEFAULT VALUES WITH CREATED PAGES
--- =====================================================
-
--- =====================================================
 -- HOOKS REGISTRATION
 -- =====================================================
 
--- Register hook for floating chat icon (similar to chat plugin)
+-- Floating chat icon hook (shows button in nav for subjects/therapists)
 INSERT IGNORE INTO `hooks` (`id_hookTypes`, `name`, `description`, `class`, `function`, `exec_class`, `exec_function`)
 VALUES ((SELECT id FROM lookups WHERE lookup_code = 'hook_on_function_execute' LIMIT 0,1), 'outputTherapyChatIcon', 'Output therapy chat icon next to profile. Shows unread message count.', 'NavView', 'output_profile', 'TherapyChatHooks', 'outputTherapyChatIcon');
 
--- Register hooks for select-page field type
+-- Hooks for select-page field type (CMS)
 INSERT IGNORE INTO `hooks` (`id_hookTypes`, `name`, `description`, `class`, `function`, `exec_class`, `exec_function`, `priority`)
 VALUES ((SELECT id FROM lookups WHERE lookup_code = 'hook_overwrite_return'), 'field-select-page-edit', 'Output select page field - edit mode', 'CmsView', 'create_field_form_item', 'TherapyChatHooks', 'outputFieldSelectPageEdit', 5);
 
 INSERT IGNORE INTO `hooks` (`id_hookTypes`, `name`, `description`, `class`, `function`, `exec_class`, `exec_function`, `priority`)
 VALUES ((SELECT id FROM lookups WHERE lookup_code = 'hook_overwrite_return'), 'field-select-page-view', 'Output select page field - view mode', 'CmsView', 'create_field_item', 'TherapyChatHooks', 'outputFieldSelectPageView', 5);
 
--- Register hooks for select-floating-position field type
+-- Hooks for select-floating-position field type (CMS)
 INSERT IGNORE INTO `hooks` (`id_hookTypes`, `name`, `description`, `class`, `function`, `exec_class`, `exec_function`, `priority`)
 VALUES ((SELECT id FROM lookups WHERE lookup_code = 'hook_overwrite_return'), 'field-select-floating-position-edit', 'Output select floating position field - edit mode', 'CmsView', 'create_field_form_item', 'TherapyChatHooks', 'outputFieldSelectFloatingPositionEdit', 5);
 
@@ -685,7 +929,10 @@ VALUES ((SELECT id FROM lookups WHERE lookup_code = 'hook_overwrite_return'), 'f
 INSERT IGNORE INTO lookups (type_code, lookup_code, lookup_value, lookup_description)
 VALUES ('transactionBy', 'by_therapy_chat_plugin', 'By Therapy Chat Plugin', 'Actions performed by the LLM Therapy Chat plugin');
 
--- Add page translations for configuration fields
+-- =====================================================
+-- CONFIG PAGE FIELD VALUES
+-- =====================================================
+
 INSERT IGNORE INTO `pages_fields_translation` (`id_pages`, `id_fields`, `id_languages`, `content`)
 VALUES
 (@id_page_therapy_chat_config, get_field_id('therapy_chat_subject_group'), '0000000001', (SELECT id FROM `groups` WHERE `name` = 'subject' LIMIT 1)),
@@ -701,40 +948,32 @@ VALUES
 (@id_page_therapy_chat_config, get_field_id('therapy_tag_reasons'), '0000000002', '[{"key":"overwhelmed","label":"I am feeling overwhelmed","urgency":"normal"},{"key":"need_talk","label":"I need to talk soon","urgency":"urgent"},{"key":"urgent","label":"This feels urgent","urgency":"urgent"},{"key":"emergency","label":"Emergency - please respond immediately","urgency":"emergency"}]');
 
 -- =====================================================
--- SPEECH-TO-TEXT CONFIGURATION FOR THERAPY CHAT
+-- SPEECH-TO-TEXT CONFIGURATION
 -- =====================================================
--- Re-use the audio model field type from sh-shp-llm plugin.
--- The field type 'select-audio-model' should already exist from llm plugin.
 
 -- Add speech-to-text fields to therapyChat style
--- These use the same fields as llmChat for consistency
 INSERT IGNORE INTO `styles_fields` (`id_styles`, `id_fields`, `default_value`, `help`) VALUES
-(get_style_id('therapyChat'), get_field_id('enable_speech_to_text'), '0', 
- 'Enable speech-to-text input for patients. When enabled and an audio model is selected, a microphone button appears in the message input area. Patients can click to record voice input which is transcribed to text in real-time.\n\n**Requirements:**\n- sh-shp-llm plugin must be installed\n- An audio model must be configured in the LLM settings\n- User must grant microphone permissions\n- Modern browser with MediaRecorder API support\n\n**Privacy:** Audio is processed in real-time and not stored permanently.'),
+(get_style_id('therapyChat'), get_field_id('enable_speech_to_text'), '0',
+ 'Enable speech-to-text input for patients. When enabled and an audio model is selected, a microphone button appears in the message input area.'),
 
-(get_style_id('therapyChat'), get_field_id('speech_to_text_model'), '', 
- 'Select the Whisper model for speech recognition. Leave empty to use the default model configured in the LLM plugin.\n\n**Recommended:** faster-whisper-large-v3 for best accuracy.\n\n**Note:** The microphone button will only appear when both this field is set AND the enable checkbox above is checked.');
+(get_style_id('therapyChat'), get_field_id('speech_to_text_model'), '',
+ 'Select the Whisper model for speech recognition. Leave empty to use the default model configured in the LLM plugin.');
 
 -- Add speech-to-text fields to therapistDashboard style
 INSERT IGNORE INTO `styles_fields` (`id_styles`, `id_fields`, `default_value`, `help`) VALUES
-(get_style_id('therapistDashboard'), get_field_id('enable_speech_to_text'), '0', 
- 'Enable speech-to-text input for therapists. When enabled and an audio model is selected, a microphone button appears in the message input area. Therapists can click to record voice input which is transcribed to text.\n\n**Requirements:**\n- sh-shp-llm plugin must be installed\n- An audio model must be configured\n- User must grant microphone permissions\n\n**Note:** This is useful for therapists who prefer voice dictation for longer responses.'),
+(get_style_id('therapistDashboard'), get_field_id('enable_speech_to_text'), '0',
+ 'Enable speech-to-text input for therapists. When enabled and an audio model is selected, a microphone button appears.'),
 
-(get_style_id('therapistDashboard'), get_field_id('speech_to_text_model'), '', 
- 'Select the Whisper model for speech recognition in the therapist dashboard. Leave empty to use the default model configured in the LLM plugin.');
+(get_style_id('therapistDashboard'), get_field_id('speech_to_text_model'), '',
+ 'Select the Whisper model for speech recognition in the therapist dashboard.');
 
--- =====================================================
--- ADD LANGUAGE FIELD FOR SPEECH RECOGNITION
--- =====================================================
--- Add language preference for better transcription accuracy
-
+-- Language field for speech recognition
 INSERT IGNORE INTO `fields` (`id`, `name`, `id_type`, `display`) VALUES
 (NULL, 'speech_to_text_language', get_field_type_id('text'), '0');
 
--- Add language field to both styles
 INSERT IGNORE INTO `styles_fields` (`id_styles`, `id_fields`, `default_value`, `help`) VALUES
-(get_style_id('therapyChat'), get_field_id('speech_to_text_language'), 'auto', 
- 'Language code for speech recognition (e.g., "en", "de", "fr"). Use "auto" for automatic detection.\n\nSupported languages depend on the Whisper model used.'),
+(get_style_id('therapyChat'), get_field_id('speech_to_text_language'), 'auto',
+ 'Language code for speech recognition (e.g., "en", "de", "fr"). Use "auto" for automatic detection.'),
 
-(get_style_id('therapistDashboard'), get_field_id('speech_to_text_language'), 'auto', 
+(get_style_id('therapistDashboard'), get_field_id('speech_to_text_language'), 'auto',
  'Language code for speech recognition (e.g., "en", "de", "fr"). Use "auto" for automatic detection.');
