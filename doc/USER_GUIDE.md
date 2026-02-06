@@ -79,6 +79,13 @@ directly to the patient.
 3. **Review and edit** the draft in the modal text area
 4. Click **"Send to Patient"** to send the message and close the modal, or **"Discard"** to cancel
 
+### Conversation Summarization
+
+1. Click **"Summarize"** next to the Generate AI Draft button
+2. A **modal dialog** opens while the AI generates a clinical summary
+3. Review the summary — it includes key topics, emotional state, interventions, progress, and risk flags
+4. Click **"Save as Clinical Note"** to store the summary as a note, or **"Close"** to dismiss
+
 ### Managing Conversations
 
 - **AI Toggle**: Pause or resume AI responses for a conversation

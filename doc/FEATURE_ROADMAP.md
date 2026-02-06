@@ -24,14 +24,14 @@
 - [x] Therapist group assignment via admin user page hook
 - [x] Speech-to-text input
 - [x] Markdown rendering for AI messages
-- [x] Polling-based real-time updates
+- [x] Lightweight two-phase polling (check_updates + conditional full fetch)
 - [x] Admin setup via SelfHelp page configuration
 
 ### Not Yet Implemented
 
 - [ ] Real-time WebSocket updates (currently polling)
 - [ ] File/image attachments in messages
-- [ ] AI conversation summary generation
+- [x] AI conversation summary generation with modal UI and save-as-note
 - [ ] Therapist-to-therapist messaging / handoff
 - [ ] Scheduled message sending
 - [ ] Patient self-assessment questionnaires
@@ -46,7 +46,7 @@
 
 ### v1.1.0 (Planned)
 - WebSocket support for real-time messaging
-- Conversation summary AI generation
+- Conversation summary AI generation (implemented: `generate_summary` endpoint, modal UI, save as clinical note)
 - Message search
 
 ### v1.2.0 (Planned)

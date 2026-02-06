@@ -80,13 +80,20 @@ export const SubjectChat: React.FC<SubjectChatProps> = ({ config }) => {
     })();
   }, []);  // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Also mark read after each poll
+  // Lightweight polling: quick check, only full fetch if new data
+  const lastKnownMsgIdRef = useRef<number | null>(null);
+
   const pollAndMark = useCallback(async () => {
-    await pollMessages();
     try {
+      const updates = await api.checkUpdates();
+      if (updates.latest_message_id === lastKnownMsgIdRef.current) return; // nothing new
+      lastKnownMsgIdRef.current = updates.latest_message_id;
+
+      // New messages detected — do the full fetch
+      await pollMessages();
       const res = await api.markMessagesRead();
       updateFloatingBadge(res.unread_count ?? 0);
-    } catch { /* ignore */ }
+    } catch { /* polling errors are non-fatal */ }
   }, [pollMessages, api]);
 
   usePolling({

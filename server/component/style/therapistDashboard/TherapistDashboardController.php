@@ -18,10 +18,12 @@ require_once __DIR__ . "/../../../constants/TherapyLookups.php";
  * - get_config, get_conversations, get_conversation, get_messages
  * - send_message, edit_message, delete_message
  * - toggle_ai, set_risk, set_status
- * - add_note, get_notes
+ * - add_note, edit_note, delete_note, get_notes
  * - mark_alert_read, mark_all_read, get_alerts
  * - get_stats, get_unread_counts, mark_messages_read
  * - create_draft, update_draft, send_draft, discard_draft
+ * - check_updates (lightweight polling)
+ * - generate_summary (conversation summarization via LLM)
  * - speech_transcribe
  *
  * @package LLM Therapy Chat Plugin
@@ -87,6 +89,7 @@ class TherapistDashboardController extends BaseController
             case 'send_draft': $this->handleSendDraft(); break;
             case 'discard_draft': $this->handleDiscardDraft(); break;
             case 'speech_transcribe': $this->handleSpeechTranscribe(); break;
+            case 'generate_summary': $this->handleGenerateSummary(); break;
         }
     }
 
@@ -102,6 +105,7 @@ class TherapistDashboardController extends BaseController
             case 'get_notes': $this->handleGetNotes(); break;
             case 'get_unread_counts': $this->handleGetUnreadCounts(); break;
             case 'get_groups': $this->handleGetGroups(); break;
+            case 'check_updates': $this->handleCheckUpdates(); break;
         }
     }
 
@@ -368,16 +372,56 @@ class TherapistDashboardController extends BaseController
         $uid = $this->validateTherapistOrFail();
 
         $cid = $_POST['conversation_id'] ?? null;
-        $aiContent = trim($_POST['ai_content'] ?? '');
 
-        if (!$cid || empty($aiContent)) {
-            $this->json(['error' => 'Conversation ID and AI content are required'], 400);
+        if (!$cid) {
+            $this->json(['error' => 'Conversation ID is required'], 400);
             return;
         }
 
         try {
+            // Build AI context from the conversation history
+            $systemContext = $this->model->get_db_field('conversation_context', '');
+            $contextMessages = $this->service->buildAIContext($cid, $systemContext, 50);
+
+            // Add a draft-specific instruction
+            $contextMessages[] = array(
+                'role' => 'system',
+                'content' => 'Generate a thoughtful, empathetic therapeutic response draft for the therapist to review and edit before sending to the patient. Focus on being supportive and clinically appropriate.'
+            );
+
+            // Get LLM config from the model
+            $model = $this->model->get_db_field('llm_model', '') ?: 'gpt-4o-mini';
+            $temperature = (float)$this->model->get_db_field('llm_temperature', '0.7');
+            $maxTokens = (int)$this->model->get_db_field('llm_max_tokens', '2048');
+
+            // Call LLM API to generate draft content
+            $response = $this->service->callLlmApi($contextMessages, $model, $temperature, $maxTokens);
+
+            if (!$response || empty($response['content'])) {
+                $this->json(['error' => 'AI did not generate a response. Please try again.'], 500);
+                return;
+            }
+
+            $aiContent = $response['content'];
+
+            // Save draft in database
             $draftId = $this->service->createDraft($cid, $uid, $aiContent);
-            $this->json(['success' => (bool)$draftId, 'draft_id' => $draftId]);
+
+            if (!$draftId) {
+                $this->json(['error' => 'Failed to save draft'], 500);
+                return;
+            }
+
+            // Return the full draft object so the frontend can display it
+            $this->json([
+                'success' => true,
+                'draft' => [
+                    'id' => $draftId,
+                    'ai_content' => $aiContent,
+                    'edited_content' => null,
+                    'status' => THERAPY_DRAFT_DRAFT
+                ]
+            ]);
         } catch (Exception $e) {
             $this->json(['error' => $e->getMessage()], 500);
         }
@@ -614,6 +658,130 @@ class TherapistDashboardController extends BaseController
         try {
             $groups = $this->service->getTherapistAssignedGroups($uid);
             $this->json(['groups' => $groups]);
+        } catch (Exception $e) {
+            $this->json(['error' => $e->getMessage()], 500);
+        }
+    }
+
+    /**
+     * Lightweight polling endpoint: returns only counts/flags so the frontend
+     * can decide whether a full fetch is needed.
+     */
+    private function handleCheckUpdates()
+    {
+        $uid = $this->validateTherapistOrFail();
+
+        try {
+            $unreadMessages = $this->service->getUnreadCountForUser($uid);
+            $unreadAlerts = $this->service->getUnreadAlertCount($uid);
+
+            // Get the latest message ID across all the therapist's conversations
+            $latestMsgId = $this->service->getLatestMessageIdForTherapist($uid);
+
+            $this->json([
+                'unread_messages' => (int)$unreadMessages,
+                'unread_alerts' => (int)$unreadAlerts,
+                'latest_message_id' => $latestMsgId
+            ]);
+        } catch (Exception $e) {
+            $this->json(['error' => $e->getMessage()], 500);
+        }
+    }
+
+    /**
+     * Generate a conversation summary using LLM.
+     * Creates a new LLM conversation linked to the therapist and section for audit trail.
+     */
+    private function handleGenerateSummary()
+    {
+        $uid = $this->validateTherapistOrFail();
+
+        $cid = $_POST['conversation_id'] ?? null;
+        if (!$cid) {
+            $this->json(['error' => 'Conversation ID is required'], 400);
+            return;
+        }
+
+        if (!$this->service->canAccessTherapyConversation($uid, $cid)) {
+            $this->json(['error' => 'Access denied'], 403);
+            return;
+        }
+
+        try {
+            // Get the customizable summarization context from the style field
+            $summaryContext = $this->model->get_db_field('therapy_summary_context', '');
+
+            // Build a complete conversation history for summarization
+            $messages = $this->service->getTherapyMessages($cid, 200);
+            $conversation = $this->service->getTherapyConversation($cid);
+
+            if (!$conversation) {
+                $this->json(['error' => 'Conversation not found'], 404);
+                return;
+            }
+
+            // Build LLM messages for summarization
+            $llmMessages = array();
+
+            // System instruction for summarization
+            $systemPrompt = "You are a clinical summarization assistant. Your task is to produce a concise, professional therapeutic summary of the conversation below.\n\n";
+            if (!empty($summaryContext)) {
+                $systemPrompt .= "Additional context and instructions from the therapist:\n" . $summaryContext . "\n\n";
+            }
+            $systemPrompt .= "Include: key topics discussed, patient emotional state, therapeutic interventions used, progress indicators, risk flags if any, and recommended next steps.";
+
+            $llmMessages[] = array('role' => 'system', 'content' => $systemPrompt);
+
+            // Add conversation history
+            foreach ($messages as $msg) {
+                if (!empty($msg['is_deleted'])) continue;
+
+                $senderLabel = '';
+                switch ($msg['sender_type'] ?? '') {
+                    case 'subject': $senderLabel = '[Patient]'; break;
+                    case 'therapist': $senderLabel = '[Therapist]'; break;
+                    case 'ai': $senderLabel = '[AI Assistant]'; break;
+                    case 'system': $senderLabel = '[System]'; break;
+                    default: $senderLabel = '[Unknown]';
+                }
+
+                $role = ($msg['role'] === 'assistant') ? 'assistant' : 'user';
+                $llmMessages[] = array(
+                    'role' => $role,
+                    'content' => $senderLabel . ' ' . $msg['content']
+                );
+            }
+
+            // Final user prompt requesting the summary
+            $llmMessages[] = array(
+                'role' => 'user',
+                'content' => 'Please generate a clinical summary of the above therapy conversation.'
+            );
+
+            // Call LLM
+            $model = $this->model->get_db_field('llm_model', '') ?: 'gpt-4o-mini';
+            $temperature = (float)$this->model->get_db_field('llm_temperature', '0.7');
+            $maxTokens = (int)$this->model->get_db_field('llm_max_tokens', '2048');
+
+            $response = $this->service->callLlmApi($llmMessages, $model, $temperature, $maxTokens);
+
+            if (!$response || empty($response['content'])) {
+                $this->json(['error' => 'AI did not generate a summary. Please try again.'], 500);
+                return;
+            }
+
+            // Create a new LLM conversation for the summary (for audit trail)
+            $summaryConvId = $this->service->createSummaryConversation(
+                $cid, $uid, $this->model->getSectionId(),
+                $response['content'], $llmMessages, $response
+            );
+
+            $this->json([
+                'success' => true,
+                'summary' => $response['content'],
+                'summary_conversation_id' => $summaryConvId,
+                'tokens_used' => $response['tokens_used'] ?? null
+            ]);
         } catch (Exception $e) {
             $this->json(['error' => $e->getMessage()], 500);
         }

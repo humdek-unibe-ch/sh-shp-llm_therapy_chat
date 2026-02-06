@@ -30,6 +30,16 @@ Each `therapyChat` style instance can be configured with:
 | `therapy_chat_speech_to_text_enabled` | `0` | Enable speech input |
 | `therapy_chat_help_text` | `Use @therapist to request your therapist, or #topic to tag a predefined topic.` | Help text shown below chat input explaining @mention and #hashtag usage. Supports multilingual content via field translations. |
 | `css` | (empty) | Additional CSS class |
+
+## Style Fields (therapistDashboard) - LLM & Summary
+
+| Field | Default | Description |
+|-------|---------|-------------|
+| `llm_model` | (empty) | AI model for draft generation and summarization |
+| `llm_temperature` | `0.7` | Temperature for AI draft/summary generation |
+| `llm_max_tokens` | `2048` | Max tokens for AI draft/summary responses |
+| `conversation_context` | (empty) | System context for AI responses in draft generation |
+| `therapy_summary_context` | (default therapeutic guidance) | Additional context/instructions for AI summarization. This text is prepended to the summarization prompt to guide the AI output. Supports multilingual content via field translations. |
 | `debug` | `0` | Debug mode |
 
 ## Access Control

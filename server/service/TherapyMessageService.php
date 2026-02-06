@@ -662,5 +662,112 @@ class TherapyMessageService extends TherapyAlertService
             "- Messages marked [THERAPIST] are from the real therapist - follow their clinical guidance\n" .
             "- If a user seems in crisis, encourage contacting their therapist or emergency services";
     }
+
+    /* =========================================================================
+     * LIGHTWEIGHT POLLING HELPERS
+     * ========================================================================= */
+
+    /**
+     * Get the latest message ID for a specific therapy conversation.
+     *
+     * @param int $conversationId therapyConversationMeta.id
+     * @return int|null
+     */
+    public function getLatestMessageIdForConversation($conversationId)
+    {
+        $conversation = $this->getTherapyConversation($conversationId);
+        if (!$conversation) return null;
+
+        $sql = "SELECT MAX(id) as latest_id FROM llmMessages WHERE id_llmConversations = ?";
+        $result = $this->db->query_db_first($sql, array($conversation['id_llmConversations']));
+        return $result ? (int)$result['latest_id'] : null;
+    }
+
+    /**
+     * Get the latest message ID across all conversations the therapist has access to.
+     * Used for lightweight polling: frontend compares this to its last known ID.
+     *
+     * @param int $therapistId
+     * @return int|null
+     */
+    public function getLatestMessageIdForTherapist($therapistId)
+    {
+        $sql = "SELECT MAX(lm.id) as latest_id
+                FROM llmMessages lm
+                INNER JOIN therapyConversationMeta tcm ON tcm.id_llmConversations = lm.id_llmConversations
+                INNER JOIN users_groups ug ON ug.id_users = tcm.id_users
+                INNER JOIN therapyTherapistAssignments tta ON tta.id_groups = ug.id_groups AND tta.id_users = :tid
+                WHERE 1";
+        $result = $this->db->query_db_first($sql, array(':tid' => $therapistId));
+        return $result ? (int)$result['latest_id'] : null;
+    }
+
+    /* =========================================================================
+     * SUMMARIZATION
+     * ========================================================================= */
+
+    /**
+     * Create a new LLM conversation to store the summary request/response
+     * for audit trail. This uses the normal llmConversations table so the
+     * therapist's actions are fully logged.
+     *
+     * @param int $therapyConvId The therapy conversation being summarized
+     * @param int $therapistId
+     * @param int $sectionId The therapist dashboard section
+     * @param string $summaryContent The AI-generated summary
+     * @param array $requestMessages The messages sent to the LLM
+     * @param array $response The raw LLM response
+     * @return int|null The new LLM conversation ID
+     */
+    public function createSummaryConversation($therapyConvId, $therapistId, $sectionId, $summaryContent, $requestMessages, $response)
+    {
+        // Create a new LLM conversation for audit purposes
+        $llmConvId = $this->db->insert('llmConversations', array(
+            'id_users' => $therapistId,
+            'section_id' => $sectionId,
+            'title' => 'Therapy Summary - Conversation #' . $therapyConvId
+        ));
+
+        if (!$llmConvId) return null;
+
+        // Log the user request (the summarization request)
+        $this->addMessage(
+            $llmConvId,
+            'user',
+            'Generate clinical summary for therapy conversation #' . $therapyConvId,
+            null, null, null, null,
+            array(
+                'therapy_sender_type' => self::SENDER_THERAPIST,
+                'therapy_sender_id' => $therapistId,
+                'summary_for_conversation' => $therapyConvId
+            )
+        );
+
+        // Log the AI response (the generated summary)
+        $this->addMessage(
+            $llmConvId,
+            'assistant',
+            $summaryContent,
+            null,
+            $response['model'] ?? null,
+            $response['tokens_used'] ?? null,
+            $response,
+            array(
+                'therapy_sender_type' => self::SENDER_AI,
+                'summary_for_conversation' => $therapyConvId
+            ),
+            $response['reasoning'] ?? null,
+            true,
+            $response['request_payload'] ?? null
+        );
+
+        // Log transaction
+        $this->logTransaction(
+            transactionTypes_insert, 'llmConversations', $llmConvId, $therapistId,
+            'Summary generated for therapy conversation #' . $therapyConvId
+        );
+
+        return $llmConvId;
+    }
 }
 ?>

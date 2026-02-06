@@ -129,6 +129,10 @@ export function createSubjectApi(sectionId?: number) {
       if (conversationId != null) fd.append('conversation_id', String(conversationId));
       return apiPost(fd);
     },
+
+    async checkUpdates(): Promise<{ latest_message_id: number | null; unread_count: number }> {
+      return apiGet('check_updates', withSection({}, sectionId));
+    },
   };
 }
 
@@ -239,10 +243,11 @@ export function createTherapistApi(sectionId?: number) {
 
     // ---- Notes ----
 
-    async addNote(conversationId: number | string, content: string): Promise<{ success: boolean; note_id: number }> {
+    async addNote(conversationId: number | string, content: string, noteType?: string): Promise<{ success: boolean; note_id: number }> {
       const fd = postData('add_note', sectionId);
       fd.append('conversation_id', String(conversationId));
       fd.append('content', content);
+      if (noteType) fd.append('note_type', noteType);
       return apiPost(fd);
     },
 
@@ -304,7 +309,34 @@ export function createTherapistApi(sectionId?: number) {
     async getGroups(): Promise<{ groups: TherapistGroup[] }> {
       return apiGet('get_groups', withSection({}, sectionId));
     },
+
+    // ---- Lightweight polling ----
+
+    async checkUpdates(): Promise<CheckUpdatesResponse> {
+      return apiGet('check_updates', withSection({}, sectionId));
+    },
+
+    // ---- Summarization ----
+
+    async generateSummary(conversationId: number | string): Promise<SummaryResponse> {
+      const fd = postData('generate_summary', sectionId);
+      fd.append('conversation_id', String(conversationId));
+      return apiPost(fd);
+    },
   };
+}
+
+export interface CheckUpdatesResponse {
+  unread_messages: number;
+  unread_alerts: number;
+  latest_message_id: number | null;
+}
+
+export interface SummaryResponse {
+  success: boolean;
+  summary: string;
+  summary_conversation_id: number | null;
+  tokens_used: number | null;
 }
 
 // ---------------------------------------------------------------------------

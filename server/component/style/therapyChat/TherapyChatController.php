@@ -177,6 +177,9 @@ class TherapyChatController extends BaseController
             case 'get_tag_reasons':
                 $this->handleGetTagReasons();
                 break;
+            case 'check_updates':
+                $this->handleCheckUpdates();
+                break;
             default:
                 break;
         }
@@ -494,6 +497,34 @@ class TherapyChatController extends BaseController
             $this->sendJsonResponse([
                 'conversation' => $conversation,
                 'messages' => $messages
+            ]);
+        } catch (Exception $e) {
+            $this->sendJsonResponse(['error' => $e->getMessage()], 500);
+        }
+    }
+
+    /**
+     * Lightweight polling: returns only the latest message ID and unread count
+     * so the frontend can decide whether a full fetch is needed.
+     */
+    private function handleCheckUpdates()
+    {
+        $user_id = $this->validatePatientOrFail();
+
+        try {
+            $conversation = $this->model->getOrCreateConversation();
+            if (!$conversation) {
+                $this->sendJsonResponse(['latest_message_id' => null, 'unread_count' => 0]);
+                return;
+            }
+
+            $cid = $conversation['id'];
+            $latestId = $this->therapy_service->getLatestMessageIdForConversation($cid);
+            $unread = $this->therapy_service->getUnreadCountForUser($user_id);
+
+            $this->sendJsonResponse([
+                'latest_message_id' => $latestId,
+                'unread_count' => (int)$unread
             ]);
         } catch (Exception $e) {
             $this->sendJsonResponse(['error' => $e->getMessage()], 500);

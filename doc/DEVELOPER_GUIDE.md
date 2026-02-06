@@ -84,6 +84,23 @@ Key methods in `TherapyChatService`:
 - `softDeleteNote()` — sets `id_noteStatus` to `deleted`, logs transaction
 - `getNotesForConversation()` — filters by `active` status via lookup join
 
+## Lightweight Polling
+
+Both patient and therapist UIs use a two-phase polling strategy:
+
+1. **Phase 1** (`check_updates`): Tiny request returning only `latest_message_id` and unread counts
+2. **Phase 2**: Only if values changed compared to last poll, trigger the full data fetch
+
+This dramatically reduces server load during idle periods.
+
+## Summarization
+
+The "Summarize" feature creates a new `llmConversations` record linked to the therapist and section for full audit trail:
+
+- `createSummaryConversation()` in `TherapyMessageService` logs the request and AI response
+- The `therapy_summary_context` field on the `therapistDashboard` style provides customizable instructions
+- Summaries can be saved as clinical notes of type `ai_summary`
+
 ## Hook System
 
 The plugin uses these hooks:

@@ -49,6 +49,12 @@ Returns the chat configuration for the current user.
 
 **Response**: `{ text: string }`
 
+### GET `check_updates`
+Lightweight polling endpoint. Returns only the latest message ID and unread
+count so the frontend can decide whether a full fetch is needed.
+
+**Response**: `{ latest_message_id, unread_count }`
+
 ---
 
 ## Therapist Dashboard Endpoints (TherapistDashboardController)
@@ -236,6 +242,22 @@ Sends the draft as a therapist message to the patient.
 | `draft_id` | int | Yes | Draft to discard |
 
 **Response**: `{ success }`
+
+### GET `check_updates`
+Lightweight polling endpoint. Returns only counts and latest message ID so the
+frontend can decide whether a full fetch is needed.
+
+**Response**: `{ unread_messages, unread_alerts, latest_message_id }`
+
+### POST `generate_summary`
+Generate an AI clinical summary for a conversation. Creates a new LLM
+conversation linked to the therapist and section for audit trail.
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `conversation_id` | int | Yes | Conversation to summarize |
+
+**Response**: `{ success, summary, summary_conversation_id, tokens_used }`
 
 ### POST `speech_transcribe`
 Same as subject endpoint — transcribes audio to text.

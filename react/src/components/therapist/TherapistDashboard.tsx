@@ -97,6 +97,11 @@ export const TherapistDashboard: React.FC<Props> = ({ config }) => {
   const [draftModalOpen, setDraftModalOpen] = useState(false);
   const [draftGenerating, setDraftGenerating] = useState(false);
 
+  // ---- Summarization state ----
+  const [summaryModalOpen, setSummaryModalOpen] = useState(false);
+  const [summaryGenerating, setSummaryGenerating] = useState(false);
+  const [summaryText, setSummaryText] = useState('');
+
   // Note editing state
   const [editingNoteId, setEditingNoteId] = useState<number | null>(null);
   const [editingNoteText, setEditingNoteText] = useState('');
@@ -207,16 +212,40 @@ export const TherapistDashboard: React.FC<Props> = ({ config }) => {
     }
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ---- Polling (stable) ----
+  // ---- Lightweight polling ----
+  // Phase 1: quick check_updates call (tiny payload)
+  // Phase 2: only if something changed, do full fetches
+
+  const lastKnownMsgIdRef = useRef<number | null>(null);
+  const lastKnownUnreadRef = useRef<number>(0);
+  const lastKnownAlertsRef = useRef<number>(0);
 
   const pollingCb = useCallback(async () => {
-    await Promise.all([
-      loadConversations(activeGroupIdRef.current, activeFilterRef.current, true),
-      loadAlerts(),
-      loadUnreadCounts(),
-    ]);
-    if (selectedIdRef.current) await chat.pollMessages();
-  }, [loadConversations, loadAlerts, loadUnreadCounts, chat.pollMessages]);
+    try {
+      const updates = await api.checkUpdates();
+
+      const msgChanged = updates.latest_message_id !== lastKnownMsgIdRef.current;
+      const unreadChanged = updates.unread_messages !== lastKnownUnreadRef.current;
+      const alertsChanged = updates.unread_alerts !== lastKnownAlertsRef.current;
+
+      lastKnownMsgIdRef.current = updates.latest_message_id;
+      lastKnownUnreadRef.current = updates.unread_messages;
+      lastKnownAlertsRef.current = updates.unread_alerts;
+
+      // Only do heavy fetches when something actually changed
+      if (msgChanged || unreadChanged) {
+        await loadConversations(activeGroupIdRef.current, activeFilterRef.current, true);
+        await loadUnreadCounts();
+        if (selectedIdRef.current) await chat.pollMessages();
+      }
+
+      if (alertsChanged) {
+        await loadAlerts();
+      }
+    } catch {
+      // Polling errors are non-fatal
+    }
+  }, [api, loadConversations, loadAlerts, loadUnreadCounts, chat.pollMessages]);
 
   usePolling({
     callback: pollingCb,
@@ -235,6 +264,8 @@ export const TherapistDashboard: React.FC<Props> = ({ config }) => {
       setDraftModalOpen(false);
       setActiveDraft(null);
       setDraftText('');
+      setSummaryModalOpen(false);
+      setSummaryText('');
       // Mark messages as read
       try {
         await api.markMessagesRead(convId);
@@ -372,6 +403,40 @@ export const TherapistDashboard: React.FC<Props> = ({ config }) => {
     setActiveDraft(null);
     setDraftText('');
   }, [api, activeDraft]);
+
+  // ---- Summarization ----
+
+  const handleGenerateSummary = useCallback(async () => {
+    if (!chat.conversation?.id) return;
+    setSummaryGenerating(true);
+    setSummaryModalOpen(true);
+    setSummaryText('');
+    try {
+      const res = await api.generateSummary(chat.conversation.id);
+      if (res.success && res.summary) {
+        setSummaryText(res.summary);
+      } else {
+        setSummaryText('Failed to generate summary. Please try again.');
+      }
+    } catch (err) {
+      console.error('Summary error:', err);
+      setSummaryText('An error occurred while generating the summary.');
+    } finally {
+      setSummaryGenerating(false);
+    }
+  }, [api, chat.conversation?.id]);
+
+  const handleSaveSummaryAsNote = useCallback(async () => {
+    if (!chat.conversation?.id || !summaryText.trim()) return;
+    try {
+      await api.addNote(chat.conversation.id, summaryText, 'ai_summary');
+      setSummaryModalOpen(false);
+      setSummaryText('');
+      loadNotes(chat.conversation.id);
+    } catch (err) {
+      console.error('Save summary as note error:', err);
+    }
+  }, [api, chat.conversation?.id, summaryText, loadNotes]);
 
   // ---- Badge helpers ----
 
@@ -649,6 +714,10 @@ export const TherapistDashboard: React.FC<Props> = ({ config }) => {
                       <i className="fas fa-magic mr-1" />
                       Generate AI Draft
                     </button>
+                    <button className="btn btn-outline-secondary btn-sm" onClick={handleGenerateSummary} disabled={summaryModalOpen}>
+                      <i className="fas fa-file-alt mr-1" />
+                      Summarize
+                    </button>
                   </div>
                   <MessageInput
                     onSend={chat.sendMessage}
@@ -864,6 +933,68 @@ export const TherapistDashboard: React.FC<Props> = ({ config }) => {
                 >
                   <i className="fas fa-paper-plane mr-1" />
                   Send to Patient
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ============ Summary Modal ============ */}
+      {summaryModalOpen && (
+        <div className="modal d-block" tabIndex={-1} style={{ backgroundColor: 'rgba(0,0,0,0.5)' }}>
+          <div className="modal-dialog modal-lg modal-dialog-centered">
+            <div className="modal-content">
+              <div className="modal-header bg-secondary text-white py-2">
+                <h5 className="modal-title">
+                  <i className="fas fa-file-alt mr-2" />
+                  Conversation Summary
+                  {chat.conversation?.subject_name && (
+                    <small className="ml-2 font-weight-normal">
+                      for {chat.conversation.subject_name}
+                    </small>
+                  )}
+                </h5>
+                <button
+                  type="button"
+                  className="close text-white"
+                  onClick={() => { setSummaryModalOpen(false); setSummaryText(''); }}
+                >
+                  <span>&times;</span>
+                </button>
+              </div>
+              <div className="modal-body">
+                {summaryGenerating ? (
+                  <div className="text-center py-4">
+                    <div className="spinner-border text-secondary mb-3" role="status" />
+                    <p className="text-muted">Generating conversation summary...</p>
+                  </div>
+                ) : (
+                  <>
+                    <p className="text-muted small mb-2">
+                      <i className="fas fa-info-circle mr-1" />
+                      AI-generated clinical summary. You can save it as a note.
+                    </p>
+                    <div className="border rounded p-3 bg-light" style={{ whiteSpace: 'pre-wrap', maxHeight: '400px', overflowY: 'auto' }}>
+                      {summaryText}
+                    </div>
+                  </>
+                )}
+              </div>
+              <div className="modal-footer py-2">
+                <button
+                  className="btn btn-outline-secondary"
+                  onClick={() => { setSummaryModalOpen(false); setSummaryText(''); }}
+                >
+                  Close
+                </button>
+                <button
+                  className="btn btn-success"
+                  onClick={handleSaveSummaryAsNote}
+                  disabled={summaryGenerating || !summaryText.trim()}
+                >
+                  <i className="fas fa-save mr-1" />
+                  Save as Clinical Note
                 </button>
               </div>
             </div>

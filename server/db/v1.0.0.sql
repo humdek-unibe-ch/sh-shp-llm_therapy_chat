@@ -577,7 +577,8 @@ INSERT IGNORE INTO `fields` (`id`, `name`, `id_type`, `display`) VALUES
 (NULL, 'therapy_chat_polling_interval', get_field_type_id('number'), '0'),
 (NULL, 'therapy_chat_enable_tagging', get_field_type_id('checkbox'), '0'),
 (NULL, 'therapy_tag_reasons', get_field_type_id('json'), '1'),
-(NULL, 'therapy_chat_help_text', get_field_type_id('textarea'), '1');
+(NULL, 'therapy_chat_help_text', get_field_type_id('textarea'), '1'),
+(NULL, 'therapy_summary_context', get_field_type_id('textarea'), '1');
 
 -- Link fields to page type
 INSERT IGNORE INTO `pageType_fields` (`id_pageType`, `id_fields`, `default_value`, `help`) VALUES
@@ -906,9 +907,18 @@ INSERT IGNORE INTO `styles_fields` (`id_styles`, `id_fields`, `default_value`, `
 (get_style_id('therapistDashboard'), get_field_id('dashboard_discard_draft_button'), 'Discard', 'Button to discard draft'),
 (get_style_id('therapistDashboard'), get_field_id('dashboard_draft_placeholder'), 'AI-generated response will appear here for your review...', 'Placeholder for draft area'),
 
--- Summarize labels
+-- Summarize labels and context
 (get_style_id('therapistDashboard'), get_field_id('dashboard_summarize_button'), 'Summarize Conversation', 'Button to generate AI summary'),
-(get_style_id('therapistDashboard'), get_field_id('dashboard_summarize_save_button'), 'Save Summary', 'Button to save AI summary as note');
+(get_style_id('therapistDashboard'), get_field_id('dashboard_summarize_save_button'), 'Save Summary', 'Button to save AI summary as note'),
+
+-- Summarization context: customizable prompt context for AI summaries
+(get_style_id('therapistDashboard'), get_field_id('therapy_summary_context'), 'Focus on the therapeutic relationship, emotional patterns, intervention effectiveness, and patient progress. Highlight any risk factors or concerns.', 'Additional context/instructions for the AI summarization. This text is prepended to the summarization prompt to guide the AI output. Supports multilingual content via field translations.'),
+
+-- LLM config for draft generation and summarization (shared field names with therapyChat)
+(get_style_id('therapistDashboard'), get_field_id('llm_model'), '', 'AI model for draft generation and summarization'),
+(get_style_id('therapistDashboard'), get_field_id('llm_temperature'), '0.7', 'Temperature for AI draft/summary generation'),
+(get_style_id('therapistDashboard'), get_field_id('llm_max_tokens'), '2048', 'Max tokens for AI draft/summary responses'),
+(get_style_id('therapistDashboard'), get_field_id('conversation_context'), '', 'System context for AI responses in draft generation');
 
 -- =====================================================
 -- PAGES FOR SUBJECT AND THERAPIST

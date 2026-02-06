@@ -53,7 +53,12 @@ This generates `js/ext/therapy-chat.umd.js` and `css/ext/therapy-chat.css`.
 #### Therapist Dashboard Page
 1. Create a new page accessible to therapists
 2. Add a section with style **therapistDashboard**
-3. Configure style fields
+3. Configure style fields:
+   - **LLM Model**: Select the AI model for draft generation and summarization
+   - **LLM Temperature**: Set the temperature for AI responses (0.0-2.0, default 0.7)
+   - **LLM Max Tokens**: Maximum tokens for AI responses (default 2048)
+   - **Conversation Context**: System context for AI draft generation
+   - **Summary Context**: Additional context/instructions for conversation summarization
 
 ### 6. Set Up Groups
 
