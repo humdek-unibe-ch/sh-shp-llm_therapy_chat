@@ -488,15 +488,16 @@ class TherapyMessageService extends TherapyAlertService
     {
         $sql = "SELECT lc.id_users as subject_id,
                        u.name as subject_name,
-                       u.code as subject_code,
-                       COUNT(tmr.id) as unread_count
+                       vc.code as subject_code,
+                       COUNT(tmr.id_llmMessages) as unread_count
                 FROM therapyMessageRecipients tmr
                 INNER JOIN llmMessages lm ON lm.id = tmr.id_llmMessages
                 INNER JOIN therapyConversationMeta tcm ON tcm.id_llmConversations = lm.id_llmConversations
                 INNER JOIN llmConversations lc ON lc.id = tcm.id_llmConversations
                 INNER JOIN users u ON u.id = lc.id_users
+                INNER JOIN validation_codes vc ON vc.id_users = u.id 
                 WHERE tmr.id_users = ? AND tmr.is_new = 1
-                GROUP BY lc.id_users, u.name, u.code";
+                GROUP BY lc.id_users, u.name, vc.code";
 
         $rows = $this->db->query_db($sql, array($therapistId));
         $result = array();
@@ -522,7 +523,7 @@ class TherapyMessageService extends TherapyAlertService
      */
     public function getUnreadByGroupForTherapist($therapistId)
     {
-        $sql = "SELECT ug.id_groups, COUNT(tmr.id) as unread_count
+        $sql = "SELECT ug.id_groups, COUNT(tmr.id_llmMessages) as unread_count
                 FROM therapyMessageRecipients tmr
                 INNER JOIN llmMessages lm ON lm.id = tmr.id_llmMessages
                 INNER JOIN therapyConversationMeta tcm ON tcm.id_llmConversations = lm.id_llmConversations
