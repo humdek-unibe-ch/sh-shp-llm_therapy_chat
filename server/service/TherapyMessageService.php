@@ -8,7 +8,8 @@
 require_once __DIR__ . '/TherapyAlertService.php';
 
 // Include LLM plugin services for proper JSON schema handling
-$llmResponseServicePath = __DIR__ . "/../../sh-shp-llm/server/service/LlmResponseService.php";
+// Path: from server/service/ → ../../ = sh-shp-llm_therapy_chat/ → ../../../ = plugins/
+$llmResponseServicePath = __DIR__ . "/../../../sh-shp-llm/server/service/LlmResponseService.php";
 if (file_exists($llmResponseServicePath)) {
     require_once $llmResponseServicePath;
 }
@@ -44,6 +45,56 @@ class TherapyMessageService extends TherapyAlertService
     public function __construct($services)
     {
         parent::__construct($services);
+    }
+
+    /* =========================================================================
+     * SCHEMA / CONTEXT HELPERS
+     * ========================================================================= */
+
+    /**
+     * Inject the unified JSON response schema into context messages.
+     *
+     * Uses the parent LLM plugin's LlmResponseService to prepend the
+     * structured response schema (with safety instructions if danger
+     * keywords are configured). This ensures every LLM call returns
+     * JSON following the schema and includes a safety assessment.
+     *
+     * If LlmResponseService is not available (parent plugin missing),
+     * returns the context messages unchanged.
+     *
+     * @param array $contextMessages Existing context messages
+     * @param array $dangerConfig    ['enabled' => bool, 'keywords' => string[]]
+     * @return array Context messages with schema prepended
+     */
+    public function injectResponseSchema($contextMessages, $dangerConfig = array())
+    {
+        if (!class_exists('LlmResponseService')) {
+            return $contextMessages;
+        }
+
+        // LlmResponseService($model, $services) — $model is not used for
+        // buildResponseContext, pass null as a safe placeholder.
+        $responseService = new \LlmResponseService(null, $this->services);
+
+        return $responseService->buildResponseContext(
+            $contextMessages,
+            false,       // include_progress
+            array(),     // progress_data
+            $dangerConfig
+        );
+    }
+
+    /**
+     * Get a LlmResponseService instance for safety assessment.
+     *
+     * @return LlmResponseService|null
+     */
+    public function getResponseService()
+    {
+        if (!class_exists('LlmResponseService')) {
+            return null;
+        }
+        return new \LlmResponseService(null, $this->services);
     }
 
     /* =========================================================================
@@ -290,6 +341,12 @@ class TherapyMessageService extends TherapyAlertService
 
             $llmConversationId = $conversation['id_llmConversations'];
 
+            // Build sent_context: therapy metadata + snapshot of context sent to LLM
+            $sentContext = array(
+                'therapy_sender_type' => self::SENDER_AI,
+                'context_message_count' => count($contextMessages)
+            );
+
             $messageId = $this->addMessage(
                 $llmConversationId,
                 'assistant',
@@ -298,7 +355,7 @@ class TherapyMessageService extends TherapyAlertService
                 $model,
                 $response['tokens_used'] ?? null,
                 $response,
-                array('therapy_sender_type' => self::SENDER_AI),
+                $sentContext,
                 $response['reasoning'] ?? null,
                 true,
                 $response['request_payload'] ?? null
@@ -329,7 +386,7 @@ class TherapyMessageService extends TherapyAlertService
      * @param string $content Raw LLM response content
      * @return string Displayable text
      */
-    private function extractDisplayContent($content)
+    public function extractDisplayContent($content)
     {
         $trimmed = trim($content);
 

@@ -306,6 +306,10 @@ class TherapistDashboardModel extends StyleModel
             'content' => $draftInstruction
         );
 
+        // Inject the unified JSON response schema so the LLM returns
+        // structured JSON with safety assessment (same as patient chat).
+        $contextMessages = $this->messageService->injectResponseSchema($contextMessages);
+
         // Get LLM config from style fields
         $model = $this->getLlmModel();
         $temperature = $this->getLlmTemperature();
@@ -318,7 +322,11 @@ class TherapistDashboardModel extends StyleModel
             return array('error' => 'AI did not generate a response. Please try again.');
         }
 
-        $aiContent = $response['content'];
+        // Extract human-readable text from structured JSON response.
+        // The raw content may be JSON with content.text_blocks[] when the
+        // schema is active; extractDisplayContent handles both cases.
+        $rawContent = $response['content'];
+        $aiContent = $this->messageService->extractDisplayContent($rawContent);
 
         // Save to llmMessages via the therapist's tools conversation (NOT the patient's)
         // This prevents draft messages from appearing in the patient's chat
@@ -472,6 +480,10 @@ class TherapistDashboardModel extends StyleModel
             'content' => 'Please generate a clinical summary of the above therapy conversation.'
         );
 
+        // Inject the unified JSON response schema so the LLM returns
+        // structured JSON with safety assessment (same as patient chat).
+        $llmMessages = $this->messageService->injectResponseSchema($llmMessages);
+
         // Call LLM using the model configured on THIS style (therapistDashboard)
         $model = $this->getLlmModel();
         $temperature = $this->getLlmTemperature();
@@ -483,15 +495,19 @@ class TherapistDashboardModel extends StyleModel
             return array('error' => 'AI did not generate a summary. Please try again.');
         }
 
+        // Extract human-readable text from structured JSON response
+        $rawContent = $response['content'];
+        $displayContent = $this->messageService->extractDisplayContent($rawContent);
+
         // Create a new LLM conversation for the summary (for audit trail)
         $summaryConvId = $this->messageService->createSummaryConversation(
             $conversationId, $therapistId, $this->getSectionId(),
-            $response['content'], $llmMessages, $response
+            $displayContent, $llmMessages, $response
         );
 
         return array(
             'success' => true,
-            'summary' => $response['content'],
+            'summary' => $displayContent,
             'summary_conversation_id' => $summaryConvId,
             'tokens_used' => $response['tokens_used'] ?? null
         );

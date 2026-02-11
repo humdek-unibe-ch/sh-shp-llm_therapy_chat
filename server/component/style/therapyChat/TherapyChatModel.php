@@ -494,18 +494,14 @@ class TherapyChatModel extends StyleModel
         // Build danger config for the response service (same structure as parent plugin)
         $dangerConfig = $this->buildDangerConfig();
 
-        // If LlmResponseService is available, use the full structured response schema
-        // with safety instructions — the LLM returns JSON with a safety assessment.
-        // Otherwise, fall back to the simple getCriticalSafetyContext() text injection.
-        $useStructuredResponse = class_exists('LlmResponseService');
+        // Inject the unified JSON response schema (with safety instructions).
+        // Uses the centralized helper in TherapyMessageService which loads
+        // LlmResponseService from the parent LLM plugin.
+        $contextMessages = $this->therapyService->injectResponseSchema($contextMessages, $dangerConfig);
+        $responseService = $this->therapyService->getResponseService();
 
-        if ($useStructuredResponse) {
-            $responseService = new LlmResponseService($this, $this->get_services());
-            $contextMessages = $responseService->buildResponseContext(
-                $contextMessages, false, array(), $dangerConfig
-            );
-        } elseif ($this->dangerDetection && $this->dangerDetection->isEnabled()) {
-            // Fallback: simple safety context injection (no structured schema)
+        // Fallback: if LlmResponseService is not available, inject simple safety text
+        if (!$responseService && $this->dangerDetection && $this->dangerDetection->isEnabled()) {
             $safetyContext = $this->dangerDetection->getCriticalSafetyContext();
             if ($safetyContext) {
                 array_splice($contextMessages, 2, 0, [
@@ -523,7 +519,7 @@ class TherapyChatModel extends StyleModel
         );
 
         // Post-LLM safety detection: parse the structured response
-        if ($useStructuredResponse && $result && !isset($result['error'])) {
+        if ($responseService && $result && !isset($result['error'])) {
             $this->handlePostLlmSafetyDetection(
                 $result, $conversationId, $conversation, $responseService
             );
