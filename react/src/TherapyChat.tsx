@@ -11,14 +11,15 @@
 
 import React, { useState, useEffect } from 'react';
 import ReactDOM from 'react-dom/client';
-import 'bootstrap/dist/css/bootstrap.min.css';
+// NOTE: Bootstrap 4.6 CSS is loaded globally by SelfHelp — do NOT import it here.
+// Importing it would bundle ~167KB of duplicate CSS into therapy-chat.css.
 
 import { SubjectChat } from './components/subject/SubjectChat';
 import { TherapistDashboard } from './components/therapist/TherapistDashboard';
 import { createSubjectApi, createTherapistApi } from './utils/api';
 import type { SubjectChatConfig, TherapistDashboardConfig } from './types';
 
-// Global styles
+// Custom therapy chat styles (tc- prefixed, no Bootstrap)
 import './styles/therapy-chat.css';
 
 // ---------------------------------------------------------------------------

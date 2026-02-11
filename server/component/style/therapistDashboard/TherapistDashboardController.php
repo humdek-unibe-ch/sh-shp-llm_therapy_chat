@@ -399,7 +399,10 @@ class TherapistDashboardController extends BaseController
 
         try {
             $messages = $this->model->getMessages($cid, 100, $afterId);
-            $this->model->getTherapyService()->updateLastSeen($cid, 'therapist');
+            // Mark messages as seen AND update last_seen timestamp.
+            // Without markMessagesRead, polled messages stay is_new=1 and
+            // unread counts never decrease while the conversation is open.
+            $this->model->markMessagesRead($cid, $uid);
             $this->json(['messages' => $messages, 'conversation_id' => $cid]);
         } catch (Exception $e) {
             $this->json(['error' => $e->getMessage()], 500);

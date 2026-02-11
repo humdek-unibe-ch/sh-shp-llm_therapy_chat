@@ -240,8 +240,10 @@ export const TherapistDashboard: React.FC<Props> = ({ config }) => {
       // Only do heavy fetches when something actually changed
       if (msgChanged || unreadChanged) {
         await loadConversations(activeGroupIdRef.current, activeFilterRef.current, true);
-        await loadUnreadCounts();
+        // If a conversation is selected, poll messages (backend marks them as read)
         if (selectedIdRef.current) await chat.pollMessages();
+        // Refresh unread counts AFTER polling (which marks messages as seen)
+        await loadUnreadCounts();
       }
 
       if (alertsChanged) {
@@ -702,6 +704,28 @@ export const TherapistDashboard: React.FC<Props> = ({ config }) => {
                     </small>
                   </div>
                   <div className="d-flex align-items-center" style={{ gap: '0.5rem' }}>
+                    {/* Mark conversation as read */}
+                    {(() => {
+                      const bySubject = unreadCounts?.bySubject ?? {};
+                      const uid = chat.conversation.id_users ?? 0;
+                      const uc = bySubject[uid] ?? bySubject[String(uid)] ?? null;
+                      const unread = (uc as any)?.unreadCount ?? 0;
+                      return unread > 0 ? (
+                        <button
+                          className="btn btn-sm btn-outline-primary"
+                          title="Mark all messages as read"
+                          onClick={async () => {
+                            try {
+                              await api.markMessagesRead(selectedId!);
+                              loadUnreadCounts();
+                            } catch { /* ignore */ }
+                          }}
+                        >
+                          <i className="fas fa-check-double mr-1" />
+                          Mark read
+                        </button>
+                      ) : null;
+                    })()}
                     {features.showRiskColumn && riskBadge(chat.conversation.risk_level)}
                     {features.showStatusColumn && statusBadge(chat.conversation.status)}
                     {features.enableAiToggle && (

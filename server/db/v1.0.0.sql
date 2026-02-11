@@ -1000,13 +1000,9 @@ VALUES (NULL, 'ajax_therapy_chat_save_assignments', '/request/[AjaxTherapyChat:c
 INSERT IGNORE INTO `acl_groups` (`id_groups`, `id_pages`, `acl_select`, `acl_insert`, `acl_update`, `acl_delete`)
 VALUES ((SELECT id FROM `groups` WHERE `name` = 'admin' LIMIT 1), (SELECT id FROM `pages` WHERE `keyword` = 'ajax_therapy_chat_save_assignments' LIMIT 1), 1, 1, 1, 1);
 
--- Hook to load JS for therapy assignments on user admin pages
+-- Hook to load JS scripts
 INSERT IGNORE INTO `hooks` (`id_hookTypes`, `name`, `description`, `class`, `function`, `exec_class`, `exec_function`)
-VALUES ((SELECT id FROM lookups WHERE lookup_code = 'hook_overwrite_return' LIMIT 0,1), 'therapyChat-assignments-script', 'Load JS for therapy assignments on user admin pages.', 'BasePage', 'get_js_includes', 'TherapyChatHooks', 'loadTherapyAssignmentsJs');
-
--- Hook to load JS for therapy chat floating icon on pages where it's displayed
-INSERT IGNORE INTO `hooks` (`id_hookTypes`, `name`, `description`, `class`, `function`, `exec_class`, `exec_function`)
-VALUES ((SELECT id FROM lookups WHERE lookup_code = 'hook_overwrite_return' LIMIT 0,1), 'therapyChat-floating-script', 'Load JS for therapy chat floating icon on pages where users can access it.', 'BasePage', 'get_js_includes', 'TherapyChatHooks', 'loadTherapyChatFloatingJs');
+VALUES ((SELECT id FROM lookups WHERE lookup_code = 'hook_overwrite_return' LIMIT 0,1), 'therapyChatLLM - load JS scripts', 'Load JS scripts for therapy chat LLM.', 'BasePage', 'get_js_includes', 'TherapyChatHooks', 'loadTherapyChatLLMJs');
 
 -- =====================================================
 -- TRANSACTION LOGGING

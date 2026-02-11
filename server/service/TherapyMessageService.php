@@ -263,12 +263,19 @@ class TherapyMessageService extends TherapyAlertService
                 return array('error' => 'No response from AI');
             }
 
+            // Extract displayable text from structured JSON responses.
+            // When LlmResponseService schema is injected, the LLM returns JSON
+            // with content.text_blocks[]. We need the human-readable text for
+            // the message, while the raw JSON is kept in the response metadata.
+            $rawContent = $response['content'];
+            $displayContent = $this->extractDisplayContent($rawContent);
+
             $llmConversationId = $conversation['id_llmConversations'];
 
             $messageId = $this->addMessage(
                 $llmConversationId,
                 'assistant',
-                $response['content'],
+                $displayContent,
                 null,
                 $model,
                 $response['tokens_used'] ?? null,
@@ -285,12 +292,56 @@ class TherapyMessageService extends TherapyAlertService
             return array(
                 'success' => true,
                 'message_id' => $messageId,
-                'content' => $response['content'],
+                'content' => $displayContent,
+                'raw_content' => $rawContent,
                 'tokens_used' => $response['tokens_used'] ?? null
             );
         } catch (Exception $e) {
             return array('error' => 'AI processing failed: ' . $e->getMessage());
         }
+    }
+
+    /**
+     * Extract human-readable display text from an LLM response.
+     *
+     * If the response is structured JSON (from LlmResponseService schema),
+     * extract the text from content.text_blocks[]. Otherwise return as-is.
+     *
+     * @param string $content Raw LLM response content
+     * @return string Displayable text
+     */
+    private function extractDisplayContent($content)
+    {
+        $trimmed = trim($content);
+
+        // Fast check: not JSON
+        if (empty($trimmed) || ($trimmed[0] !== '{' && $trimmed[0] !== '[')) {
+            // Try markdown code block extraction
+            if (preg_match('/```(?:json)?\s*(\{[\s\S]*?\})\s*```/', $trimmed, $matches)) {
+                $trimmed = $matches[1];
+            } else {
+                return $content;
+            }
+        }
+
+        $decoded = json_decode($trimmed, true);
+        if (!is_array($decoded) || !isset($decoded['content']['text_blocks'])) {
+            return $content;
+        }
+
+        // Extract text from text_blocks
+        $textParts = array();
+        foreach ($decoded['content']['text_blocks'] as $block) {
+            if (isset($block['content']) && is_string($block['content'])) {
+                $textParts[] = $block['content'];
+            }
+        }
+
+        if (empty($textParts)) {
+            return $content;
+        }
+
+        return implode("\n\n", $textParts);
     }
 
     /**

@@ -130,6 +130,27 @@ When a patient sends a message, danger detection runs in `TherapyChatModel::send
 
 **`danger_notification_emails` flow**: `TherapyChatModel::getDangerNotificationEmails()` reads the CMS field and returns an array of email addresses (supports comma, semicolon, and newline separators). For Layer 1, these emails are passed directly to `LlmDangerDetectionService::checkMessage()`. For Layer 2, they are passed to `TherapyAlertService::createDangerAlert()` via `handleDangerDetected()`.
 
+### Post-LLM Safety Detection (Layer 3)
+
+After the AI responds, `handlePostLlmSafetyDetection()` evaluates the LLM's own safety assessment:
+
+1. If `LlmResponseService` is available (parent plugin present), the therapy plugin injects the full structured response schema (JSON with `safety`, `content.text_blocks`, `metadata`) plus safety instructions with danger keywords via `LlmResponseService::buildResponseContext()`.
+2. The LLM returns structured JSON. `TherapyMessageService::extractDisplayContent()` extracts human-readable text from `content.text_blocks[]` for storage; the raw JSON is preserved in `raw_content`.
+3. `TherapyChatModel::parseStructuredResponse()` extracts the `safety` field from the JSON.
+4. `LlmResponseService::assessSafety()` evaluates the safety assessment.
+5. If `danger_level` is `critical` or `emergency`:
+   - Conversation is blocked via `LlmDangerDetectionService::blockConversation()` or `TherapyChatService::blockConversation()`
+   - A danger alert is created (risk escalated to critical)
+   - AI is disabled on the conversation
+   - Email notifications sent to therapists and configured extra emails
+   - Transaction logged for audit
+
+This matches the parent `sh-shp-llm` plugin's `LlmChatController::handleSafetyDetection()` behavior. If `LlmResponseService` is not available, the plugin falls back to the simple `getCriticalSafetyContext()` text injection (no structured response parsing).
+
+### CSS Architecture
+
+The React source CSS lives in `react/src/styles/therapy-chat.css` with `tc-` prefixed custom rules only. The build process (Vite) outputs the compiled CSS to `css/ext/therapy-chat.css`. Bootstrap 4.6 is **not** bundled — it's loaded globally by SelfHelp. The `css/ext/therapy-chat.css` file is ~6KB of custom styles.
+
 ## Floating Chat Modal
 
 When `enable_floating_chat` is enabled on the `therapyChat` style:
@@ -155,6 +176,14 @@ When `enable_floating_chat` is enabled on the `therapyChat` style:
 When `$excludeAI` is `true`, messages with `role = 'assistant'` (AI-generated) are excluded from the count.
 This is used for therapist dashboards and floating icon badges so unread counts reflect only patient and therapist messages.
 `getUnreadBySubjectForTherapist()` and `getUnreadByGroupForTherapist()` filter out AI messages when computing counts.
+
+**Read-marking flow**: Messages are marked as read (`is_new = 0`, `seen_at = NOW()`) in `therapyMessageRecipients` via `TherapyMessageService::markMessagesAsSeen()`. This is called:
+- When the therapist selects a conversation (`loadFullConversation`)
+- When polling fetches new messages (`handleGetMessages` → `markMessagesRead`)
+- When the therapist clicks the "Mark read" button in the conversation header
+- When the patient opens the chat (`SubjectChat` mount and poll)
+
+The "Mark read" button appears in the therapist dashboard conversation header only when unread messages exist for the selected conversation.
 
 ## Lightweight Polling
 

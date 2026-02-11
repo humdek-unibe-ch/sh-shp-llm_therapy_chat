@@ -238,53 +238,23 @@ class TherapyChatHooks extends BaseHooks
     }
 
     /* =========================================================================
-     * HOOK: Load JS for Therapy Chat Floating Icon
+     * HOOK: Load JS scripts for therapy chat LLM
      * Type: hook_overwrite_return
      * Target: BasePage::get_js_includes
      * ========================================================================= */
 
     /**
-     * Load JS for therapy chat floating icon on pages where it's displayed.
+     * Load JS scripts for therapy chat LLM.
      */
-    public function loadTherapyChatFloatingJs($args = null)
+    public function loadTherapyChatLLMJs($args = null)
     {
-        $userId = $_SESSION['id_user'] ?? null;
-        if (!$userId) return [];
-
-        // Don't load on CMS pages
-        if ($this->isCmsPage()) return [];
-
-        $isSubject = $this->messageService->isSubject($userId);
-        $isTherapist = $this->messageService->isTherapist($userId);
-
-        // Additional group check from config
-        $subjectGroupId = $this->getConfigValue('therapy_chat_subject_group');
-        $therapistGroupId = $this->getConfigValue('therapy_chat_therapist_group');
-
-        $isInSubjectGroup = $subjectGroupId && $this->isUserInGroup($userId, $subjectGroupId);
-        $isInTherapistGroup = $therapistGroupId && $this->isUserInGroup($userId, $therapistGroupId);
-
-        if (!$isSubject || !$isInSubjectGroup) $isSubject = false;
-        if (!$isTherapist || !$isInTherapistGroup) $isTherapist = false;
-
-        if (!$isSubject && !$isTherapist) return [];
-
-        return [
-            '/server/plugins/sh-shp-llm_therapy_chat/js/ext/therapy-chat.umd.js',
-            '/server/plugins/sh-shp-llm_therapy_chat/js/ext/therapy_chat_floating.js'
-        ];
-    }
-
-        /**
-     * Load JS for therapy assignments on user admin pages.
-     */
-    public function loadTherapyAssignmentsJs($args = null)
-    {
+        $includes = $this->execute_private_method($args);
         $router = $this->services->get_router();
-        $includes = [];
         if ($router->is_active('userSelect') || $router->is_active('userUpdate')) {
             $includes[] = '/server/plugins/sh-shp-llm_therapy_chat/js/ext/therapy_assignments.js';
         }
+        $includes[] = '/server/plugins/sh-shp-llm_therapy_chat/js/ext/therapy-chat.umd.js';
+        $includes[] = '/server/plugins/sh-shp-llm_therapy_chat/js/ext/therapy_chat_floating.js';
         return $includes;
     }
 

@@ -137,7 +137,7 @@ export const MessageList: React.FC<MessageListProps> = ({
         return (
           <div key={msg.id} className={bubbleClass(msg, isTherapistView)}>
             {/* Header: sender + time */}
-            <div className="tc-msg__header">
+            <div className="tc-msg__header d-flex">
               {!own && (
                 <span className="tc-msg__icon mr-1">
                   <i className={senderIcon(msg.sender_type)} />

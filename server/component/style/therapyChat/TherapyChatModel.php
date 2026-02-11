@@ -8,16 +8,16 @@
 require_once __DIR__ . "/../../../service/TherapyMessageService.php";
 require_once __DIR__ . "/../../../constants/TherapyLookups.php";
 
-// Include LLM plugin services for danger detection - only if LLM plugin is available
+// Include LLM plugin services - only if LLM plugin is available
 $llmDangerDetectionPath = __DIR__ . "/../../../../../sh-shp-llm/server/service/LlmDangerDetectionService.php";
-$llmContextServicePath = __DIR__ . "/../../../../../sh-shp-llm/server/service/LlmContextService.php";
+$llmResponseServicePath = __DIR__ . "/../../../../../sh-shp-llm/server/service/LlmResponseService.php";
 
 if (file_exists($llmDangerDetectionPath)) {
     require_once $llmDangerDetectionPath;
 }
 
-if (file_exists($llmContextServicePath)) {
-    require_once $llmContextServicePath;
+if (file_exists($llmResponseServicePath)) {
+    require_once $llmResponseServicePath;
 }
 
 /**
@@ -477,8 +477,13 @@ class TherapyChatModel extends StyleModel
     /**
      * Process AI response for a conversation.
      *
-     * @param int $conversationId
-     * @param array $conversation
+     * Injects the LLM structured response schema + safety instructions into the
+     * context (matching the parent sh-shp-llm plugin). After the LLM responds,
+     * the structured JSON is parsed and the safety assessment is evaluated.
+     * Critical/emergency danger levels trigger conversation blocking + notification.
+     *
+     * @param int $conversationId therapyConversationMeta.id
+     * @param array $conversation Therapy conversation record
      * @return array|null
      */
     public function processAIResponse($conversationId, $conversation)
@@ -486,8 +491,21 @@ class TherapyChatModel extends StyleModel
         $systemContext = $this->getConversationContext();
         $contextMessages = $this->therapyService->buildAIContext($conversationId, $systemContext, 50);
 
-        // Add danger detection context if enabled
-        if ($this->dangerDetection && $this->dangerDetection->isEnabled()) {
+        // Build danger config for the response service (same structure as parent plugin)
+        $dangerConfig = $this->buildDangerConfig();
+
+        // If LlmResponseService is available, use the full structured response schema
+        // with safety instructions — the LLM returns JSON with a safety assessment.
+        // Otherwise, fall back to the simple getCriticalSafetyContext() text injection.
+        $useStructuredResponse = class_exists('LlmResponseService');
+
+        if ($useStructuredResponse) {
+            $responseService = new LlmResponseService($this, $this->get_services());
+            $contextMessages = $responseService->buildResponseContext(
+                $contextMessages, false, array(), $dangerConfig
+            );
+        } elseif ($this->dangerDetection && $this->dangerDetection->isEnabled()) {
+            // Fallback: simple safety context injection (no structured schema)
             $safetyContext = $this->dangerDetection->getCriticalSafetyContext();
             if ($safetyContext) {
                 array_splice($contextMessages, 2, 0, [
@@ -496,13 +514,164 @@ class TherapyChatModel extends StyleModel
             }
         }
 
-        return $this->therapyService->processAIResponse(
+        $result = $this->therapyService->processAIResponse(
             $conversationId,
             $contextMessages,
             $this->getLlmModel() ?: $conversation['model'],
             $this->getLlmTemperature(),
             $this->getLlmMaxTokens()
         );
+
+        // Post-LLM safety detection: parse the structured response
+        if ($useStructuredResponse && $result && !isset($result['error'])) {
+            $this->handlePostLlmSafetyDetection(
+                $result, $conversationId, $conversation, $responseService
+            );
+        }
+
+        return $result;
+    }
+
+    /**
+     * Build danger detection config for LlmResponseService.
+     *
+     * Returns the same structure the parent plugin's LlmContextService uses:
+     * ['enabled' => bool, 'keywords' => string[]]
+     *
+     * @return array
+     */
+    private function buildDangerConfig()
+    {
+        if (!$this->isDangerDetectionEnabled()) {
+            return array('enabled' => false, 'keywords' => array());
+        }
+
+        $keywordsStr = $this->getDangerKeywords();
+        if (empty($keywordsStr)) {
+            return array('enabled' => true, 'keywords' => array());
+        }
+
+        $keywords = array_map('trim', preg_split('/[,;\n]+/', $keywordsStr));
+        $keywords = array_filter($keywords);
+        $keywords = array_unique($keywords);
+
+        return array(
+            'enabled' => true,
+            'keywords' => array_values($keywords)
+        );
+    }
+
+    /**
+     * Evaluate the LLM's structured safety assessment after receiving a response.
+     *
+     * If the LLM returns danger_level = critical or emergency, block the
+     * conversation and send urgent notifications — same logic as the parent
+     * plugin's LlmChatController::handleSafetyDetection().
+     *
+     * @param array $result The processAIResponse result (has 'content')
+     * @param int $conversationId therapyConversationMeta.id
+     * @param array $conversation Therapy conversation record
+     * @param LlmResponseService $responseService
+     */
+    private function handlePostLlmSafetyDetection($result, $conversationId, $conversation, $responseService)
+    {
+        // Use raw_content (the original JSON from the LLM) for safety parsing,
+        // since 'content' has already been converted to display text.
+        $content = $result['raw_content'] ?? $result['content'] ?? '';
+        if (empty($content)) return;
+
+        // The LLM should return structured JSON; try to parse it
+        $parsed = $this->parseStructuredResponse($content);
+        if (!$parsed) return;
+
+        $safety = $responseService->assessSafety($parsed);
+
+        // If safe, nothing to do
+        if ($safety['is_safe'] && $safety['danger_level'] === null) {
+            return;
+        }
+
+        $detectedConcerns = $safety['detected_concerns'] ?? array();
+
+        // Block and notify for critical/emergency levels
+        if (in_array($safety['danger_level'], array('critical', 'emergency'))) {
+            $llmConversationId = $conversation['id_llmConversations'];
+            $reason = strtoupper($safety['danger_level'])
+                . ': LLM safety assessment detected danger: '
+                . implode(', ', $detectedConcerns);
+
+            // Block the underlying llmConversations record
+            if ($this->dangerDetection) {
+                $this->dangerDetection->blockConversation($llmConversationId, $detectedConcerns, $reason);
+            } else {
+                $this->therapyService->blockConversation($conversationId, $reason);
+            }
+
+            // Create danger alert + escalate risk + disable AI
+            $extraEmails = implode(',', $this->getDangerNotificationEmails());
+            $this->therapyService->createDangerAlert(
+                $conversationId, $detectedConcerns, $content, $extraEmails
+            );
+            $this->therapyService->setAIEnabled($conversationId, false);
+
+            // Send notifications if danger detection is enabled
+            if ($this->dangerDetection && $this->dangerDetection->isEnabled()) {
+                $sectionId = $this->getSectionId();
+                $userId = $conversation['id_users'] ?? 0;
+                $this->dangerDetection->sendNotifications(
+                    $detectedConcerns,
+                    $safety['safety_message'] ?? 'Dangerous content detected by AI',
+                    $userId, $llmConversationId, $sectionId
+                );
+            }
+
+            // Log to transactions
+            $this->therapyService->logTransaction(
+                transactionTypes_update,
+                'llmConversations',
+                $llmConversationId,
+                $conversation['id_users'] ?? 0,
+                'Post-LLM safety detection: ' . $reason
+            );
+        }
+    }
+
+    /**
+     * Try to parse a structured JSON response from the LLM.
+     *
+     * The parent plugin requires the LLM to return JSON with at minimum:
+     * { "type": "response", "safety": {...}, "content": {...} }
+     *
+     * If the LLM returns plain text (not JSON), returns null.
+     *
+     * @param string $content The raw LLM response content
+     * @return array|null Parsed JSON data, or null if not structured
+     */
+    private function parseStructuredResponse($content)
+    {
+        $content = trim($content);
+
+        // Fast check: must start with { or [
+        if (empty($content) || ($content[0] !== '{' && $content[0] !== '[')) {
+            // Try to extract JSON from markdown code blocks
+            if (preg_match('/```(?:json)?\s*(\{[\s\S]*?\})\s*```/', $content, $matches)) {
+                $content = $matches[1];
+            } else {
+                return null;
+            }
+        }
+
+        $decoded = json_decode($content, true);
+        if (!is_array($decoded)) {
+            return null;
+        }
+
+        // Must have at least a safety field to be a structured response
+        if (!isset($decoded['safety'])) {
+            return null;
+        }
+
+        return $decoded;
     }
 
     /**
