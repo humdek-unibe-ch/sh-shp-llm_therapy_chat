@@ -273,6 +273,321 @@ class TherapyChatModel extends StyleModel
     }
 
     /* =========================================================================
+     * FLOATING CHAT CONFIGURATION
+     * ========================================================================= */
+
+    /**
+     * Whether the chat should render as a floating modal button.
+     */
+    public function isFloatingChatEnabled()
+    {
+        return (bool)$this->get_db_field('enable_floating_chat', '0');
+    }
+
+    public function getFloatingChatPosition()
+    {
+        return $this->get_db_field('floating_chat_position', 'bottom-right');
+    }
+
+    public function getFloatingChatIcon()
+    {
+        return $this->get_db_field('floating_chat_icon', 'fa-comments');
+    }
+
+    public function getFloatingChatLabel()
+    {
+        return $this->get_db_field('floating_chat_label', 'Chat');
+    }
+
+    public function getFloatingChatTitle()
+    {
+        return $this->get_db_field('floating_chat_title', 'Therapy Chat');
+    }
+
+    /* =========================================================================
+     * BUSINESS LOGIC — message sending
+     * ========================================================================= */
+
+    /**
+     * Send a patient message and optionally process AI response.
+     * All logic that was previously in the controller lives here.
+     *
+     * @param int $userId Patient ID
+     * @param string $message Message content
+     * @param int|null $conversationId
+     * @return array Response for frontend
+     */
+    public function sendPatientMessage($userId, $message, $conversationId = null)
+    {
+        // Danger detection
+        if ($this->dangerDetection && $this->dangerDetection->isEnabled()) {
+            $dangerResult = $this->dangerDetection->checkMessage($message, $userId, $conversationId);
+            if (!$dangerResult['safe']) {
+                $this->therapyService->createDangerAlert(
+                    $conversationId,
+                    $dangerResult['detected_keywords'],
+                    $message
+                );
+                return array(
+                    'blocked' => true,
+                    'type' => 'danger_detected',
+                    'message' => $this->getDangerBlockedMessage(),
+                    'detected_keywords' => $dangerResult['detected_keywords']
+                );
+            }
+        }
+
+        // Get or create conversation
+        $conversation = null;
+        if ($conversationId) {
+            $conversation = $this->therapyService->getTherapyConversation($conversationId);
+        }
+        if (!$conversation) {
+            $conversation = $this->getOrCreateConversation();
+            if (!$conversation) {
+                return array('error' => 'Could not create conversation');
+            }
+        }
+        $conversationId = $conversation['id'];
+
+        // Send user message
+        $result = $this->therapyService->sendTherapyMessage(
+            $conversationId, $userId, $message, TherapyMessageService::SENDER_SUBJECT
+        );
+
+        if (isset($result['error'])) {
+            return $result;
+        }
+
+        $response = array(
+            'success' => true,
+            'message_id' => $result['message_id'],
+            'conversation_id' => $conversationId
+        );
+
+        // Send email notification to therapist(s)
+        $isTag = (bool)preg_match('/@(?:therapist|Therapist)\b/', $message);
+        $this->notifyTherapistsNewMessage($conversationId, $userId, $message, $isTag);
+
+        // Process AI response if enabled and conversation is not paused
+        $conversation = $this->therapyService->getTherapyConversation($conversationId);
+        if ($conversation && $conversation['ai_enabled']
+            && $conversation['mode'] === THERAPY_MODE_AI_HYBRID
+            && ($conversation['status'] ?? '') !== THERAPY_STATUS_PAUSED) {
+            $aiResponse = $this->processAIResponse($conversationId, $conversation);
+            if ($aiResponse && !isset($aiResponse['error'])) {
+                $response['ai_message'] = array(
+                    'id' => $aiResponse['message_id'],
+                    'role' => 'assistant',
+                    'content' => $aiResponse['content'],
+                    'sender_type' => 'ai',
+                    'timestamp' => date('c')
+                );
+            }
+        }
+
+        return $response;
+    }
+
+    /**
+     * Process AI response for a conversation.
+     *
+     * @param int $conversationId
+     * @param array $conversation
+     * @return array|null
+     */
+    public function processAIResponse($conversationId, $conversation)
+    {
+        $systemContext = $this->getConversationContext();
+        $contextMessages = $this->therapyService->buildAIContext($conversationId, $systemContext, 50);
+
+        // Add danger detection context if enabled
+        if ($this->dangerDetection && $this->dangerDetection->isEnabled()) {
+            $safetyContext = $this->dangerDetection->getCriticalSafetyContext();
+            if ($safetyContext) {
+                array_splice($contextMessages, 2, 0, [
+                    array('role' => 'system', 'content' => $safetyContext)
+                ]);
+            }
+        }
+
+        return $this->therapyService->processAIResponse(
+            $conversationId,
+            $contextMessages,
+            $this->getLlmModel() ?: $conversation['model'],
+            $this->getLlmTemperature(),
+            $this->getLlmMaxTokens()
+        );
+    }
+
+    /**
+     * Handle therapist tagging from patient.
+     *
+     * @param int $userId Patient ID
+     * @param int $conversationId
+     * @param string|null $reason
+     * @param string $urgency
+     * @return array
+     */
+    public function tagTherapist($userId, $conversationId, $reason = null, $urgency = THERAPY_URGENCY_NORMAL)
+    {
+        $conversation = $this->therapyService->getTherapyConversation($conversationId);
+        if (!$conversation) {
+            return array('error' => 'Conversation not found');
+        }
+
+        // Build tag message
+        $tagMessage = "@therapist I would like to speak with my therapist";
+        if ($reason) {
+            $tagReasons = $this->getTagReasons();
+            if (is_array($tagReasons)) {
+                foreach ($tagReasons as $r) {
+                    if (isset($r['key']) && $r['key'] === $reason) {
+                        $tagMessage .= " #" . $r['key'] . ": " . $r['label'];
+                        break;
+                    }
+                }
+            }
+        }
+
+        // Send the tag message
+        $msgResult = $this->therapyService->sendTherapyMessage(
+            $conversationId, $userId, $tagMessage, TherapyMessageService::SENDER_SUBJECT
+        );
+
+        if (isset($msgResult['error'])) {
+            return $msgResult;
+        }
+
+        // Create tag alert
+        $alertId = $this->therapyService->createTagAlert(
+            $conversation['id_llmConversations'],
+            null,
+            $reason,
+            $urgency,
+            $msgResult['message_id']
+        );
+
+        // Send email notification to therapists (tag type)
+        $this->notifyTherapistsNewMessage($conversationId, $userId, $tagMessage, true);
+
+        return array(
+            'success' => true,
+            'message_id' => $msgResult['message_id'],
+            'alert_id' => $alertId
+        );
+    }
+
+    /**
+     * Transcribe audio to text.
+     *
+     * @param string $tempPath
+     * @return array
+     */
+    public function transcribeSpeech($tempPath)
+    {
+        $llmSpeechServicePath = __DIR__ . "/../../../../../sh-shp-llm/server/service/LlmSpeechToTextService.php";
+        if (!file_exists($llmSpeechServicePath)) {
+            return array('error' => 'Speech-to-text service not available.');
+        }
+
+        require_once $llmSpeechServicePath;
+        $speechService = new LlmSpeechToTextService($this->get_services(), $this);
+        $result = $speechService->transcribeAudio(
+            $tempPath,
+            $this->getSpeechToTextModel(),
+            $this->getSpeechToTextLanguage() !== 'auto' ? $this->getSpeechToTextLanguage() : null
+        );
+
+        if (isset($result['error'])) {
+            return array('error' => $result['error']);
+        }
+        return array('success' => true, 'text' => $result['text'] ?? '');
+    }
+
+    /* =========================================================================
+     * EMAIL NOTIFICATIONS (business logic)
+     * ========================================================================= */
+
+    /**
+     * Send email notification to therapist(s) when patient sends a message.
+     *
+     * @param int $conversationId
+     * @param int $patientId
+     * @param string $messageContent
+     * @param bool $isTag
+     */
+    public function notifyTherapistsNewMessage($conversationId, $patientId, $messageContent, $isTag = false)
+    {
+        $enabled = (bool)$this->get_db_field('enable_therapist_email_notification', '1');
+        if (!$enabled) return;
+
+        $conversation = $this->therapyService->getTherapyConversation($conversationId);
+        if (!$conversation) return;
+
+        $services = $this->get_services();
+        $db = $services->get_db();
+        $jobScheduler = $services->get_job_scheduler();
+
+        // Get patient info
+        $patient = $db->select_by_uid('users', $patientId);
+        $patientName = $patient ? $patient['name'] : 'Patient';
+
+        // Get all assigned therapists
+        $therapists = $this->therapyService->getTherapistsForPatient($patientId);
+        if (empty($therapists)) return;
+
+        $subjectTemplate = $isTag
+            ? $this->get_db_field('therapist_tag_email_subject', '[Therapy Chat] @therapist tag from {{patient_name}}')
+            : $this->get_db_field('therapist_notification_email_subject', '[Therapy Chat] New message from {{patient_name}}');
+
+        $bodyTemplate = $isTag
+            ? $this->get_db_field('therapist_tag_email_body',
+                '<p>Hello,</p><p><strong>{{patient_name}}</strong> has tagged you (@therapist) in their therapy chat.</p><p><em>Message preview:</em> {{message_preview}}</p><p>Please log in to the Therapist Dashboard to respond.</p>')
+            : $this->get_db_field('therapist_notification_email_body',
+                '<p>Hello,</p><p>You have received a new message from <strong>{{patient_name}}</strong> in therapy chat.</p><p>Please log in to the Therapist Dashboard to review.</p>');
+
+        $fromEmail = $this->get_db_field('notification_from_email', 'noreply@selfhelp.local');
+        $fromName = $this->get_db_field('notification_from_name', 'Therapy Chat');
+
+        $preview = mb_substr(strip_tags($messageContent), 0, 200);
+        if (mb_strlen($messageContent) > 200) $preview .= '...';
+
+        foreach ($therapists as $therapist) {
+            if (empty($therapist['email'])) continue;
+
+            $subject = str_replace('{{patient_name}}', htmlspecialchars($patientName), $subjectTemplate);
+            $body = str_replace(
+                array('{{patient_name}}', '{{message_preview}}', '@user_name'),
+                array(htmlspecialchars($patientName), htmlspecialchars($preview), htmlspecialchars($therapist['name'] ?? '')),
+                $bodyTemplate
+            );
+
+            $mail = array(
+                "id_jobTypes" => $db->get_lookup_id_by_value(jobTypes, jobTypes_email),
+                "id_jobStatus" => $db->get_lookup_id_by_value(scheduledJobsStatus, scheduledJobsStatus_queued),
+                "date_to_be_executed" => date('Y-m-d H:i:s'),
+                "from_email" => $fromEmail,
+                "from_name" => $fromName,
+                "reply_to" => $fromEmail,
+                "recipient_emails" => $therapist['email'],
+                "subject" => $subject,
+                "body" => $body,
+                "description" => ($isTag ? "Therapy Chat: tag" : "Therapy Chat: message") . " notification to therapist #" . $therapist['id'],
+                "is_html" => 1,
+                "id_users" => array($therapist['id']),
+                "attachments" => array()
+            );
+
+            try {
+                $jobScheduler->schedule_job($mail, transactionBy_by_system);
+            } catch (Exception $e) {
+                error_log("TherapyChat: Failed to schedule therapist notification: " . $e->getMessage());
+            }
+        }
+    }
+
+    /* =========================================================================
      * REACT CONFIGURATION
      * ========================================================================= */
 
@@ -298,6 +613,13 @@ class TherapyChatModel extends StyleModel
             'isSubject' => $this->isSubject(),
             'taggingEnabled' => $this->isTaggingEnabled(),
             'dangerDetectionEnabled' => $this->isDangerDetectionEnabled(),
+
+            // Floating chat
+            'enableFloatingChat' => $this->isFloatingChatEnabled(),
+            'floatingChatPosition' => $this->getFloatingChatPosition(),
+            'floatingChatIcon' => $this->getFloatingChatIcon(),
+            'floatingChatLabel' => $this->getFloatingChatLabel(),
+            'floatingChatTitle' => $this->getFloatingChatTitle(),
 
             // Polling
             'pollingInterval' => $this->getPollingInterval() * 1000,

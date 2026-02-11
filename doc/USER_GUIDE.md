@@ -76,15 +76,23 @@ directly to the patient.
 
 1. Click **"Generate AI Draft"** below the message area
 2. A **modal dialog** opens while the AI generates a suggested response
-3. **Review and edit** the draft in the modal text area
-4. Click **"Send to Patient"** to send the message and close the modal, or **"Discard"** to cancel
+3. The AI draft is displayed as **formatted text** (headings, lists, bold, etc.) in an editable area
+4. **Review and edit** the draft using the rich text toolbar (bold, italic, underline, lists)
+5. Click **"Send to Patient"** to send the message and close the modal, or **"Discard"** to cancel
+
+**Regenerate & Undo:**
+- Click the **"Regenerate"** button (🔄) to generate a new AI draft. Your current text is saved automatically.
+- Click the **"Undo"** button (↩) to restore the previous draft text from before the last regeneration.
+- You can regenerate multiple times — each previous version is saved in the undo stack.
 
 ### Conversation Summarization
 
 1. Click **"Summarize"** next to the Generate AI Draft button
 2. A **modal dialog** opens while the AI generates a clinical summary
-3. Review the summary — it includes key topics, emotional state, interventions, progress, and risk flags
-4. Click **"Save as Clinical Note"** to store the summary as a note, or **"Close"** to dismiss
+3. The summary is displayed with **full markdown formatting** — headings, tables, lists, bold text, etc.
+4. Review the summary — it includes key topics, emotional state, therapeutic interventions, progress, and risk flags
+5. Click **"Save as Clinical Note"** to store the summary as a note, or **"Close"** to dismiss
+6. Saved summaries appear in the Clinical Notes panel with their markdown formatting preserved
 
 ### Managing Conversations
 

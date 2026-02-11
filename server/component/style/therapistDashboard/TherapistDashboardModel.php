@@ -11,8 +11,17 @@ require_once __DIR__ . "/../../../constants/TherapyLookups.php";
 /**
  * Therapist Dashboard Model
  *
- * Data model for the therapist dashboard.
- * Uses TherapyMessageService (top-level) for all service calls.
+ * Contains ALL business logic for the therapist dashboard.
+ * The controller delegates to methods here; no logic lives in the controller.
+ *
+ * Responsibilities:
+ * - Data access (conversations, messages, notes, alerts, stats)
+ * - AI draft generation (builds context, calls LLM, saves to llmMessages + draft table)
+ * - Conversation summarization (builds context, calls LLM, saves to llmMessages)
+ * - Message send/edit/delete
+ * - Risk/status/AI toggle management
+ * - Email notifications on new messages
+ * - React configuration
  *
  * @package LLM Therapy Chat Plugin
  */
@@ -50,6 +59,18 @@ class TherapistDashboardModel extends StyleModel
             return false;
         }
         return $this->messageService->isTherapist($this->userId);
+    }
+
+    /**
+     * Check if therapist can access a specific conversation
+     *
+     * @param int $therapistId
+     * @param int $conversationId
+     * @return bool
+     */
+    public function canAccessConversation($therapistId, $conversationId)
+    {
+        return $this->messageService->canAccessTherapyConversation($therapistId, $conversationId);
     }
 
     /* =========================================================================
@@ -130,6 +151,612 @@ class TherapistDashboardModel extends StyleModel
     }
 
     /* =========================================================================
+     * MESSAGE OPERATIONS (business logic)
+     * ========================================================================= */
+
+    /**
+     * Send a message as therapist
+     *
+     * @param int $conversationId
+     * @param int $therapistId
+     * @param string $message
+     * @return array {success, message_id} or {error}
+     */
+    public function sendMessage($conversationId, $therapistId, $message)
+    {
+        $result = $this->messageService->sendTherapyMessage(
+            $conversationId, $therapistId, $message, TherapyMessageService::SENDER_THERAPIST
+        );
+
+        if (isset($result['success'])) {
+            $this->messageService->updateLastSeen($conversationId, 'therapist');
+
+            // Schedule email notification to the patient
+            $this->notifyPatientNewMessage($conversationId, $therapistId, $message);
+        }
+
+        return $result;
+    }
+
+    /**
+     * Edit a message
+     *
+     * @param int $messageId
+     * @param int $editorId
+     * @param string $newContent
+     * @return bool
+     */
+    public function editMessage($messageId, $editorId, $newContent)
+    {
+        return $this->messageService->editMessage($messageId, $editorId, $newContent);
+    }
+
+    /**
+     * Soft-delete a message
+     *
+     * @param int $messageId
+     * @param int $userId
+     * @return bool
+     */
+    public function deleteMessage($messageId, $userId)
+    {
+        return $this->messageService->softDeleteMessage($messageId, $userId);
+    }
+
+    /* =========================================================================
+     * CONVERSATION CONTROLS (business logic)
+     * ========================================================================= */
+
+    /**
+     * Toggle AI on/off for a conversation
+     */
+    public function toggleAI($conversationId, $enabled)
+    {
+        return $this->messageService->setAIEnabled($conversationId, $enabled);
+    }
+
+    /**
+     * Set risk level
+     */
+    public function setRiskLevel($conversationId, $riskLevel)
+    {
+        return $this->messageService->updateRiskLevel($conversationId, $riskLevel);
+    }
+
+    /**
+     * Set conversation status
+     */
+    public function setStatus($conversationId, $status)
+    {
+        return $this->messageService->updateTherapyStatus($conversationId, $status);
+    }
+
+    /* =========================================================================
+     * NOTES (business logic)
+     * ========================================================================= */
+
+    /**
+     * Add a clinical note
+     */
+    public function addNote($conversationId, $therapistId, $content, $noteType = THERAPY_NOTE_MANUAL)
+    {
+        return $this->messageService->addNote($conversationId, $therapistId, $content, $noteType);
+    }
+
+    /**
+     * Edit a note
+     */
+    public function editNote($noteId, $therapistId, $content)
+    {
+        return $this->messageService->updateNote($noteId, $therapistId, $content);
+    }
+
+    /**
+     * Delete a note
+     */
+    public function deleteNote($noteId, $therapistId)
+    {
+        return $this->messageService->softDeleteNote($noteId, $therapistId);
+    }
+
+    /* =========================================================================
+     * ALERTS (business logic)
+     * ========================================================================= */
+
+    public function markAlertRead($alertId)
+    {
+        return $this->messageService->markAlertRead($alertId);
+    }
+
+    public function markAllAlertsRead($therapistId, $conversationId = null)
+    {
+        return $this->messageService->markAllAlertsRead($therapistId, $conversationId);
+    }
+
+    /**
+     * Mark messages as read and update last seen
+     */
+    public function markMessagesRead($conversationId, $therapistId)
+    {
+        $this->messageService->updateLastSeen($conversationId, 'therapist');
+        $this->messageService->markMessagesAsSeen($conversationId, $therapistId);
+    }
+
+    /* =========================================================================
+     * AI DRAFT GENERATION (business logic)
+     * ========================================================================= */
+
+    /**
+     * Generate an AI draft response for a conversation.
+     *
+     * Builds context from conversation history, calls the LLM API using
+     * the model configured on this style, and saves both to llmMessages
+     * (via the parent LLM plugin's addMessage) and to therapyDraftMessages.
+     *
+     * @param int $conversationId
+     * @param int $therapistId
+     * @return array {success, draft: {id, ai_content, edited_content, status}} or {error}
+     */
+    public function generateDraft($conversationId, $therapistId)
+    {
+        // Build AI context from the conversation history
+        $systemContext = $this->get_db_field('conversation_context', '');
+        $contextMessages = $this->messageService->buildAIContext($conversationId, $systemContext, 50);
+
+        // Add a draft-specific instruction using the configurable context field
+        $draftContext = $this->get_db_field('therapy_draft_context', '');
+        $draftInstruction = 'Generate a thoughtful, empathetic therapeutic response draft for the therapist to review and edit before sending to the patient. Focus on being supportive and clinically appropriate.';
+        if (!empty($draftContext)) {
+            $draftInstruction .= "\n\nAdditional context and instructions from the therapist:\n" . $draftContext;
+        }
+        $contextMessages[] = array(
+            'role' => 'system',
+            'content' => $draftInstruction
+        );
+
+        // Get LLM config from style fields
+        $model = $this->getLlmModel();
+        $temperature = $this->getLlmTemperature();
+        $maxTokens = $this->getLlmMaxTokens();
+
+        // Call LLM API to generate draft content
+        $response = $this->messageService->callLlmApi($contextMessages, $model, $temperature, $maxTokens);
+
+        if (!$response || empty($response['content'])) {
+            return array('error' => 'AI did not generate a response. Please try again.');
+        }
+
+        $aiContent = $response['content'];
+
+        // Save to llmMessages via parent LLM plugin for full audit trail
+        $conversation = $this->messageService->getTherapyConversation($conversationId);
+        if ($conversation) {
+            $llmConversationId = $conversation['id_llmConversations'];
+            $this->messageService->addMessage(
+                $llmConversationId,
+                'assistant',
+                $aiContent,
+                null,
+                $model,
+                $response['tokens_used'] ?? null,
+                $response,
+                array(
+                    'therapy_sender_type' => 'ai',
+                    'draft_for_therapist' => $therapistId,
+                    'is_draft' => true
+                ),
+                $response['reasoning'] ?? null,
+                true,
+                $response['request_payload'] ?? null
+            );
+        }
+
+        // Also save in therapyDraftMessages for draft workflow tracking
+        $draftId = $this->messageService->createDraft($conversationId, $therapistId, $aiContent);
+
+        if (!$draftId) {
+            return array('error' => 'Failed to save draft to database. Check lookup values for therapyDraftStatus.');
+        }
+
+        return array(
+            'success' => true,
+            'draft' => array(
+                'id' => (int)$draftId,
+                'ai_content' => $aiContent,
+                'edited_content' => null,
+                'status' => THERAPY_DRAFT_DRAFT
+            )
+        );
+    }
+
+    /**
+     * Update a draft's edited content
+     */
+    public function updateDraft($draftId, $editedContent)
+    {
+        return $this->messageService->updateDraft($draftId, $editedContent);
+    }
+
+    /**
+     * Send a draft as a real message
+     */
+    public function sendDraft($draftId, $therapistId, $conversationId)
+    {
+        $result = $this->messageService->sendDraft($draftId, $therapistId, $conversationId);
+
+        // Send email notification to patient when draft is sent
+        if (isset($result['success'])) {
+            $draft = $this->messageService->getActiveDraft($conversationId, $therapistId);
+            $content = $draft ? ($draft['edited_content'] ?: $draft['ai_generated_content']) : '';
+            $this->notifyPatientNewMessage($conversationId, $therapistId, $content);
+        }
+
+        return $result;
+    }
+
+    /**
+     * Discard a draft
+     */
+    public function discardDraft($draftId, $therapistId)
+    {
+        return $this->messageService->discardDraft($draftId, $therapistId);
+    }
+
+    /* =========================================================================
+     * SUMMARIZATION (business logic)
+     * ========================================================================= */
+
+    /**
+     * Generate a conversation summary using LLM.
+     * Uses the LLM model configured on this therapistDashboard style.
+     * Saves to llmMessages for full audit trail.
+     *
+     * @param int $conversationId
+     * @param int $therapistId
+     * @return array {success, summary, summary_conversation_id, tokens_used} or {error}
+     */
+    public function generateSummary($conversationId, $therapistId)
+    {
+        // Get the customizable summarization context from the style field
+        $summaryContext = $this->get_db_field('therapy_summary_context', '');
+
+        // Build a complete conversation history for summarization
+        $messages = $this->messageService->getTherapyMessages($conversationId, 200);
+        $conversation = $this->messageService->getTherapyConversation($conversationId);
+
+        if (!$conversation) {
+            return array('error' => 'Conversation not found');
+        }
+
+        // Build LLM messages for summarization
+        $llmMessages = array();
+
+        // System instruction for summarization
+        $systemPrompt = "You are a clinical summarization assistant. Your task is to produce a concise, professional therapeutic summary of the conversation below.\n\n";
+        if (!empty($summaryContext)) {
+            $systemPrompt .= "Additional context and instructions from the therapist:\n" . $summaryContext . "\n\n";
+        }
+        $systemPrompt .= "Include: key topics discussed, patient emotional state, therapeutic interventions used, progress indicators, risk flags if any, and recommended next steps.";
+
+        $llmMessages[] = array('role' => 'system', 'content' => $systemPrompt);
+
+        // Add conversation history
+        foreach ($messages as $msg) {
+            if (!empty($msg['is_deleted'])) continue;
+
+            $senderLabel = '';
+            switch ($msg['sender_type'] ?? '') {
+                case 'subject': $senderLabel = '[Patient]'; break;
+                case 'therapist': $senderLabel = '[Therapist]'; break;
+                case 'ai': $senderLabel = '[AI Assistant]'; break;
+                case 'system': $senderLabel = '[System]'; break;
+                default: $senderLabel = '[Unknown]';
+            }
+
+            $role = ($msg['role'] === 'assistant') ? 'assistant' : 'user';
+            $llmMessages[] = array(
+                'role' => $role,
+                'content' => $senderLabel . ' ' . $msg['content']
+            );
+        }
+
+        // Final user prompt requesting the summary
+        $llmMessages[] = array(
+            'role' => 'user',
+            'content' => 'Please generate a clinical summary of the above therapy conversation.'
+        );
+
+        // Call LLM using the model configured on THIS style (therapistDashboard)
+        $model = $this->getLlmModel();
+        $temperature = $this->getLlmTemperature();
+        $maxTokens = $this->getLlmMaxTokens();
+
+        $response = $this->messageService->callLlmApi($llmMessages, $model, $temperature, $maxTokens);
+
+        if (!$response || empty($response['content'])) {
+            return array('error' => 'AI did not generate a summary. Please try again.');
+        }
+
+        // Create a new LLM conversation for the summary (for audit trail)
+        $summaryConvId = $this->messageService->createSummaryConversation(
+            $conversationId, $therapistId, $this->getSectionId(),
+            $response['content'], $llmMessages, $response
+        );
+
+        return array(
+            'success' => true,
+            'summary' => $response['content'],
+            'summary_conversation_id' => $summaryConvId,
+            'tokens_used' => $response['tokens_used'] ?? null
+        );
+    }
+
+    /* =========================================================================
+     * CONVERSATION FULL LOAD (business logic)
+     * ========================================================================= */
+
+    /**
+     * Load full conversation data: conversation, messages, notes, alerts.
+     * Also marks messages as seen.
+     *
+     * @param int $conversationId
+     * @param int $therapistId
+     * @return array|null
+     */
+    public function loadFullConversation($conversationId, $therapistId)
+    {
+        $conversation = $this->messageService->getTherapyConversation($conversationId);
+        if (!$conversation) {
+            return null;
+        }
+
+        $messages = $this->messageService->getTherapyMessages($conversationId);
+        $notes = $this->messageService->getNotesForConversation($conversationId);
+        $alerts = $this->messageService->getAlertsForTherapist($therapistId, array('unread_only' => false));
+
+        $this->messageService->updateLastSeen($conversationId, 'therapist');
+        $this->messageService->markMessagesAsSeen($conversationId, $therapistId);
+
+        return array(
+            'conversation' => $conversation,
+            'messages' => $messages,
+            'notes' => $notes,
+            'alerts' => $alerts
+        );
+    }
+
+    /**
+     * Lightweight polling: returns counts/flags so frontend can decide
+     * whether a full fetch is needed.
+     *
+     * @param int $therapistId
+     * @return array
+     */
+    public function checkUpdates($therapistId)
+    {
+        $unreadMessages = $this->messageService->getUnreadCountForUser($therapistId);
+        $unreadAlerts = $this->messageService->getUnreadAlertCount($therapistId);
+        $latestMsgId = $this->messageService->getLatestMessageIdForTherapist($therapistId);
+
+        return array(
+            'unread_messages' => (int)$unreadMessages,
+            'unread_alerts' => (int)$unreadAlerts,
+            'latest_message_id' => $latestMsgId
+        );
+    }
+
+    /**
+     * Get unread counts broken down by subject and group.
+     *
+     * @param int $therapistId
+     * @return array
+     */
+    public function getUnreadCounts($therapistId)
+    {
+        return array(
+            'total' => $this->messageService->getUnreadCountForUser($therapistId),
+            'totalAlerts' => $this->messageService->getUnreadAlertCount($therapistId),
+            'bySubject' => $this->messageService->getUnreadBySubjectForTherapist($therapistId),
+            'byGroup' => $this->messageService->getUnreadByGroupForTherapist($therapistId)
+        );
+    }
+
+    /* =========================================================================
+     * EMAIL NOTIFICATIONS (business logic)
+     * ========================================================================= */
+
+    /**
+     * Send email notification to patient when therapist sends a message.
+     * Uses SelfHelp's JobScheduler to queue an email.
+     *
+     * @param int $conversationId
+     * @param int $therapistId
+     * @param string $messageContent
+     */
+    public function notifyPatientNewMessage($conversationId, $therapistId, $messageContent)
+    {
+        $enabled = (bool)$this->get_db_field('enable_patient_email_notification', '1');
+        if (!$enabled) return;
+
+        $conversation = $this->messageService->getTherapyConversation($conversationId);
+        if (!$conversation) return;
+
+        $patientId = $conversation['id_users'];
+        $services = $this->get_services();
+        $db = $services->get_db();
+        $jobScheduler = $services->get_job_scheduler();
+
+        // Get patient info
+        $patient = $db->select_by_uid('users', $patientId);
+        if (!$patient || empty($patient['email'])) return;
+
+        // Get therapist info
+        $therapist = $db->select_by_uid('users', $therapistId);
+        $therapistName = $therapist ? $therapist['name'] : 'Your Therapist';
+
+        // Get email configuration from style fields
+        $subject = $this->get_db_field('patient_notification_email_subject', '[Therapy Chat] New message from your therapist');
+        $body = $this->get_db_field('patient_notification_email_body',
+            '<p>Hello @user_name,</p>' .
+            '<p>You have received a new message from <strong>' . htmlspecialchars($therapistName) . '</strong> in your therapy chat.</p>' .
+            '<p>Please log in to read and respond to the message.</p>' .
+            '<p>Best regards,<br>Therapy Chat</p>'
+        );
+
+        // Replace placeholders
+        $body = str_replace('@user_name', htmlspecialchars($patient['name'] ?? ''), $body);
+        $body = str_replace('@therapist_name', htmlspecialchars($therapistName), $body);
+        $subject = str_replace('@therapist_name', htmlspecialchars($therapistName), $subject);
+
+        $fromEmail = $this->get_db_field('notification_from_email', 'noreply@selfhelp.local');
+        $fromName = $this->get_db_field('notification_from_name', 'Therapy Chat');
+
+        $mail = array(
+            "id_jobTypes" => $db->get_lookup_id_by_value(jobTypes, jobTypes_email),
+            "id_jobStatus" => $db->get_lookup_id_by_value(scheduledJobsStatus, scheduledJobsStatus_queued),
+            "date_to_be_executed" => date('Y-m-d H:i:s'),
+            "from_email" => $fromEmail,
+            "from_name" => $fromName,
+            "reply_to" => $fromEmail,
+            "recipient_emails" => $patient['email'],
+            "subject" => $subject,
+            "body" => $body,
+            "description" => "Therapy Chat: therapist message notification to patient #" . $patientId,
+            "is_html" => 1,
+            "id_users" => array($patientId),
+            "attachments" => array()
+        );
+
+        try {
+            $jobScheduler->schedule_job($mail, transactionBy_by_system);
+        } catch (Exception $e) {
+            error_log("TherapyChat: Failed to schedule patient notification email: " . $e->getMessage());
+        }
+    }
+
+    /**
+     * Send email notification to therapist(s) when patient sends a message or tags.
+     *
+     * @param int $conversationId
+     * @param int $patientId
+     * @param string $messageContent
+     * @param bool $isTag Whether this is a @therapist tag
+     */
+    public function notifyTherapistNewMessage($conversationId, $patientId, $messageContent, $isTag = false)
+    {
+        $enabled = (bool)$this->get_db_field('enable_therapist_email_notification', '1');
+        if (!$enabled) return;
+
+        $conversation = $this->messageService->getTherapyConversation($conversationId);
+        if (!$conversation) return;
+
+        $services = $this->get_services();
+        $db = $services->get_db();
+        $jobScheduler = $services->get_job_scheduler();
+
+        // Get patient info
+        $patient = $db->select_by_uid('users', $patientId);
+        $patientName = $patient ? $patient['name'] : 'Patient';
+
+        // Get all assigned therapists
+        $therapists = $this->messageService->getTherapistsForPatient($patientId);
+        if (empty($therapists)) return;
+
+        // Get email configuration from style fields
+        $subjectTemplate = $isTag
+            ? $this->get_db_field('therapist_tag_email_subject', '[Therapy Chat] @therapist tag from {{patient_name}}')
+            : $this->get_db_field('therapist_notification_email_subject', '[Therapy Chat] New message from {{patient_name}}');
+
+        $bodyTemplate = $isTag
+            ? $this->get_db_field('therapist_tag_email_body',
+                '<p>Hello,</p>' .
+                '<p><strong>{{patient_name}}</strong> has tagged you (@therapist) in their therapy chat.</p>' .
+                '<p><em>Message preview:</em> {{message_preview}}</p>' .
+                '<p>Please log in to the Therapist Dashboard to respond.</p>' .
+                '<p>Best regards,<br>Therapy Chat</p>')
+            : $this->get_db_field('therapist_notification_email_body',
+                '<p>Hello,</p>' .
+                '<p>You have received a new message from <strong>{{patient_name}}</strong> in therapy chat.</p>' .
+                '<p>Please log in to the Therapist Dashboard to review.</p>' .
+                '<p>Best regards,<br>Therapy Chat</p>');
+
+        $fromEmail = $this->get_db_field('notification_from_email', 'noreply@selfhelp.local');
+        $fromName = $this->get_db_field('notification_from_name', 'Therapy Chat');
+
+        // Prepare message preview (truncated)
+        $preview = mb_substr(strip_tags($messageContent), 0, 200);
+        if (mb_strlen($messageContent) > 200) $preview .= '...';
+
+        foreach ($therapists as $therapist) {
+            if (empty($therapist['email'])) continue;
+
+            $subject = str_replace('{{patient_name}}', htmlspecialchars($patientName), $subjectTemplate);
+            $body = str_replace(
+                array('{{patient_name}}', '{{message_preview}}', '@user_name'),
+                array(htmlspecialchars($patientName), htmlspecialchars($preview), htmlspecialchars($therapist['name'] ?? '')),
+                $bodyTemplate
+            );
+
+            $mail = array(
+                "id_jobTypes" => $db->get_lookup_id_by_value(jobTypes, jobTypes_email),
+                "id_jobStatus" => $db->get_lookup_id_by_value(scheduledJobsStatus, scheduledJobsStatus_queued),
+                "date_to_be_executed" => date('Y-m-d H:i:s'),
+                "from_email" => $fromEmail,
+                "from_name" => $fromName,
+                "reply_to" => $fromEmail,
+                "recipient_emails" => $therapist['email'],
+                "subject" => $subject,
+                "body" => $body,
+                "description" => ($isTag ? "Therapy Chat: tag notification" : "Therapy Chat: message notification") . " to therapist #" . $therapist['id'],
+                "is_html" => 1,
+                "id_users" => array($therapist['id']),
+                "attachments" => array()
+            );
+
+            try {
+                $jobScheduler->schedule_job($mail, transactionBy_by_system);
+            } catch (Exception $e) {
+                error_log("TherapyChat: Failed to schedule therapist notification email: " . $e->getMessage());
+            }
+        }
+    }
+
+    /* =========================================================================
+     * SPEECH-TO-TEXT
+     * ========================================================================= */
+
+    /**
+     * Transcribe audio to text using the LLM plugin's speech service.
+     *
+     * @param string $tempPath Path to uploaded audio file
+     * @return array {success, text} or {error}
+     */
+    public function transcribeSpeech($tempPath)
+    {
+        $llmSpeechServicePath = __DIR__ . "/../../../../../sh-shp-llm/server/service/LlmSpeechToTextService.php";
+
+        if (!file_exists($llmSpeechServicePath)) {
+            return array('error' => 'Speech-to-text service not available');
+        }
+
+        require_once $llmSpeechServicePath;
+
+        $speechService = new LlmSpeechToTextService($this->get_services(), $this);
+
+        $result = $speechService->transcribeAudio(
+            $tempPath,
+            $this->getSpeechToTextModel(),
+            $this->getSpeechToTextLanguage() !== 'auto' ? $this->getSpeechToTextLanguage() : null
+        );
+
+        if (isset($result['error'])) {
+            return array('error' => $result['error']);
+        }
+
+        return array('success' => true, 'text' => $result['text'] ?? '');
+    }
+
+    /* =========================================================================
      * GETTERS
      * ========================================================================= */
 
@@ -156,6 +783,21 @@ class TherapistDashboardModel extends StyleModel
     public function getTherapyService()
     {
         return $this->messageService;
+    }
+
+    public function getLlmModel()
+    {
+        return $this->get_db_field('llm_model', '') ?: 'gpt-4o-mini';
+    }
+
+    public function getLlmTemperature()
+    {
+        return (float)$this->get_db_field('llm_temperature', '0.7');
+    }
+
+    public function getLlmMaxTokens()
+    {
+        return (int)$this->get_db_field('llm_max_tokens', '2048');
     }
 
     public function isSpeechToTextEnabled()

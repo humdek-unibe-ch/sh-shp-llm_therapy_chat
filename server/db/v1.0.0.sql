@@ -101,15 +101,15 @@
 -- DEBUG: DROP TABLES (uncomment to re-run script from scratch)
 -- WARNING: This will DELETE all therapy data!
 -- =====================================================
-DROP VIEW IF EXISTS view_therapyTherapistAssignments;
-DROP VIEW IF EXISTS view_therapyAlerts;
-DROP VIEW IF EXISTS view_therapyConversations;
-DROP TABLE IF EXISTS therapyDraftMessages;
-DROP TABLE IF EXISTS therapyNotes;
-DROP TABLE IF EXISTS therapyAlerts;
-DROP TABLE IF EXISTS therapyMessageRecipients;
-DROP TABLE IF EXISTS therapyConversationMeta;
-DROP TABLE IF EXISTS therapyTherapistAssignments;
+-- DROP VIEW IF EXISTS view_therapyTherapistAssignments;
+-- DROP VIEW IF EXISTS view_therapyAlerts;
+-- DROP VIEW IF EXISTS view_therapyConversations;
+-- DROP TABLE IF EXISTS therapyDraftMessages;
+-- DROP TABLE IF EXISTS therapyNotes;
+-- DROP TABLE IF EXISTS therapyAlerts;
+-- DROP TABLE IF EXISTS therapyMessageRecipients;
+-- DROP TABLE IF EXISTS therapyConversationMeta;
+-- DROP TABLE IF EXISTS therapyTherapistAssignments;
 -- =====================================================
 
 -- Add plugin entry
@@ -578,7 +578,8 @@ INSERT IGNORE INTO `fields` (`id`, `name`, `id_type`, `display`) VALUES
 (NULL, 'therapy_chat_enable_tagging', get_field_type_id('checkbox'), '0'),
 (NULL, 'therapy_tag_reasons', get_field_type_id('json'), '1'),
 (NULL, 'therapy_chat_help_text', get_field_type_id('markdown'), '1'),
-(NULL, 'therapy_summary_context', get_field_type_id('markdown'), '1');
+(NULL, 'therapy_summary_context', get_field_type_id('markdown'), '1'),
+(NULL, 'therapy_draft_context', get_field_type_id('markdown'), '1');
 
 -- Link fields to page type
 INSERT IGNORE INTO `pageType_fields` (`id_pageType`, `id_fields`, `default_value`, `help`) VALUES
@@ -914,6 +915,9 @@ INSERT IGNORE INTO `styles_fields` (`id_styles`, `id_fields`, `default_value`, `
 -- Summarization context: customizable prompt context for AI summaries
 (get_style_id('therapistDashboard'), get_field_id('therapy_summary_context'), 'Focus on the therapeutic relationship, emotional patterns, intervention effectiveness, and patient progress. Highlight any risk factors or concerns.', 'Additional context/instructions for the AI summarization. This text is prepended to the summarization prompt to guide the AI output. Supports multilingual content via field translations.'),
 
+-- Draft context: customizable prompt context for AI draft generation
+(get_style_id('therapistDashboard'), get_field_id('therapy_draft_context'), 'Generate a response based on the full conversation history and the patient''s last message. Consider therapeutic best practices, empathy, and clinical appropriateness.', 'Additional context/instructions for AI draft generation. This text is appended to the draft system prompt to guide the AI output. Supports multilingual content via field translations.'),
+
 -- LLM config for draft generation and summarization (shared field names with therapyChat)
 (get_style_id('therapistDashboard'), get_field_id('llm_model'), '', 'AI model for draft generation and summarization'),
 (get_style_id('therapistDashboard'), get_field_id('llm_temperature'), '0.7', 'Temperature for AI draft/summary generation'),
@@ -1055,3 +1059,89 @@ INSERT IGNORE INTO `styles_fields` (`id_styles`, `id_fields`, `default_value`, `
 
 (get_style_id('therapistDashboard'), get_field_id('speech_to_text_language'), 'auto',
  'Language code for speech recognition (e.g., "en", "de", "fr"). Use "auto" for automatic detection.');
+
+-- =====================================================
+-- FLOATING CHAT CONFIGURATION FOR therapyChat
+-- =====================================================
+
+-- Field definitions for floating/modal chat on therapyChat style
+INSERT IGNORE INTO `fields` (`id`, `name`, `id_type`, `display`) VALUES
+(NULL, 'enable_floating_chat', get_field_type_id('checkbox'), '0'),
+(NULL, 'floating_chat_position', get_field_type_id('text'), '0'),
+(NULL, 'floating_chat_icon', get_field_type_id('text'), '0'),
+(NULL, 'floating_chat_label', get_field_type_id('text'), '1'),
+(NULL, 'floating_chat_title', get_field_type_id('text'), '1');
+
+INSERT IGNORE INTO `styles_fields` (`id_styles`, `id_fields`, `default_value`, `help`) VALUES
+(get_style_id('therapyChat'), get_field_id('enable_floating_chat'), '0',
+ 'Enable floating/modal chat interface. When enabled, the chat renders as a floating button that expands into a modal panel instead of inline on the page.'),
+(get_style_id('therapyChat'), get_field_id('floating_chat_position'), 'bottom-right',
+ 'Position of the floating chat button. Values: bottom-right, bottom-left, top-right, top-left, bottom-center, top-center.'),
+(get_style_id('therapyChat'), get_field_id('floating_chat_icon'), 'fa-comments',
+ 'Font Awesome icon class for the floating chat button (e.g., fa-comments, fa-comment-dots).'),
+(get_style_id('therapyChat'), get_field_id('floating_chat_label'), 'Chat',
+ 'Text label displayed on the floating chat button.'),
+(get_style_id('therapyChat'), get_field_id('floating_chat_title'), 'Therapy Chat',
+ 'Title shown in the modal header when the floating chat panel is open.');
+
+-- =====================================================
+-- EMAIL NOTIFICATION CONFIGURATION
+-- =====================================================
+
+-- Field definitions for email notifications
+INSERT IGNORE INTO `fields` (`id`, `name`, `id_type`, `display`) VALUES
+(NULL, 'enable_patient_email_notification', get_field_type_id('checkbox'), '0'),
+(NULL, 'enable_therapist_email_notification', get_field_type_id('checkbox'), '0'),
+(NULL, 'patient_notification_email_subject', get_field_type_id('text'), '1'),
+(NULL, 'patient_notification_email_body', get_field_type_id('markdown'), '1'),
+(NULL, 'therapist_notification_email_subject', get_field_type_id('text'), '1'),
+(NULL, 'therapist_notification_email_body', get_field_type_id('markdown'), '1'),
+(NULL, 'therapist_tag_email_subject', get_field_type_id('text'), '1'),
+(NULL, 'therapist_tag_email_body', get_field_type_id('markdown'), '1'),
+(NULL, 'notification_from_email', get_field_type_id('text'), '0'),
+(NULL, 'notification_from_name', get_field_type_id('text'), '0');
+
+-- Email notification settings for therapistDashboard style
+INSERT IGNORE INTO `styles_fields` (`id_styles`, `id_fields`, `default_value`, `help`) VALUES
+(get_style_id('therapistDashboard'), get_field_id('enable_patient_email_notification'), '1',
+ 'Enable email notifications to patients when a therapist sends a message. Default: enabled.'),
+(get_style_id('therapistDashboard'), get_field_id('enable_therapist_email_notification'), '1',
+ 'Enable email notifications to therapists when a patient sends a message or tags them. Default: enabled.'),
+(get_style_id('therapistDashboard'), get_field_id('patient_notification_email_subject'), '[Therapy Chat] New message from your therapist',
+ 'Email subject for patient notifications. Placeholders: @therapist_name'),
+(get_style_id('therapistDashboard'), get_field_id('patient_notification_email_body'),
+ '<p>Hello @user_name,</p><p>You have received a new message from <strong>@therapist_name</strong> in your therapy chat.</p><p>Please log in to read and respond to the message.</p><p>Best regards,<br>Therapy Chat</p>',
+ 'Email body for patient notifications. Placeholders: @user_name, @therapist_name. Supports HTML.'),
+(get_style_id('therapistDashboard'), get_field_id('therapist_notification_email_subject'), '[Therapy Chat] New message from {{patient_name}}',
+ 'Email subject for therapist notifications. Placeholders: {{patient_name}}'),
+(get_style_id('therapistDashboard'), get_field_id('therapist_notification_email_body'),
+ '<p>Hello,</p><p>You have received a new message from <strong>{{patient_name}}</strong> in therapy chat.</p><p>Please log in to the Therapist Dashboard to review.</p><p>Best regards,<br>Therapy Chat</p>',
+ 'Email body for therapist notifications when a patient sends a message. Placeholders: {{patient_name}}, @user_name. Supports HTML.'),
+(get_style_id('therapistDashboard'), get_field_id('therapist_tag_email_subject'), '[Therapy Chat] @therapist tag from {{patient_name}}',
+ 'Email subject for therapist tag notifications. Placeholders: {{patient_name}}'),
+(get_style_id('therapistDashboard'), get_field_id('therapist_tag_email_body'),
+ '<p>Hello,</p><p><strong>{{patient_name}}</strong> has tagged you (@therapist) in their therapy chat.</p><p><em>Message preview:</em> {{message_preview}}</p><p>Please log in to the Therapist Dashboard to respond.</p><p>Best regards,<br>Therapy Chat</p>',
+ 'Email body for therapist tag notifications. Placeholders: {{patient_name}}, {{message_preview}}, @user_name. Supports HTML.'),
+(get_style_id('therapistDashboard'), get_field_id('notification_from_email'), 'noreply@selfhelp.local',
+ 'Sender email address for therapy chat notifications.'),
+(get_style_id('therapistDashboard'), get_field_id('notification_from_name'), 'Therapy Chat',
+ 'Sender display name for therapy chat notifications.');
+
+-- Email notification settings for therapyChat style (patient-side sends notifications to therapists)
+INSERT IGNORE INTO `styles_fields` (`id_styles`, `id_fields`, `default_value`, `help`) VALUES
+(get_style_id('therapyChat'), get_field_id('enable_therapist_email_notification'), '1',
+ 'Enable email notifications to therapists when a patient sends a message or tags them. Default: enabled.'),
+(get_style_id('therapyChat'), get_field_id('therapist_notification_email_subject'), '[Therapy Chat] New message from {{patient_name}}',
+ 'Email subject for therapist notifications from patient chat. Placeholders: {{patient_name}}'),
+(get_style_id('therapyChat'), get_field_id('therapist_notification_email_body'),
+ '<p>Hello,</p><p>You have received a new message from <strong>{{patient_name}}</strong> in therapy chat.</p><p>Please log in to the Therapist Dashboard to review.</p><p>Best regards,<br>Therapy Chat</p>',
+ 'Email body for therapist notifications from patient chat. Placeholders: {{patient_name}}, @user_name. Supports HTML.'),
+(get_style_id('therapyChat'), get_field_id('therapist_tag_email_subject'), '[Therapy Chat] @therapist tag from {{patient_name}}',
+ 'Email subject for therapist tag notifications from patient chat. Placeholders: {{patient_name}}'),
+(get_style_id('therapyChat'), get_field_id('therapist_tag_email_body'),
+ '<p>Hello,</p><p><strong>{{patient_name}}</strong> has tagged you (@therapist) in their therapy chat.</p><p><em>Message preview:</em> {{message_preview}}</p><p>Please log in to the Therapist Dashboard to respond.</p><p>Best regards,<br>Therapy Chat</p>',
+ 'Email body for therapist tag notifications from patient chat. Placeholders: {{patient_name}}, {{message_preview}}, @user_name. Supports HTML.'),
+(get_style_id('therapyChat'), get_field_id('notification_from_email'), 'noreply@selfhelp.local',
+ 'Sender email address for therapy chat notifications from patient side.'),
+(get_style_id('therapyChat'), get_field_id('notification_from_name'), 'Therapy Chat',
+ 'Sender display name for therapy chat notifications from patient side.');

@@ -20,6 +20,7 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { MessageList } from '../shared/MessageList';
 import { MessageInput } from '../shared/MessageInput';
+import { MarkdownRenderer } from '../shared/MarkdownRenderer';
 import { LoadingIndicator } from '../shared/LoadingIndicator';
 import { useChatState } from '../../hooks/useChatState';
 import { usePolling } from '../../hooks/usePolling';
@@ -97,6 +98,8 @@ export const TherapistDashboard: React.FC<Props> = ({ config }) => {
   const [draftModalOpen, setDraftModalOpen] = useState(false);
   const [draftGenerating, setDraftGenerating] = useState(false);
   const [draftError, setDraftError] = useState<string | null>(null);
+  /** Stores the previous draft text before a regeneration so the user can undo */
+  const [draftUndoStack, setDraftUndoStack] = useState<string[]>([]);
 
   // ---- Summarization state ----
   const [summaryModalOpen, setSummaryModalOpen] = useState(false);
@@ -374,7 +377,9 @@ export const TherapistDashboard: React.FC<Props> = ({ config }) => {
       const res = await api.createDraft(chat.conversation.id);
       if (res.draft) {
         setActiveDraft(res.draft);
-        setDraftText(res.draft.edited_content || res.draft.ai_content);
+        const content = res.draft.edited_content || res.draft.ai_content || '';
+        setDraftText(content);
+        setDraftUndoStack([]);
       } else {
         setDraftError('AI did not generate a response. Please try again.');
       }
@@ -387,6 +392,43 @@ export const TherapistDashboard: React.FC<Props> = ({ config }) => {
       setDraftGenerating(false);
     }
   }, [api, chat.conversation?.id]);
+
+  /** Regenerate: saves current text to undo stack, creates a new draft */
+  const handleRegenerateDraft = useCallback(async () => {
+    if (!chat.conversation?.id) return;
+    // Push current text onto undo stack before regenerating
+    setDraftUndoStack((prev) => [...prev, draftText]);
+    setDraftGenerating(true);
+    setDraftError(null);
+    try {
+      // Discard old draft if it exists
+      if (activeDraft) {
+        try { await api.discardDraft(activeDraft.id); } catch { /* ignore */ }
+      }
+      const res = await api.createDraft(chat.conversation.id);
+      if (res.draft) {
+        setActiveDraft(res.draft);
+        const content = res.draft.edited_content || res.draft.ai_content || '';
+        setDraftText(content);
+      } else {
+        setDraftError('AI did not generate a response. Please try again.');
+      }
+    } catch (err) {
+      console.error('Regenerate draft error:', err);
+      const msg = err instanceof Error ? err.message : 'Failed to regenerate draft';
+      setDraftError(msg);
+    } finally {
+      setDraftGenerating(false);
+    }
+  }, [api, chat.conversation?.id, activeDraft, draftText]);
+
+  /** Undo: restore the last draft text from before regeneration */
+  const handleUndoDraft = useCallback(() => {
+    if (draftUndoStack.length === 0) return;
+    const prev = draftUndoStack[draftUndoStack.length - 1];
+    setDraftUndoStack((stack) => stack.slice(0, -1));
+    setDraftText(prev);
+  }, [draftUndoStack]);
 
   const handleSendDraft = useCallback(async () => {
     if (!activeDraft || !chat.conversation?.id) return;
@@ -836,7 +878,9 @@ export const TherapistDashboard: React.FC<Props> = ({ config }) => {
                             </div>
                           ) : (
                             <>
-                              <p className="mb-0 small">{n.content}</p>
+                              <div className="mb-0 small tc-markdown tc-note-content">
+                                <MarkdownRenderer content={n.content} />
+                              </div>
                               {n.last_edited_by_name && (
                                 <small className="text-muted" style={{ fontSize: '0.65rem' }}>
                                   <i className="fas fa-edit mr-1" />
@@ -928,40 +972,64 @@ export const TherapistDashboard: React.FC<Props> = ({ config }) => {
                     <i className="fas fa-info-circle mr-1" />
                     Review and edit the AI-generated response before sending it to the patient.
                   </p>
-                  {/* Rich text toolbar */}
-                  <div className="btn-toolbar mb-2 flex-shrink-0" role="toolbar">
-                    <div className="btn-group btn-group-sm mr-2">
-                      <button type="button" className="btn btn-outline-secondary" title="Bold"
-                        onMouseDown={(e) => { e.preventDefault(); document.execCommand('bold'); }}>
-                        <i className="fas fa-bold" />
-                      </button>
-                      <button type="button" className="btn btn-outline-secondary" title="Italic"
-                        onMouseDown={(e) => { e.preventDefault(); document.execCommand('italic'); }}>
-                        <i className="fas fa-italic" />
-                      </button>
-                      <button type="button" className="btn btn-outline-secondary" title="Underline"
-                        onMouseDown={(e) => { e.preventDefault(); document.execCommand('underline'); }}>
-                        <i className="fas fa-underline" />
-                      </button>
+                  {/* Toolbar: rich text + regenerate/undo */}
+                  <div className="d-flex justify-content-between mb-2 flex-shrink-0 flex-wrap" style={{ gap: '0.5rem' }}>
+                    <div className="btn-toolbar" role="toolbar">
+                      <div className="btn-group btn-group-sm mr-2">
+                        <button type="button" className="btn btn-outline-secondary" title="Bold"
+                          onMouseDown={(e) => { e.preventDefault(); document.execCommand('bold'); }}>
+                          <i className="fas fa-bold" />
+                        </button>
+                        <button type="button" className="btn btn-outline-secondary" title="Italic"
+                          onMouseDown={(e) => { e.preventDefault(); document.execCommand('italic'); }}>
+                          <i className="fas fa-italic" />
+                        </button>
+                        <button type="button" className="btn btn-outline-secondary" title="Underline"
+                          onMouseDown={(e) => { e.preventDefault(); document.execCommand('underline'); }}>
+                          <i className="fas fa-underline" />
+                        </button>
+                      </div>
+                      <div className="btn-group btn-group-sm mr-2">
+                        <button type="button" className="btn btn-outline-secondary" title="Bulleted list"
+                          onMouseDown={(e) => { e.preventDefault(); document.execCommand('insertUnorderedList'); }}>
+                          <i className="fas fa-list-ul" />
+                        </button>
+                        <button type="button" className="btn btn-outline-secondary" title="Numbered list"
+                          onMouseDown={(e) => { e.preventDefault(); document.execCommand('insertOrderedList'); }}>
+                          <i className="fas fa-list-ol" />
+                        </button>
+                      </div>
+                      <div className="btn-group btn-group-sm">
+                        <button type="button" className="btn btn-outline-secondary" title="Remove formatting"
+                          onMouseDown={(e) => { e.preventDefault(); document.execCommand('removeFormat'); }}>
+                          <i className="fas fa-eraser" />
+                        </button>
+                      </div>
                     </div>
-                    <div className="btn-group btn-group-sm mr-2">
-                      <button type="button" className="btn btn-outline-secondary" title="Bulleted list"
-                        onMouseDown={(e) => { e.preventDefault(); document.execCommand('insertUnorderedList'); }}>
-                        <i className="fas fa-list-ul" />
-                      </button>
-                      <button type="button" className="btn btn-outline-secondary" title="Numbered list"
-                        onMouseDown={(e) => { e.preventDefault(); document.execCommand('insertOrderedList'); }}>
-                        <i className="fas fa-list-ol" />
-                      </button>
-                    </div>
-                    <div className="btn-group btn-group-sm">
-                      <button type="button" className="btn btn-outline-secondary" title="Remove formatting"
-                        onMouseDown={(e) => { e.preventDefault(); document.execCommand('removeFormat'); }}>
-                        <i className="fas fa-eraser" />
+                    <div className="d-flex" style={{ gap: '0.25rem' }}>
+                      {draftUndoStack.length > 0 && (
+                        <button
+                          type="button"
+                          className="btn btn-outline-warning btn-sm"
+                          title="Undo: restore the previous draft before last regeneration"
+                          onClick={handleUndoDraft}
+                        >
+                          <i className="fas fa-undo mr-1" />
+                          Undo
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        className="btn btn-outline-info btn-sm"
+                        title="Regenerate a new AI draft (current text will be saved for undo)"
+                        onClick={handleRegenerateDraft}
+                      >
+                        <i className="fas fa-sync-alt mr-1" />
+                        Regenerate
                       </button>
                     </div>
                   </div>
-                  {/* Editable content area - use ref to avoid re-render issues with contentEditable */}
+                  {/* Editable content area */}
                   <DraftEditor value={draftText} onChange={setDraftText} />
                   <div className="d-flex justify-content-between mt-2 flex-shrink-0">
                     <small className="text-muted">{draftText.length} characters</small>
@@ -1044,16 +1112,15 @@ export const TherapistDashboard: React.FC<Props> = ({ config }) => {
                     AI-generated clinical summary. You can save it as a note.
                   </p>
                   <div
-                    className="border rounded p-3 bg-light tc-draft-editor"
+                    className="border rounded p-3 bg-light tc-draft-editor tc-markdown"
                     style={{
-                      whiteSpace: 'pre-wrap',
                       flex: 1,
                       overflowY: 'auto',
                       fontSize: '0.95rem',
                       lineHeight: '1.6',
                     }}
                   >
-                    {summaryText}
+                    <MarkdownRenderer content={summaryText} />
                   </div>
                 </>
               )}
@@ -1084,31 +1151,67 @@ export const TherapistDashboard: React.FC<Props> = ({ config }) => {
 // ---------------------------------------------------------------------------
 // DraftEditor — contentEditable wrapper that avoids React re-render loops.
 // Uses a ref so React never re-writes the DOM while the user is typing.
+//
+// The AI returns markdown. We render it into the contentEditable div using
+// a simple markdown→HTML conversion so the therapist sees formatted text.
+// On change, we track the plain text (innerText) for sending.
 // ---------------------------------------------------------------------------
+
+/** Simple markdown → HTML for the draft editor initial render */
+function markdownToHtml(md: string): string {
+  if (!md) return '';
+  let html = md
+    // Escape HTML entities first
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    // Headers (### before ## before #)
+    .replace(/^### (.+)$/gm, '<h5>$1</h5>')
+    .replace(/^## (.+)$/gm, '<h4>$1</h4>')
+    .replace(/^# (.+)$/gm, '<h3>$1</h3>')
+    // Horizontal rules
+    .replace(/^---+$/gm, '<hr/>')
+    // Bold + italic
+    .replace(/\*\*\*(.+?)\*\*\*/g, '<strong><em>$1</em></strong>')
+    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+    .replace(/\*(.+?)\*/g, '<em>$1</em>')
+    // Inline code
+    .replace(/`([^`]+)`/g, '<code>$1</code>')
+    // Line breaks: double newline → paragraph break, single → <br>
+    .replace(/\n\n/g, '</p><p>')
+    .replace(/\n/g, '<br/>');
+
+  html = '<p>' + html + '</p>';
+  // Clean up empty paragraphs
+  html = html.replace(/<p><\/p>/g, '').replace(/<p>(<h[3-5]>)/g, '$1').replace(/(<\/h[3-5]>)<\/p>/g, '$1');
+  return html;
+}
 
 const DraftEditor: React.FC<{ value: string; onChange: (v: string) => void }> = ({ value, onChange }) => {
   const elRef = useRef<HTMLDivElement>(null);
-  const internalRef = useRef(value);
+  // Initialize internalRef to a sentinel so the first useEffect always fires
+  const internalRef = useRef<string | null>(null);
 
-  // Sync external value → DOM only when the value changes externally
-  // (e.g. when AI draft is first loaded).
+  // Sync external value → DOM when the value changes externally
+  // (e.g. when AI draft is first loaded or after regeneration/undo).
+  // Because internalRef starts as null, this fires on first mount too.
   useEffect(() => {
     if (elRef.current && value !== internalRef.current) {
       internalRef.current = value;
-      elRef.current.innerText = value;
+      // Render markdown as HTML so the therapist sees formatted content
+      elRef.current.innerHTML = markdownToHtml(value);
     }
   }, [value]);
 
   return (
     <div
       ref={elRef}
-      className="form-control tc-draft-editor"
+      className="form-control tc-draft-editor tc-markdown"
       contentEditable
       suppressContentEditableWarning
       style={{
         flex: 1,
         overflowY: 'auto',
-        whiteSpace: 'pre-wrap',
         minHeight: '200px',
         fontSize: '0.95rem',
         lineHeight: '1.6',

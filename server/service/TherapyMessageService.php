@@ -340,10 +340,10 @@ class TherapyMessageService extends TherapyAlertService
     /**
      * Create an AI draft for a therapist.
      *
-     * @param int $conversationId
+     * @param int $conversationId therapyConversationMeta.id
      * @param int $therapistId
      * @param string $aiContent AI-generated content
-     * @return int|bool Draft ID
+     * @return int|bool Draft ID or false on failure
      */
     public function createDraft($conversationId, $therapistId, $aiContent)
     {
@@ -352,12 +352,27 @@ class TherapyMessageService extends TherapyAlertService
 
         $statusId = $this->db->get_lookup_id_by_code(THERAPY_LOOKUP_DRAFT_STATUS, THERAPY_DRAFT_DRAFT);
 
-        return $this->db->insert('therapyDraftMessages', array(
+        $data = array(
             'id_llmConversations' => $conversation['id_llmConversations'],
             'id_users' => $therapistId,
-            'ai_generated_content' => $aiContent,
-            'id_draftStatus' => $statusId
-        ));
+            'ai_generated_content' => $aiContent
+        );
+
+        // Only include status if lookup resolved successfully
+        if ($statusId) {
+            $data['id_draftStatus'] = $statusId;
+        }
+
+        $draftId = $this->db->insert('therapyDraftMessages', $data);
+
+        if ($draftId) {
+            $this->logTransaction(
+                transactionTypes_insert, 'therapyDraftMessages', $draftId, $therapistId,
+                'AI draft created for conversation #' . $conversationId
+            );
+        }
+
+        return $draftId;
     }
 
     /**

@@ -93,13 +93,38 @@ Both patient and therapist UIs use a two-phase polling strategy:
 
 This dramatically reduces server load during idle periods.
 
+## AI Draft Generation
+
+The "Generate AI Draft" feature allows therapists to get AI-suggested responses:
+
+- `handleCreateDraft` in `TherapistDashboardController` builds AI context from conversation history, adds a draft-specific instruction, and calls the LLM API
+- The `conversation_context` field provides the base system prompt for the AI
+- The `therapy_draft_context` field provides additional customizable instructions specific to draft generation (e.g., "Generate a response based on the conversation and the patient's last message")
+- `llm_model`, `llm_temperature`, `llm_max_tokens` fields on the `therapistDashboard` style control LLM parameters
+- Drafts are saved to `therapyDraftMessages` table with transaction logging
+- The frontend renders AI markdown as formatted HTML in a contentEditable editor
+- **Regenerate**: Discards the old draft, creates a new one, saves the previous text to an undo stack
+- **Undo**: Restores the last draft text from before the most recent regeneration
+- Draft text is tracked as plain text; markdown is rendered as HTML only in the editor view
+
 ## Summarization
 
 The "Summarize" feature creates a new `llmConversations` record linked to the therapist and section for full audit trail:
 
 - `createSummaryConversation()` in `TherapyMessageService` logs the request and AI response
 - The `therapy_summary_context` field on the `therapistDashboard` style provides customizable instructions
+- Summaries are rendered with full markdown support (headings, tables, lists, bold/italic) via `MarkdownRenderer`
 - Summaries can be saved as clinical notes of type `ai_summary`
+
+## Markdown Rendering
+
+The plugin uses `react-markdown` with `remark-gfm` (GitHub Flavored Markdown) for rendering markdown content:
+
+- **AI messages** in the chat use `MarkdownRenderer` (via `MessageList`)
+- **Conversation summaries** in the summary modal use `MarkdownRenderer`
+- **Clinical notes** in the sidebar use `MarkdownRenderer` (notes saved from AI summaries retain their markdown formatting)
+- **AI draft editor** uses a simple `markdownToHtml()` converter for the initial render in the contentEditable div; the therapist edits the rich text directly
+- CSS classes with `tc-markdown` prefix provide consistent styling for tables, headings, lists, code blocks, blockquotes, and horizontal rules
 
 ## Hook System
 

@@ -104,8 +104,10 @@ export const SubjectChat: React.FC<SubjectChatProps> = ({ config }) => {
 
   const labels = config.labels;
 
+  const isFloating = !!config.isFloatingMode;
+
   return (
-    <div className="tc-subject">
+    <div className={`tc-subject${isFloating ? ' tc-subject--floating' : ''}`}>
       {/* Error banner */}
       {error && (
         <div className="alert alert-danger alert-dismissible fade show m-3 mb-0" role="alert">
@@ -117,28 +119,30 @@ export const SubjectChat: React.FC<SubjectChatProps> = ({ config }) => {
         </div>
       )}
 
-      <div className="card border-0 shadow-sm h-100">
-        {/* Header */}
-        <div className="card-header bg-primary text-white d-flex justify-content-between align-items-center">
-          <div className="d-flex align-items-center">
-            <i className="fas fa-comments mr-2" />
-            <h5 className="mb-0">Therapy Chat</h5>
-          </div>
-          {conversation && (
-            <div className="d-flex align-items-center" style={{ gap: '0.5rem' }}>
-              {isPaused && (
-                <span className="badge badge-warning">
-                  <i className="fas fa-pause-circle mr-1" />
-                  Paused
-                </span>
-              )}
-              <span className={`badge ${conversation.ai_enabled && !isPaused ? 'badge-light' : 'badge-warning'}`}>
-                <i className={`fas ${conversation.ai_enabled && !isPaused ? 'fa-robot' : 'fa-user-md'} mr-1`} />
-                {conversation.ai_enabled && !isPaused ? labels.mode_ai : labels.mode_human}
-              </span>
+      <div className={`card border-0 ${isFloating ? '' : 'shadow-sm'} h-100`}>
+        {/* Header — hidden in floating mode since FloatingChat provides its own header */}
+        {!isFloating && (
+          <div className="card-header bg-primary text-white d-flex justify-content-between align-items-center">
+            <div className="d-flex align-items-center">
+              <i className="fas fa-comments mr-2" />
+              <h5 className="mb-0">Therapy Chat</h5>
             </div>
-          )}
-        </div>
+            {conversation && (
+              <div className="d-flex align-items-center" style={{ gap: '0.5rem' }}>
+                {isPaused && (
+                  <span className="badge badge-warning">
+                    <i className="fas fa-pause-circle mr-1" />
+                    Paused
+                  </span>
+                )}
+                <span className={`badge ${conversation.ai_enabled && !isPaused ? 'badge-light' : 'badge-warning'}`}>
+                  <i className={`fas ${conversation.ai_enabled && !isPaused ? 'fa-robot' : 'fa-user-md'} mr-1`} />
+                  {conversation.ai_enabled && !isPaused ? labels.mode_ai : labels.mode_human}
+                </span>
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Messages area */}
         <div className="card-body p-0 d-flex flex-column" style={{ minHeight: 400 }}>

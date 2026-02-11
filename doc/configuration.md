@@ -31,14 +31,15 @@ Each `therapyChat` style instance can be configured with:
 | `therapy_chat_help_text` | `Use @therapist to request your therapist, or #topic to tag a predefined topic.` | Help text shown below chat input explaining @mention and #hashtag usage. Supports multilingual content via field translations. |
 | `css` | (empty) | Additional CSS class |
 
-## Style Fields (therapistDashboard) - LLM & Summary
+## Style Fields (therapistDashboard) - LLM, Draft & Summary
 
 | Field | Default | Description |
 |-------|---------|-------------|
-| `llm_model` | (empty) | AI model for draft generation and summarization |
+| `llm_model` | (empty, defaults to `gpt-4o-mini`) | AI model for draft generation and summarization. Used by both "Generate AI Draft" and "Summarize" features. |
 | `llm_temperature` | `0.7` | Temperature for AI draft/summary generation |
 | `llm_max_tokens` | `2048` | Max tokens for AI draft/summary responses |
-| `conversation_context` | (empty) | System context for AI responses in draft generation |
+| `conversation_context` | (empty) | System context for AI responses in draft generation. This is the base system prompt used when building conversation context for the LLM. |
+| `therapy_draft_context` | (default therapeutic guidance) | Additional context/instructions for AI draft generation. Appended to the draft system prompt to guide the AI output (e.g., "Generate a response based on the conversation and the patient's last message"). Supports multilingual content via field translations. |
 | `therapy_summary_context` | (default therapeutic guidance) | Additional context/instructions for AI summarization. This text is prepended to the summarization prompt to guide the AI output. Supports multilingual content via field translations. |
 | `debug` | `0` | Debug mode |
 
