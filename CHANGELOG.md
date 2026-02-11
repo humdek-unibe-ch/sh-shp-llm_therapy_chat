@@ -84,6 +84,7 @@
 - **Alert text display: raw JSON cleaned** — Alert banner now extracts clean display text from alert metadata (`detected_keywords`, `reason`) instead of showing the raw `message` field which could contain JSON. For danger alerts, shows "Danger keywords detected: X"; for tag alerts, shows "Tagged: reason"
 - **Danger alert message content** — `handlePostLlmSafetyDetection()` now passes the LLM's human-readable `safety_message` to `createDangerAlert()` instead of the raw structured JSON response. Alert text is now meaningful for therapists
 - **Alerts stat shows unread count** — Dashboard header "Alerts" stat now shows `totalAlerts` (unread count) instead of `alerts.length` (total loaded), bold when > 0
+- **Therapist unread for AI conversations** — When AI is enabled, patient messages and AI responses no longer create `therapyMessageRecipients` entries for therapists. Only explicitly tagged therapists (via `@therapist` or `@Dr. Name`) get unread entries. When AI is disabled, all patient messages are marked unread for therapists as before (since messages are intended for them). Tag processing now runs before recipient creation so tagged IDs are available
 - **Removed dead code**: `hasAccess()`, `getDangerDetection()` (TherapyChatModel), `getConversationById()` (TherapistDashboardModel), `removeTherapistFromGroup()` (TherapyChatService), `getErrorMessage()` (api.ts), `LLM_THERAPY_CHAT_PLUGIN_NAME` constant
 
 ### Changed

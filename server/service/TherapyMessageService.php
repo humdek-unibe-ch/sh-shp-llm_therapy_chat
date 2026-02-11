@@ -97,13 +97,17 @@ class TherapyMessageService extends TherapyAlertService
             $this->updateLastSeen($conversationId, 'subject');
         }
 
-        // Create recipients
-        $this->createMessageRecipients($messageId, $conversation, $senderType, $senderId);
-
-        // Process @mentions for subject messages
+        // Process @mentions BEFORE creating recipients so we know which
+        // therapists were explicitly tagged (affects who gets notified).
+        $taggedTherapistIds = array();
         if ($senderType === self::SENDER_SUBJECT) {
-            $this->processTagsInMessage($messageId, $conversation, $content);
+            $taggedTherapistIds = $this->processTagsInMessage($messageId, $conversation, $content);
         }
+
+        // Create recipients — pass AI state + tagged IDs so the method can
+        // decide which therapists (if any) should see the message as unread.
+        $aiEnabled = !empty($conversation['ai_enabled']);
+        $this->createMessageRecipients($messageId, $conversation, $senderType, $senderId, $aiEnabled, $taggedTherapistIds);
 
         return array(
             'success' => true,
@@ -684,27 +688,47 @@ class TherapyMessageService extends TherapyAlertService
      * @param string $senderType
      * @param int $senderId
      */
-    private function createMessageRecipients($messageId, $conversation, $senderType, $senderId)
+    /**
+     * Create recipient entries that control who sees a message as "unread".
+     *
+     * Rules:
+     *  - SENDER_SUBJECT + AI enabled  → only tagged therapists (if any)
+     *  - SENDER_SUBJECT + AI disabled → all assigned therapists
+     *  - SENDER_THERAPIST             → patient only
+     *  - SENDER_AI                    → patient only (AI conversation is not
+     *                                   for the therapist to review)
+     *
+     * @param int   $messageId
+     * @param array $conversation
+     * @param string $senderType
+     * @param int   $senderId
+     * @param bool  $aiEnabled           Whether AI is enabled for this conversation
+     * @param int[] $taggedTherapistIds  Therapist IDs explicitly tagged in the message
+     */
+    private function createMessageRecipients($messageId, $conversation, $senderType, $senderId, $aiEnabled = false, $taggedTherapistIds = array())
     {
         $recipients = array();
         $patientId = $conversation['id_users'];
 
         if ($senderType === self::SENDER_SUBJECT) {
-            // Patient sends: notify all assigned therapists
-            $therapists = $this->getTherapistsForPatient($patientId);
-            foreach ($therapists as $t) {
-                $recipients[] = array($messageId, $t['id']);
+            if ($aiEnabled) {
+                // AI handles the conversation — only notify explicitly tagged therapists
+                foreach ($taggedTherapistIds as $tid) {
+                    $recipients[] = array($messageId, $tid);
+                }
+            } else {
+                // No AI — every patient message is intended for the therapist(s)
+                $therapists = $this->getTherapistsForPatient($patientId);
+                foreach ($therapists as $t) {
+                    $recipients[] = array($messageId, $t['id']);
+                }
             }
         } elseif ($senderType === self::SENDER_THERAPIST) {
             // Therapist sends: notify patient
             $recipients[] = array($messageId, $patientId);
         } elseif ($senderType === self::SENDER_AI) {
-            // AI sends: notify patient + all assigned therapists
+            // AI responds: only notify the patient (not the therapist)
             $recipients[] = array($messageId, $patientId);
-            $therapists = $this->getTherapistsForPatient($patientId);
-            foreach ($therapists as $t) {
-                $recipients[] = array($messageId, $t['id']);
-            }
         }
 
         // Bulk insert (ignore duplicates)
