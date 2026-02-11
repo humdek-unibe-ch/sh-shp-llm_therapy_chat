@@ -248,16 +248,38 @@ class TherapyAlertService extends TherapyChatService
     /**
      * Mark all alerts as read for a therapist in a conversation.
      *
+     * Accepts either therapyConversationMeta.id or no conversation filter.
+     * Resolves to llmConversations.id internally since therapyAlerts stores
+     * id_llmConversations.
+     *
      * @param int $therapistId
-     * @param int|null $llmConversationId
+     * @param int|null $conversationId therapyConversationMeta.id (or null for all)
      * @return bool
      */
-    public function markAllAlertsRead($therapistId, $llmConversationId = null)
+    public function markAllAlertsRead($therapistId, $conversationId = null)
     {
-        if ($llmConversationId) {
+        if ($conversationId) {
+            // Resolve therapyConversationMeta.id → llmConversations.id
+            $conversation = $this->getTherapyConversation($conversationId);
+            if (!$conversation || empty($conversation['id_llmConversations'])) {
+                return false;
+            }
             $sql = "UPDATE therapyAlerts SET is_read = 1, read_at = NOW()
                     WHERE id_llmConversations = ? AND (id_users IS NULL OR id_users = ?) AND is_read = 0";
-            $this->db->query_db($sql, array($llmConversationId, $therapistId));
+            $this->db->query_db($sql, array($conversation['id_llmConversations'], $therapistId));
+        } else {
+            // Mark ALL unread alerts for this therapist across all conversations
+            $conversations = $this->getTherapyConversationsByTherapist($therapistId);
+            if (empty($conversations)) {
+                return true;
+            }
+            $llmIds = array_column($conversations, 'id_llmConversations');
+            $placeholders = implode(',', array_fill(0, count($llmIds), '?'));
+            $sql = "UPDATE therapyAlerts SET is_read = 1, read_at = NOW()
+                    WHERE id_llmConversations IN ($placeholders)
+                    AND (id_users IS NULL OR id_users = ?) AND is_read = 0";
+            $params = array_merge($llmIds, array($therapistId));
+            $this->db->query_db($sql, $params);
         }
         return true;
     }

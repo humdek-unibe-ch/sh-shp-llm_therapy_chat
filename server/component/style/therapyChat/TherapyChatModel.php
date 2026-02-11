@@ -612,9 +612,15 @@ class TherapyChatModel extends StyleModel
             // NOTE: Do NOT also call $this->dangerDetection->sendNotifications()
             // because createDangerAlert already sends to all recipients. Calling
             // both would produce duplicate emails.
+            //
+            // Pass the human-readable safety message (not raw JSON) for the
+            // alert text. Fall back to the display content from the result.
+            $alertMessage = $safety['safety_message']
+                ?? $result['content']
+                ?? implode(', ', $detectedConcerns);
             $extraEmails = implode(',', $this->getDangerNotificationEmails());
             $this->therapyService->createDangerAlert(
-                $conversationId, $detectedConcerns, $content, $extraEmails
+                $conversationId, $detectedConcerns, $alertMessage, $extraEmails
             );
             $this->therapyService->setAIEnabled($conversationId, false);
 

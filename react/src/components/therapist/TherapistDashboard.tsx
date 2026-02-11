@@ -285,13 +285,15 @@ export const TherapistDashboard: React.FC<Props> = ({ config }) => {
       setDraftError(null);
       setSummaryModalOpen(false);
       setSummaryText('');
-      // Mark messages as read
+      // Mark messages AND alerts as read for this conversation
       try {
         await api.markMessagesRead(convId);
+        await api.markAllAlertsRead(convId);
         loadUnreadCounts();
+        loadAlerts();
       } catch { /* ignore */ }
     },
-    [api, chat.loadConversation, loadNotes, loadUnreadCounts],
+    [api, chat.loadConversation, loadNotes, loadUnreadCounts, loadAlerts],
   );
 
   // ---- Group tab switch ----
@@ -542,7 +544,7 @@ export const TherapistDashboard: React.FC<Props> = ({ config }) => {
               <StatItem value={config.stats.active} label={labels.statusActive} className="text-success" />
               <StatItem value={unreadCounts.total} label="Unread" className={unreadCounts.total > 0 ? 'text-primary font-weight-bold' : ''} />
               <StatItem value={config.stats.risk_critical} label={labels.riskCritical} className="text-danger" />
-              <StatItem value={alerts.length} label="Alerts" className="text-warning" />
+              <StatItem value={unreadCounts.totalAlerts} label="Alerts" className={unreadCounts.totalAlerts > 0 ? 'text-warning font-weight-bold' : 'text-warning'} />
             </div>
           </div>
         </div>
@@ -551,18 +553,51 @@ export const TherapistDashboard: React.FC<Props> = ({ config }) => {
       {/* ============ Alert Banner ============ */}
       {features.showAlertsPanel && criticalAlerts.length > 0 && (
         <div className="mb-3">
-          {criticalAlerts.map((a) => (
-            <div key={a.id} className="alert alert-danger d-flex justify-content-between align-items-center mb-2">
-              <div>
-                <i className="fas fa-exclamation-triangle mr-2" />
-                <strong>{a.subject_name}:</strong> {a.message}
+          {criticalAlerts.map((a) => {
+            // Build a clean display message from alert data
+            const meta = (a.metadata ?? {}) as Record<string, unknown>;
+            const keywords = Array.isArray(meta.detected_keywords) ? (meta.detected_keywords as string[]).join(', ') : null;
+            const alertType = a.alert_type ?? '';
+            let displayMsg = '';
+            if (alertType === 'danger_detected' && keywords) {
+              displayMsg = `Danger keywords detected: ${keywords}`;
+            } else if (alertType === 'tag_received') {
+              displayMsg = meta.reason ? `Tagged: ${meta.reason}` : 'Patient tagged therapist';
+            } else {
+              // Fallback: show message but strip any JSON blobs
+              const raw = a.message ?? '';
+              const jsonIdx = raw.indexOf('{');
+              displayMsg = jsonIdx > 0 ? raw.substring(0, jsonIdx).trim().replace(/["\n]+$/, '') : raw;
+            }
+
+            return (
+              <div key={a.id} className="alert alert-danger d-flex justify-content-between align-items-center mb-2">
+                <div className="text-truncate mr-2">
+                  <i className="fas fa-exclamation-triangle mr-2" />
+                  <strong>{a.subject_name}:</strong> {displayMsg}
+                </div>
+                <button className="btn btn-outline-light btn-sm flex-shrink-0" onClick={() => handleMarkAlertRead(a.id)}>
+                  <i className="fas fa-check mr-1" />
+                  {labels.dismiss}
+                </button>
               </div>
-              <button className="btn btn-outline-light btn-sm" onClick={() => handleMarkAlertRead(a.id)}>
-                <i className="fas fa-check mr-1" />
-                {labels.dismiss}
-              </button>
-            </div>
-          ))}
+            );
+          })}
+          {criticalAlerts.length > 1 && (
+            <button
+              className="btn btn-sm btn-outline-danger"
+              onClick={async () => {
+                try {
+                  await api.markAllAlertsRead();
+                  loadAlerts();
+                  loadUnreadCounts();
+                } catch { /* ignore */ }
+              }}
+            >
+              <i className="fas fa-check-double mr-1" />
+              Dismiss all alerts
+            </button>
+          )}
         </div>
       )}
 
