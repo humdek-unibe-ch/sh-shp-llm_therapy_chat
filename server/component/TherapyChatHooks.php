@@ -106,8 +106,23 @@ class TherapyChatHooks extends BaseHooks
         $label = $this->getConfigValue('therapy_chat_floating_label', '');
 
         $badgeClass = $unreadCount > 0 ? 'badge-danger' : 'badge-secondary';
-        $badgeHtml = $unreadCount > 0 ? "<span class=\"badge $badgeClass badge-pill position-absolute therapy-chat-badge\">$unreadCount</span>" : '';
+        $badgeHtml = $unreadCount > 0 ? "<span class=\"badge $badgeClass badge-pill position-absolute therapy-chat-badge\">$unreadCount</span>" : "<span class=\"badge badge-secondary badge-pill position-absolute therapy-chat-badge\" style=\"display:none\"></span>";
         $positionCss = $this->getPositionCss($position);
+
+        // Build polling config for the floating icon JS (works for both modes).
+        // The JS will poll check_updates (subject) or get_unread_counts (therapist)
+        // to keep the badge count fresh without React.
+        // For therapists, use the therapistDashboard section ID (polls that controller).
+        // For subjects, use the therapyChat section ID.
+        $pollSectionId = $isTherapist
+            ? $this->getSectionIdForStyle('therapistDashboard')
+            : $this->getTherapyChatSectionId();
+        $pollConfig = json_encode(array(
+            'role' => $isTherapist ? 'therapist' : 'subject',
+            'baseUrl' => $chatUrl,
+            'sectionId' => $pollSectionId,
+            'interval' => 3000 // 3 seconds
+        ));
 
         include __DIR__ . '/TherapyChatHooks/tpl/floating_chat_icon.php';
     }
@@ -174,14 +189,25 @@ class TherapyChatHooks extends BaseHooks
      */
     private function getTherapyChatSectionId()
     {
+        return $this->getSectionIdForStyle('therapyChat');
+    }
+
+    /**
+     * Get the first section ID that uses a given style name.
+     *
+     * @param string $styleName e.g. 'therapyChat' or 'therapistDashboard'
+     * @return int|null
+     */
+    private function getSectionIdForStyle($styleName)
+    {
         try {
             $sql = "SELECT s.id
                     FROM sections s
                     INNER JOIN styles st ON s.id_styles = st.id
-                    WHERE st.name = 'therapyChat'
+                    WHERE st.name = ?
                     LIMIT 1";
-            $result = $this->db->query_db_first($sql);
-            return $result ? $result['id'] : null;
+            $result = $this->db->query_db_first($sql, array($styleName));
+            return $result ? (int)$result['id'] : null;
         } catch (Exception $e) {
             return null;
         }

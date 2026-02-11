@@ -27,7 +27,7 @@ if (file_exists($tcCssPath)):
 <link rel="stylesheet" href="<?php echo BASE_PATH . '/server/plugins/sh-shp-llm_therapy_chat/css/ext/therapy-chat.css?v=' . filemtime($tcCssPath); ?>" />
 <?php endif; ?>
 <!-- Therapy Chat Floating Icon — Modal Mode -->
-<button type="button" id="therapy-chat-floating-trigger" class="position-fixed d-flex align-items-center justify-content-center bg-primary text-white <?php echo !empty($label) ? 'rounded-pill px-3' : 'rounded-circle'; ?> shadow therapy-chat-icon" style="min-width: 50px; height: 50px; font-size: 1.5rem; z-index: 1000; border: none; cursor: pointer; transition: transform 0.2s, box-shadow 0.2s; <?php echo $positionCss; ?>" title="<?php echo $iconTitle; ?>" aria-label="<?php echo $iconTitle; ?>">
+<button type="button" id="therapy-chat-floating-trigger" class="position-fixed d-flex align-items-center justify-content-center bg-primary text-white <?php echo !empty($label) ? 'rounded-pill px-3' : 'rounded-circle'; ?> shadow therapy-chat-icon" style="min-width: 50px; height: 50px; font-size: 1.5rem; z-index: 1000; border: none; cursor: pointer; transition: transform 0.2s, box-shadow 0.2s; <?php echo $positionCss; ?>" title="<?php echo $iconTitle; ?>" aria-label="<?php echo $iconTitle; ?>" data-poll-config="<?php echo htmlspecialchars($pollConfig); ?>">
     <?php if (!empty($label)): ?>
         <span class="d-flex align-items-center">
             <i class="fas <?php echo $icon; ?> me-2"></i>
@@ -57,7 +57,7 @@ if (file_exists($tcCssPath)):
 
 <?php else: ?>
 <!-- Therapy Chat Floating Icon — Link Mode -->
-<a href="<?php echo $chatUrl; ?>" class="position-fixed d-flex align-items-center justify-content-center bg-primary text-white <?php echo !empty($label) ? 'rounded-pill px-3' : 'rounded-circle'; ?> shadow therapy-chat-icon" style="min-width: 50px; height: 50px; font-size: 1.5rem; z-index: 1000; text-decoration: none; transition: transform 0.2s, box-shadow 0.2s; <?php echo $positionCss; ?>" title="<?php echo $iconTitle; ?>">
+<a href="<?php echo $chatUrl; ?>" id="therapy-chat-floating-link" class="position-fixed d-flex align-items-center justify-content-center bg-primary text-white <?php echo !empty($label) ? 'rounded-pill px-3' : 'rounded-circle'; ?> shadow therapy-chat-icon" style="min-width: 50px; height: 50px; font-size: 1.5rem; z-index: 1000; text-decoration: none; transition: transform 0.2s, box-shadow 0.2s; <?php echo $positionCss; ?>" title="<?php echo $iconTitle; ?>" data-poll-config="<?php echo htmlspecialchars($pollConfig); ?>">
     <?php if (!empty($label)): ?>
         <span class="d-flex align-items-center">
             <i class="fas <?php echo $icon; ?> me-2"></i>
