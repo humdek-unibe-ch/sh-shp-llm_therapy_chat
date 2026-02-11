@@ -481,20 +481,34 @@ class TherapyMessageService extends TherapyAlertService
     /**
      * Get unread message count for a user across all therapy conversations.
      *
-     * @param int $userId
+     * For therapists the count excludes AI-generated messages so they only
+     * see patient messages (and therapist messages from other therapists)
+     * as unread. For patients all unread messages are counted.
+     *
+     * @param int  $userId
+     * @param bool $excludeAI  When true, exclude AI messages from the count
      * @return int
      */
-    public function getUnreadCountForUser($userId)
+    public function getUnreadCountForUser($userId, $excludeAI = false)
     {
-        $sql = "SELECT COUNT(*) as cnt FROM therapyMessageRecipients
-                WHERE id_users = ? AND is_new = 1";
+        if ($excludeAI) {
+            $sql = "SELECT COUNT(*) as cnt
+                    FROM therapyMessageRecipients tmr
+                    INNER JOIN llmMessages lm ON lm.id = tmr.id_llmMessages
+                    WHERE tmr.id_users = ? AND tmr.is_new = 1
+                      AND lm.role != 'assistant'";
+        } else {
+            $sql = "SELECT COUNT(*) as cnt FROM therapyMessageRecipients
+                    WHERE id_users = ? AND is_new = 1";
+        }
         $result = $this->db->query_db_first($sql, array($userId));
         return intval($result['cnt'] ?? 0);
     }
 
     /**
      * Get per-subject unread message counts for a therapist.
-     * Returns an associative array keyed by patient user ID.
+     * Only counts patient (subject) messages — AI messages are excluded
+     * so therapists see a meaningful unread count.
      *
      * @param int $therapistId
      * @return array [ userId => ['subjectId' => .., 'subjectName' => .., 'unreadCount' => ..] ]
@@ -510,8 +524,9 @@ class TherapyMessageService extends TherapyAlertService
                 INNER JOIN therapyConversationMeta tcm ON tcm.id_llmConversations = lm.id_llmConversations
                 INNER JOIN llmConversations lc ON lc.id = tcm.id_llmConversations
                 INNER JOIN users u ON u.id = lc.id_users
-                INNER JOIN validation_codes vc ON vc.id_users = u.id 
+                LEFT JOIN validation_codes vc ON vc.id_users = u.id 
                 WHERE tmr.id_users = ? AND tmr.is_new = 1
+                  AND lm.role != 'assistant'
                 GROUP BY lc.id_users, u.name, vc.code";
 
         $rows = $this->db->query_db($sql, array($therapistId));
@@ -531,10 +546,10 @@ class TherapyMessageService extends TherapyAlertService
 
     /**
      * Get per-group unread totals for a therapist.
-     * Returns [ groupId => totalUnread ].
+     * Only counts patient messages — AI messages are excluded.
      *
      * @param int $therapistId
-     * @return array
+     * @return array [ groupId => totalUnread ]
      */
     public function getUnreadByGroupForTherapist($therapistId)
     {
@@ -546,6 +561,7 @@ class TherapyMessageService extends TherapyAlertService
                 INNER JOIN users_groups ug ON ug.id_users = lc.id_users
                 INNER JOIN therapyTherapistAssignments tta ON tta.id_groups = ug.id_groups AND tta.id_users = :tid
                 WHERE tmr.id_users = :uid AND tmr.is_new = 1
+                  AND lm.role != 'assistant'
                 GROUP BY ug.id_groups";
 
         $rows = $this->db->query_db($sql, array(':tid' => $therapistId, ':uid' => $therapistId));
@@ -649,11 +665,25 @@ class TherapyMessageService extends TherapyAlertService
 
     /**
      * Process @mentions in a message and create tag alerts.
+     *
+     * Detects both:
+     *   - @therapist / @Therapist → tag ALL therapists
+     *   - @TherapistName           → tag that specific therapist
+     *
+     * Returns an array of matched therapist IDs (empty array = no match,
+     * null inside = "all").
+     *
+     * @param int    $messageId
+     * @param array  $conversation
+     * @param string $content
+     * @return array  Therapist user IDs that were tagged (empty = none)
      */
     private function processTagsInMessage($messageId, $conversation, $content)
     {
+        $taggedIds = array();
+
+        // 1. Check for @therapist (tag all)
         if (preg_match('/@(?:therapist|Therapist)\b/', $content)) {
-            // Tag all therapists for this patient
             $this->createTagAlert(
                 $conversation['id_llmConversations'],
                 null, // all therapists
@@ -661,7 +691,39 @@ class TherapyMessageService extends TherapyAlertService
                 THERAPY_URGENCY_NORMAL,
                 $messageId
             );
+            // Return all therapist IDs
+            $patientId = $conversation['id_users'];
+            $therapists = $this->getTherapistsForPatient($patientId);
+            foreach ($therapists as $t) {
+                $taggedIds[] = (int)$t['id'];
+            }
+            return $taggedIds;
         }
+
+        // 2. Check for @SpecificTherapistName mentions
+        $patientId = $conversation['id_users'];
+        $therapists = $this->getTherapistsForPatient($patientId);
+        if (!empty($therapists)) {
+            foreach ($therapists as $t) {
+                $name = $t['name'] ?? '';
+                if (empty($name)) continue;
+                // Match @TherapistName (case-insensitive)
+                $escaped = preg_quote($name, '/');
+                if (preg_match('/@' . $escaped . '\b/i', $content)) {
+                    $taggedIds[] = (int)$t['id'];
+                    // Create a tag alert for this specific therapist
+                    $this->createTagAlert(
+                        $conversation['id_llmConversations'],
+                        (int)$t['id'],
+                        null,
+                        THERAPY_URGENCY_NORMAL,
+                        $messageId
+                    );
+                }
+            }
+        }
+
+        return $taggedIds;
     }
 
     /**

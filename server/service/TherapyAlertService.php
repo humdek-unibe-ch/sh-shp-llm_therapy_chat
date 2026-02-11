@@ -39,7 +39,7 @@ class TherapyAlertService extends TherapyChatService
      * @param array|null $metadata Extra data
      * @return int|bool Alert ID or false
      */
-    public function createAlert($llmConversationId, $alertType, $message, $severity = THERAPY_SEVERITY_INFO, $targetUserId = null, $metadata = null)
+    public function createAlert($llmConversationId, $alertType, $message, $severity = THERAPY_SEVERITY_INFO, $targetUserId = null, $metadata = null, $extraNotificationEmails = '')
     {
         if (!in_array($alertType, THERAPY_VALID_ALERT_TYPES)) {
             return false;
@@ -67,7 +67,7 @@ class TherapyAlertService extends TherapyChatService
         $alertId = $this->db->insert('therapyAlerts', $data);
 
         if ($alertId && ($severity === THERAPY_SEVERITY_CRITICAL || $severity === THERAPY_SEVERITY_EMERGENCY)) {
-            $this->sendUrgentNotification($alertId, $llmConversationId, $alertType, $message);
+            $this->sendUrgentNotification($alertId, $llmConversationId, $alertType, $message, $extraNotificationEmails);
         }
 
         return $alertId;
@@ -79,9 +79,10 @@ class TherapyAlertService extends TherapyChatService
      * @param int $conversationId therapyConversationMeta.id
      * @param array $detectedKeywords
      * @param string $userMessage
+     * @param string $extraNotificationEmails Comma-separated emails (from danger_notification_emails CMS field)
      * @return int|bool
      */
-    public function createDangerAlert($conversationId, $detectedKeywords, $userMessage)
+    public function createDangerAlert($conversationId, $detectedKeywords, $userMessage, $extraNotificationEmails = '')
     {
         $conversation = $this->getTherapyConversation($conversationId);
         if (!$conversation) {
@@ -107,7 +108,8 @@ class TherapyAlertService extends TherapyChatService
             $message,
             THERAPY_SEVERITY_EMERGENCY,
             null,
-            $metadata
+            $metadata,
+            $extraNotificationEmails
         );
     }
 
@@ -266,42 +268,101 @@ class TherapyAlertService extends TherapyChatService
 
     /**
      * Send urgent email notification for critical/emergency alerts.
+     * Uses the SelfHelp JobScheduler to queue and send emails.
      */
-    private function sendUrgentNotification($alertId, $llmConversationId, $alertType, $message)
+    /**
+     * Send urgent email notification for critical/emergency alerts.
+     * Emails are sent to:
+     *   1. All assigned therapists for the patient
+     *   2. Extra notification emails from the CMS danger_notification_emails field
+     *
+     * @param int $alertId
+     * @param int $llmConversationId
+     * @param string $alertType
+     * @param string $message
+     * @param string $extraNotificationEmails Comma-separated extra email addresses
+     */
+    private function sendUrgentNotification($alertId, $llmConversationId, $alertType, $message, $extraNotificationEmails = '')
     {
         try {
             // Get patient info
-            $sql = "SELECT lc.id_users, u.name FROM llmConversations lc
+            $sql = "SELECT lc.id_users, u.name, u.email as patient_email FROM llmConversations lc
                     INNER JOIN users u ON u.id = lc.id_users
                     WHERE lc.id = ?";
             $patient = $this->db->query_db_first($sql, array($llmConversationId));
-            if (!$patient) return;
+            if (!$patient) {
+                error_log("TherapyAlertService: No patient found for llmConversation #$llmConversationId");
+                return;
+            }
 
-            // Get therapists for this patient
-            $therapists = $this->getTherapistsForPatient($patient['id_users']);
-            if (empty($therapists)) return;
-
+            $patientName = htmlspecialchars($patient['name']);
             $subject = "[URGENT] Therapy Chat Alert: " . ucfirst(str_replace('_', ' ', $alertType));
-            $body = "## Urgent Alert\n\n**Patient:** {$patient['name']}\n**Type:** $alertType\n**Message:** $message\n\nPlease review immediately.";
+            $body = "<h2>Urgent Alert</h2>"
+                . "<p><strong>Patient:</strong> $patientName</p>"
+                . "<p><strong>Type:</strong> " . htmlspecialchars($alertType) . "</p>"
+                . "<p><strong>Details:</strong> " . nl2br(htmlspecialchars($message)) . "</p>"
+                . "<p><strong>Please review immediately.</strong></p>";
 
+            // Collect all recipient emails (therapists + extra configured addresses)
+            $recipientEmails = array();
+
+            // 1. Get therapists for this patient
+            $therapists = $this->getTherapistsForPatient($patient['id_users']);
             foreach ($therapists as $therapist) {
-                if (!filter_var($therapist['email'], FILTER_VALIDATE_EMAIL)) continue;
+                if (!empty($therapist['email']) && filter_var($therapist['email'], FILTER_VALIDATE_EMAIL)) {
+                    $recipientEmails[$therapist['email']] = array(
+                        'email' => $therapist['email'],
+                        'id_users' => array($therapist['id']),
+                        'description' => "Urgent therapy alert #$alertId for patient: " . $patient['name'] . " (therapist)"
+                    );
+                }
+            }
 
+            // 2. Add extra notification emails from danger_notification_emails CMS field
+            if (!empty($extraNotificationEmails)) {
+                $extraEmails = array_filter(array_map('trim', preg_split('/[,;\n]+/', $extraNotificationEmails)));
+                foreach ($extraEmails as $extraEmail) {
+                    if (filter_var($extraEmail, FILTER_VALIDATE_EMAIL) && !isset($recipientEmails[$extraEmail])) {
+                        $recipientEmails[$extraEmail] = array(
+                            'email' => $extraEmail,
+                            'id_users' => array(),
+                            'description' => "Urgent therapy alert #$alertId for patient: " . $patient['name'] . " (configured notification)"
+                        );
+                    }
+                }
+            }
+
+            if (empty($recipientEmails)) {
+                error_log("TherapyAlertService: No recipients found for urgent notification (patient #" . $patient['id_users'] . ")");
+                return;
+            }
+
+            // Send to all recipients
+            foreach ($recipientEmails as $recipient) {
                 $mailData = array(
-                    'id_jobTypes' => $this->db->get_lookup_id_by_value('jobTypes', 'email'),
-                    'id_jobStatus' => $this->db->get_lookup_id_by_value('scheduledJobsStatus', 'queued'),
-                    'date_to_be_executed' => date('Y-m-d H:i:s'),
-                    'recipient_emails' => $therapist['email'],
-                    'subject' => $subject,
-                    'body' => $body,
-                    'is_html' => 0,
-                    'description' => "Urgent therapy alert #$alertId"
+                    "id_jobTypes" => $this->db->get_lookup_id_by_value(jobTypes, jobTypes_email),
+                    "id_jobStatus" => $this->db->get_lookup_id_by_value(scheduledJobsStatus, scheduledJobsStatus_queued),
+                    "date_to_be_executed" => date('Y-m-d H:i:s'),
+                    "from_email" => "noreply@selfhelp.local",
+                    "from_name" => "Therapy Chat",
+                    "reply_to" => "noreply@selfhelp.local",
+                    "recipient_emails" => $recipient['email'],
+                    "subject" => $subject,
+                    "body" => $body,
+                    "is_html" => 1,
+                    "description" => $recipient['description'],
+                    "id_users" => $recipient['id_users'],
+                    "attachments" => array()
                 );
 
-                $this->job_scheduler->add_and_execute_job($mailData, 'by_therapy_chat_plugin');
+                try {
+                    $this->job_scheduler->schedule_job($mailData, transactionBy_by_system);
+                } catch (Exception $mailEx) {
+                    error_log("TherapyAlertService: Failed to schedule urgent email to " . $recipient['email'] . ": " . $mailEx->getMessage());
+                }
             }
         } catch (Exception $e) {
-            error_log("TherapyAlertService: Failed to send notification - " . $e->getMessage());
+            error_log("TherapyAlertService: Failed to send urgent notification - " . $e->getMessage());
         }
     }
 }

@@ -41,6 +41,8 @@
   padding: 0.5rem 0.75rem;
   border-radius: 0.75rem;
   position: relative;
+  margin-left: 0.5rem;
+  margin-right: 0.5rem;
 }
 
 /* Header (sender + time) */
@@ -69,6 +71,7 @@
 /* Own messages — right-aligned, primary blue */
 .tc-msg--self {
   align-self: flex-end;
+  margin-left: auto;
   background-color: #007bff;
   color: #fff;
   border-bottom-right-radius: 0.2rem;
@@ -81,6 +84,7 @@
 /* Subject (patient) messages — left, light blue */
 .tc-msg--subject {
   align-self: flex-start;
+  margin-right: auto;
   background-color: #e3f2fd;
   color: #0d47a1;
   border-bottom-left-radius: 0.2rem;
@@ -89,6 +93,7 @@
 /* AI messages — left, white with border */
 .tc-msg--ai {
   align-self: flex-start;
+  margin-right: auto;
   background-color: #ffffff;
   color: #212529;
   border: 1px solid #dee2e6;
@@ -102,6 +107,7 @@
 /* Therapist messages (seen by patient) — left, green with accent */
 .tc-msg--therapist {
   align-self: flex-start;
+  margin-right: auto;
   background-color: #d4edda;
   color: #155724;
   border-left: 3px solid #28a745;

@@ -36,8 +36,8 @@
 - **Lightweight polling**: `check_updates` endpoint returns only counts/latest message ID; full data fetch only when something changed (both patient and therapist sides)
 - **Message editing**: Therapists can edit their own messages
 - **Message soft-deletion**: Messages marked as deleted (not removed)
-- **Unread tracking**: Per-patient and per-group unread message counts with badges in patient list and group tabs
-- **Alert-based tagging**: Tags create alerts with `metadata` JSON for reason/urgency
+- **Unread tracking**: Per-patient and per-group unread message counts with badges in patient list and group tabs. Therapist unread counts exclude AI messages (`role = 'assistant'`)
+- **Alert-based tagging**: Tags create alerts with `metadata` JSON for reason/urgency. Supports both `@therapist` (all therapists) and `@SpecificName` (individual therapist, case-insensitive)
 - **Clinical notes edit/delete**: Therapists can edit note content and soft-delete notes with full audit trail
 - **Transaction logging**: All note CRUD operations, risk level changes, AI toggle changes, status changes, summary generation, and draft creation logged via `logTransaction()`
 - **`globals.php`**: Proper plugin constant loading via SelfHelp loadPluginGlobals()
@@ -46,17 +46,25 @@
 - **URL state persistence**: Therapist dashboard preserves selected group tab and patient in the URL (`?gid=...&uid=...`)
 - **Speech-to-text**: Integrated with `sh-shp-llm` plugin's STT service, cursor-position text insertion
 - **Floating chat badge**: Auto-clears on patient chat view and after each poll
-- **Floating modal chat** (`therapyChat` style): When `enable_floating_chat` is enabled, the server-rendered floating icon opens an inline modal panel instead of navigating to the chat page. Icon, position, and label are controlled by the main plugin config (`therapy_chat_floating_icon`, `therapy_chat_floating_position`, `therapy_chat_floating_label`). Includes mobile-responsive backdrop, Escape-to-close, and unread badge clearing on open
-- **Email notifications — therapist→patient**: When a therapist sends a message (or sends a draft), an email is queued to the patient via SelfHelp's `JobScheduler`. Configurable via `enable_patient_email_notification`, `patient_notification_email_subject`, `patient_notification_email_body` fields on `therapistDashboard` style. Placeholders: `@user_name`, `@therapist_name`
-- **Email notifications — patient→therapist**: Therapists are emailed only when: (a) patient explicitly tags `@therapist`, or (b) AI is disabled for the conversation (all messages go to therapist). Tag messages use a separate template with message preview. Configurable via `enable_therapist_email_notification`, `therapist_notification_email_subject`, `therapist_notification_email_body`, `therapist_tag_email_subject`, `therapist_tag_email_body` fields on both `therapistDashboard` and `therapyChat` styles. Placeholders: `{{patient_name}}`, `{{message_preview}}`, `@user_name`. Default: enabled
+- **Floating modal chat** (`therapyChat` style): When `enable_floating_chat` is enabled, the server-rendered floating icon opens an inline modal panel instead of navigating to the chat page. Icon, position, and label are controlled by the main plugin config (`therapy_chat_floating_icon`, `therapy_chat_floating_position`, `therapy_chat_floating_label`). Includes mobile-responsive backdrop, Escape-to-close, and unread badge clearing on open. The floating panel loads `therapy-chat.css` via `<link>` tag so message bubble styles work on any page
+- **Email notifications — therapist->patient**: When a therapist sends a message (or sends a draft), an email is queued to the patient via SelfHelp's `JobScheduler`. Configurable via `enable_patient_email_notification`, `patient_notification_email_subject`, `patient_notification_email_body` fields on `therapistDashboard` style. Placeholders: `@user_name`, `@therapist_name`
+- **Email notifications — patient->therapist**: Therapists are emailed when: (a) patient tags `@therapist` or `@SpecificName`, or (b) AI is disabled for the conversation. Tag messages use a separate template with message preview. Configurable via `enable_therapist_email_notification`, `therapist_notification_email_subject`, `therapist_notification_email_body`, `therapist_tag_email_subject`, `therapist_tag_email_body` fields on both `therapistDashboard` and `therapyChat` styles. Placeholders: `{{patient_name}}`, `{{message_preview}}`, `@user_name`. Default: enabled
 - **Email notification shared fields**: `notification_from_email` and `notification_from_name` on both styles
+- **@mention autocomplete**: Typing `@` in the message input opens a dropdown of assigned therapists; typing `#` shows predefined tag reasons/topics. Keyboard navigation (Arrow keys, Enter, Tab, Escape) supported
+- **@tagged messages skip AI**: When a patient tags a therapist (`@therapist` or `@SpecificName`), the message is sent only to therapists — no AI response is generated. This ensures the therapist sees the message directly without AI interference
+- **Danger detection** (multi-layer):
+  1. **LLM-based detection**: If the parent `sh-shp-llm` plugin's `LlmDangerDetectionService` is available, the LLM evaluates every message and returns a structured SafetyAssessment with danger_level (null, warning, critical, emergency). For critical/emergency, conversation is blocked, AI disabled, risk escalated, and urgent email sent to all assigned therapists
+  2. **Keyword-based fallback**: When LLM detection is unavailable, configurable `danger_keywords` (comma/semicolon separated) are checked with simple substring matching. Same blocking and notification behavior applies
+  3. **`danger_notification_emails`** field: Configurable list of additional email addresses to receive urgent danger notifications (e.g., clinical supervisors). Used by `TherapyAlertService::sendUrgentNotification()`
+  4. **Danger blocked message**: Customizable message shown to the patient when danger is detected (`danger_blocked_message` field)
+  5. **Audit logging**: All danger detections are logged via transaction service
 - Comprehensive documentation in `doc/` folder
 
 ### Changed
 - Rewrote entire React frontend (types, API, hooks, all components)
 - Single CSS file with `tc-` prefix instead of scattered per-component CSS
-- Simplified `MessageInput` — no heavy mention library, matches `sh-shp-llm` UI patterns
-- Cleaner `MessageList` with clear visual distinction per sender type
+- Simplified `MessageInput` — no heavy mention library, matches `sh-shp-llm` UI patterns. Accepts `onFetchMentions` callback and `topicSuggestions` prop for autocomplete
+- Cleaner `MessageList` with clear visual distinction per sender type. 24-hour time format
 - Simplified `TherapistDashboard` with group tabs, draft modal, summarization modal, stat header
 - Simplified `SubjectChat` — focused patient experience with paused-state awareness
 - Updated `api.ts` to factory pattern (`createSubjectApi`, `createTherapistApi`) with `editNote`, `deleteNote`, `checkUpdates`, `generateSummary` endpoints
@@ -75,6 +83,7 @@
 - Improved CSS for markdown tables, headings, blockquotes, horizontal rules across all modals and note panels
 - **TherapistDashboardController**: Refactored to thin controller — all business logic (message send/edit/delete, AI draft generation, summarization, conversation controls, notes, alerts, email notifications, speech-to-text) moved to `TherapistDashboardModel`
 - **TherapyChatController**: Refactored to thin controller — message sending with danger detection, AI response processing, therapist tagging, speech transcription, and email notifications delegated to `TherapyChatModel`
+- `TherapyChat.tsx` entry point exposes global mount functions (`window.TherapyChat.mount`, `window.__TherapyChatMount`) and listens for `therapy-chat-mount` custom events for dynamic mounting from server-rendered floating panels
 - Updated all documentation to match new architecture
 
 ### Removed

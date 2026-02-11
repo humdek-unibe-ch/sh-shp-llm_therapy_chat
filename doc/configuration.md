@@ -13,6 +13,8 @@ The plugin registers a page type `sh_module_llm_therapy_chat` with these fields:
 | `therapy_chat_danger_words` | textarea | Comma-separated danger keywords |
 | `therapy_chat_floating_position` | select | Position of the floating chat button |
 
+When the floating chat is enabled, the panel loads `therapy-chat.css` explicitly via a `<link>` tag so styles work on any page (not just the chat page).
+
 ## Style Fields (therapyChat)
 
 Each `therapyChat` style instance can be configured with:
@@ -27,6 +29,7 @@ Each `therapyChat` style instance can be configured with:
 | `therapy_chat_system_prompt` | (built-in) | Custom system prompt for the AI |
 | `therapy_chat_polling_interval` | `10000` | Polling interval in ms |
 | `therapy_chat_tagging_enabled` | `1` | Allow patients to tag therapists |
+| `danger_notification_emails` | (empty) | Comma-separated email addresses to receive urgent danger notifications in addition to assigned therapists (e.g., clinical supervisors). Used when danger is detected via LLM or keyword matching. Emails are deduplicated if an address appears in both. |
 | `therapy_chat_speech_to_text_enabled` | `0` | Enable speech input |
 | `therapy_chat_help_text` | `Use @therapist to request your therapist, or #topic to tag a predefined topic.` | Help text shown below chat input explaining @mention and #hashtag usage. Supports multilingual content via field translations. |
 | `css` | (empty) | Additional CSS class |

@@ -12,16 +12,37 @@ If you are enrolled in the therapy program, you will see a floating chat button
 - **Type your message** in the text box and press **Enter** or click **Send**
 - **AI Assistant** may respond automatically (if enabled by your therapist)
 - **Your therapist** can also send messages directly — these appear with a green highlight
+- **Timestamps** are shown in 24-hour format (e.g., 14:30)
 
 ### Reaching Your Therapist
 
-Use **@therapist** or **@all** in your message to tag your therapist for attention.
-Use **#topic** to tag a predefined topic or status (configured by your therapist).
+Type **@** in your message to see a dropdown of available therapists you can tag.
+You can tag a **specific therapist** by name (e.g., `@Dr. Smith`) to notify only them,
+or type **@therapist** to tag all assigned therapists at once. Select from the dropdown
+or type the name to filter.
+
+**Tagged messages skip AI**: When you tag a therapist (`@therapist` or `@SpecificName`),
+your message is sent only to therapists — no AI response is generated. This keeps
+therapist-directed messages focused on human attention.
+
+Type **#** to see a dropdown of predefined topics/reasons (e.g., `#overwhelmed`,
+`#need_talk`). Select one to include it in your message.
+
+Use the **arrow keys** to navigate the dropdown, **Enter** or **Tab** to select,
+and **Escape** to dismiss.
 
 A help text below the message input explains these options.
 
 > **Note**: If your conversation is paused by your therapist, you will see a notice
 > and will not be able to send messages until it is resumed.
+
+### Safety Detection
+
+If you send a message that contains concerning content (e.g., references to self-harm),
+the system will:
+- Show you a safety message with helpful resources
+- Notify your therapist immediately via email
+- Block AI responses until your therapist reviews the conversation
 
 ### Voice Input
 
@@ -52,6 +73,9 @@ Click a tab to filter the patient list by group. The "All Groups" tab shows ever
 - **Group tab badge** = total unread messages from patients in that group
 - Total unread count shown in the stats header
 
+> **Note:** Unread counts include only **patient and therapist messages** — AI-generated
+> messages are excluded, so you see how many human messages need your attention.
+
 ### Reading a Conversation
 
 Click any patient in the list to load their conversation. Messages are color-coded:
@@ -66,6 +90,7 @@ Click any patient in the list to load their conversation. Messages are color-cod
 
 **Edited messages** show a small "edited" indicator.
 **Deleted messages** show "This message was removed."
+**Timestamps** are displayed in 24-hour format (e.g., 14:30).
 
 ### Sending Messages
 

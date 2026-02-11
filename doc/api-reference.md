@@ -33,6 +33,8 @@ Returns the chat configuration for the current user.
 
 **Response**: `{ message_id, conversation_id, ai_message?, blocked? }`
 
+When the message tags a therapist (`@therapist` or `@SpecificName`), no AI response is generated — the response omits `ai_message`.
+
 ### POST `tag_therapist`
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
@@ -108,6 +110,7 @@ Returns dashboard configuration including stats, groups, features, labels.
 **Response**: `{ unread_counts: { total, totalAlerts, bySubject: {...}, byGroup: {...} } }`
 
 Returns unread message counts per user and per group tab on the therapist dashboard.
+These counts exclude AI-generated messages (`role = 'assistant'`).
 
 ### GET `get_groups`
 Returns therapist's assigned groups with patient counts.
@@ -261,3 +264,17 @@ conversation linked to the therapist and section for audit trail.
 
 ### POST `speech_transcribe`
 Same as subject endpoint — transcribes audio to text.
+
+---
+
+## Backend Implementation Notes
+
+### Unread Counts
+`TherapyMessageService::getUnreadCountForUser($userId, $excludeAI = false)` — when `$excludeAI` is `true`, messages with `role = 'assistant'` are excluded. Used for therapist dashboard and floating icon badge.
+
+### Removed Methods
+- `TherapyChatModel::getConversation()`
+- `TherapistDashboardModel::notifyTherapistNewMessage()`
+- `TherapyChatService::getTherapyConversationByLlmId()`, `getTherapistsForGroup()`, `setTherapyMode()`, `getLookupValues()`
+- `api.ts::setApiBaseUrl()`
+- `types/index.ts`: `DEFAULT_SUBJECT_LABELS`, `DEFAULT_THERAPIST_LABELS`

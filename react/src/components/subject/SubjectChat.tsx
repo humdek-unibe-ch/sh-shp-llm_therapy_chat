@@ -17,6 +17,7 @@
 import React, { useEffect, useCallback, useMemo, useRef } from 'react';
 import { MessageList } from '../shared/MessageList';
 import { MessageInput } from '../shared/MessageInput';
+import type { MentionItem } from '../shared/MessageInput';
 import { LoadingIndicator } from '../shared/LoadingIndicator';
 import { TaggingPanel } from '../shared/TaggingPanel';
 import { useChatState } from '../../hooks/useChatState';
@@ -43,7 +44,10 @@ function updateFloatingBadge(count: number): void {
 }
 
 export const SubjectChat: React.FC<SubjectChatProps> = ({ config }) => {
-  const api = useMemo(() => createSubjectApi(config.sectionId), [config.sectionId]);
+  const api = useMemo(
+    () => createSubjectApi(config.sectionId, config.baseUrl),
+    [config.sectionId, config.baseUrl],
+  );
   const loadedRef = useRef(false);
 
   const {
@@ -103,6 +107,36 @@ export const SubjectChat: React.FC<SubjectChatProps> = ({ config }) => {
   });
 
   const labels = config.labels;
+
+  // Build @mention fetch callback: loads therapists from the backend
+  const fetchMentions = useCallback(async (): Promise<MentionItem[]> => {
+    try {
+      const data = await api.getTherapists();
+      const therapists = (data as unknown as { therapists: Array<{ id: number; display?: string; name?: string }> }).therapists || [];
+      const items: MentionItem[] = therapists.map((t) => ({
+        id: t.id,
+        display: t.display || t.name || 'Therapist',
+        insertText: '@' + (t.display || t.name || 'therapist'),
+      }));
+      // Always include generic @therapist as first option
+      if (!items.some(i => i.insertText === '@therapist')) {
+        items.unshift({ id: 'therapist', display: 'therapist (all)', insertText: '@therapist' });
+      }
+      return items;
+    } catch {
+      return [{ id: 'therapist', display: 'therapist', insertText: '@therapist' }];
+    }
+  }, [api]);
+
+  // Build #topic suggestions from tag reasons
+  const topicSuggestions: MentionItem[] = useMemo(() => {
+    if (!config.tagReasons || config.tagReasons.length === 0) return [];
+    return config.tagReasons.map((r) => ({
+      id: r.code,
+      display: r.label || r.code,
+      insertText: '#' + r.code,
+    }));
+  }, [config.tagReasons]);
 
   return (
     <div className="tc-subject">
@@ -176,6 +210,8 @@ export const SubjectChat: React.FC<SubjectChatProps> = ({ config }) => {
                 buttonLabel={labels.send_button}
                 speechToTextEnabled={config.speechToTextEnabled}
                 sectionId={config.sectionId}
+                onFetchMentions={config.taggingEnabled ? fetchMentions : undefined}
+                topicSuggestions={config.taggingEnabled ? topicSuggestions : undefined}
               />
             </>
           )}

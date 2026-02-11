@@ -84,6 +84,74 @@ Key methods in `TherapyChatService`:
 - `softDeleteNote()` — sets `id_noteStatus` to `deleted`, logs transaction
 - `getNotesForConversation()` — filters by `active` status via lookup join
 
+## @Mention and #Topic Autocomplete
+
+The `MessageInput` component supports inline autocomplete for @mentions and #topics:
+
+### Frontend Architecture
+- **Trigger detection**: As the user types, `detectTrigger()` scans backwards from the cursor for `@` or `#` preceded by whitespace/start-of-string
+- **@mentions**: Calls `onFetchMentions()` callback which fetches therapists from `GET ?action=get_therapists`. Results are cached in a ref after first load
+- **#topics**: Uses static `topicSuggestions` prop built from `config.tagReasons` (passed from PHP)
+- **Filtering**: All items are filtered by the query string typed after the trigger character
+- **Insertion**: Selected item's `insertText` (e.g. `@Dr. Smith` or `#anxiety`) replaces the trigger + query in the textarea
+- **Keyboard navigation**: Arrow keys, Enter/Tab to select, Escape to dismiss
+
+### Backend: Tag Processing
+- `TherapyMessageService::processTagsInMessage()` matches both `@therapist` (all therapists) and specific `@TherapistName` (case-insensitive). Creates per-therapist tag alerts when a therapist is mentioned by name.
+- `TherapyChatModel::sendPatientMessage()` detects both `@therapist` and `@TherapistName` patterns for email notifications.
+- **AI skipping**: The condition `if ($aiActive && !$isTag)` in `sendPatientMessage()` prevents AI processing when a tag is detected. Tagged messages are sent only to therapists — no AI response is generated.
+
+### Backend Endpoints
+- `GET ?action=get_therapists&section_id=X` → Returns `{ therapists: [{ id, display, name, email }] }`
+- `GET ?action=get_tag_reasons&section_id=X` → Returns `{ tag_reasons: [{ code, label, urgency }] }`
+
+### Props on `MessageInput`
+- `onFetchMentions?: () => Promise<MentionItem[]>` — Async callback to fetch @mention suggestions
+- `topicSuggestions?: MentionItem[]` — Static list of #topic suggestions
+
+The `MentionItem` type is exported from `MessageInput.tsx`.
+
+## Danger Detection Flow
+
+When a patient sends a message, danger detection runs in `TherapyChatModel::sendPatientMessage()`:
+
+1. **Conversation created first**: The conversation is always created/fetched before danger detection so alerts have a valid conversation ID
+2. **LLM-based detection** (if `LlmDangerDetectionService` is available and `enable_danger_detection` is enabled): Calls `checkMessage()` on the service
+3. **Keyword-based fallback** (if LLM detection is unavailable but `enable_danger_detection` is enabled): Splits `danger_keywords` field by commas/semicolons/newlines and checks for case-insensitive matches in the message
+4. **On danger detected**:
+   - Message is saved (so therapists can see what was said)
+   - `createDangerAlert()` is called (creates alert + escalates risk to critical), with extra emails from `danger_notification_emails`
+   - AI is disabled on the conversation (`setAIEnabled(false)`)
+   - Urgent email notification sent to assigned therapists and extra configured emails
+   - Frontend receives `{ blocked: true, type: 'danger_detected', message: '...' }`
+5. **Email notification**: `sendUrgentNotification()` in `TherapyAlertService` emails both assigned therapists and addresses from the `danger_notification_emails` CMS field (e.g., clinical supervisors). Emails are deduplicated.
+
+**`danger_notification_emails` flow**: `TherapyChatModel::getDangerNotificationEmails()` reads the CMS field. Both LLM-based and keyword-based danger detection paths pass the extra emails to `TherapyAlertService::createDangerAlert()`. `sendUrgentNotification()` merges therapist addresses with these extra emails (deduplicated).
+
+## Floating Chat Modal
+
+When `enable_floating_chat` is enabled on the `therapyChat` style:
+
+1. **Hook renders a `<button>`** instead of an `<a>` link
+2. **On click**: Panel opens, AJAX request fetches full config from chat page endpoint (`?action=get_config&section_id=X`)
+3. **React mount**: After config is loaded, the `.therapy-chat-root` element's `data-config` is updated and React is mounted via `window.__TherapyChatMount()` or `window.TherapyChat.mount()`
+4. **Config check**: `isFloatingChatModalEnabled()` checks `sections_fields_translation.content` first (actual runtime value), then falls back to `styles_fields.default_value`
+5. **CSS loading**: The floating panel loads `therapy-chat.css` explicitly via a `<link>` tag in `floating_chat_icon.php` so styles work on any page (not just the chat page). Flex layout rules ensure proper scrolling and height in the floating panel; bubble background colors use `!important` for the floating modal context.
+
+**Floating panel layout** (in `floating_chat_icon.php`):
+- Panel height: `calc(100vh - 80px)` with `top: 40px` for equal top/bottom spacing
+- Panel left-positioned at `12px` (hardcoded in inline style)
+- Message bubbles: explicit `margin-left`/`margin-right` and `align-self` for proper alignment
+  - Own (patient) messages: `align-self: flex-end` + `margin-left: auto` → right side
+  - Other messages (AI, therapist, subject in therapist view): `align-self: flex-start` + `margin-right: auto` → left side
+
+## Unread Count for Therapists
+
+`TherapyMessageService::getUnreadCountForUser($userId, $excludeAI = false)` accepts an `$excludeAI` parameter.
+When `$excludeAI` is `true`, messages with `role = 'assistant'` (AI-generated) are excluded from the count.
+This is used for therapist dashboards and floating icon badges so unread counts reflect only patient and therapist messages.
+`getUnreadBySubjectForTherapist()` and `getUnreadByGroupForTherapist()` filter out AI messages when computing counts.
+
 ## Lightweight Polling
 
 Both patient and therapist UIs use a two-phase polling strategy:
@@ -135,6 +203,20 @@ The plugin uses these hooks:
 | `outputTherapyChatIcon` | `PageView` | `output_content` | Floating chat/dashboard button |
 | `outputTherapistGroupAssignments` | `UserUpdate` | `output_content` | Admin user page: group assignment UI |
 | `saveTherapistGroupAssignments` | `UserUpdate` | `save_data` | Save assignments on user save |
+
+## Removed Code
+
+The following unused methods were removed:
+
+| Location | Method |
+|----------|--------|
+| `TherapyChatModel` | `getConversation()` |
+| `TherapistDashboardModel` | `notifyTherapistNewMessage()` |
+| `TherapyChatService` | `getTherapyConversationByLlmId()`, `getTherapistsForGroup()`, `setTherapyMode()`, `getLookupValues()` |
+| `api.ts` | `setApiBaseUrl()` |
+| `types/index.ts` | `DEFAULT_SUBJECT_LABELS`, `DEFAULT_THERAPIST_LABELS` |
+
+Use `getOrCreateConversation()` instead of `getConversation()`. `getDangerNotificationEmails()` is active — it reads the `danger_notification_emails` CMS field for danger alerts.
 
 ## Testing Locally
 

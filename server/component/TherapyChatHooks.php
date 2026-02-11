@@ -84,13 +84,14 @@ class TherapyChatHooks extends BaseHooks
         if ($isSubject) {
             $enableFloatingModal = $this->isFloatingChatModalEnabled();
             if ($enableFloatingModal) {
-                $floatingModalConfig = $this->buildFloatingModalConfig($userId);
+                $floatingModalConfig = $this->buildFloatingModalConfig($userId, $subjectPageUrl);
             }
         }
 
         if ($isTherapist) {
+            // For therapists: count alerts + patient messages only (exclude AI)
             $unreadCount = $this->messageService->getUnreadAlertCount($userId)
-                + $this->messageService->getUnreadCountForUser($userId);
+                + $this->messageService->getUnreadCountForUser($userId, true);
             $chatUrl = $therapistPageUrl;
             $iconTitle = 'Therapist Dashboard';
         } else {
@@ -113,11 +114,27 @@ class TherapyChatHooks extends BaseHooks
 
     /**
      * Check if the floating chat modal mode is enabled.
-     * Looks up the `enable_floating_chat` field on any therapyChat section.
+     * Looks up the actual configured value of `enable_floating_chat` from the
+     * sections_fields_translation table (runtime value), falling back to the
+     * styles_fields default_value.
      */
     private function isFloatingChatModalEnabled()
     {
         try {
+            // First try to get the actual runtime value from section field translations
+            $sql = "SELECT sft.content
+                    FROM sections_fields_translation sft
+                    INNER JOIN sections s ON sft.id_sections = s.id
+                    INNER JOIN styles st ON s.id_styles = st.id
+                    INNER JOIN fields f ON sft.id_fields = f.id
+                    WHERE st.name = 'therapyChat' AND f.name = 'enable_floating_chat'
+                    LIMIT 1";
+            $result = $this->db->query_db_first($sql);
+            if ($result && isset($result['content'])) {
+                return ($result['content'] === '1' || $result['content'] === 1);
+            }
+
+            // Fallback: check the style field default value
             $sql = "SELECT sf.default_value
                     FROM styles_fields sf
                     INNER JOIN styles s ON sf.id_styles = s.id
@@ -133,27 +150,40 @@ class TherapyChatHooks extends BaseHooks
 
     /**
      * Build the React config JSON for the floating modal chat.
-     * Returns a minimal config that the React app can use.
+     * Includes sectionId and baseUrl so the React app can fetch
+     * the full configuration from the correct controller endpoint.
      */
-    private function buildFloatingModalConfig($userId)
+    private function buildFloatingModalConfig($userId, $chatUrl)
     {
         try {
-            // Find the therapyChat section to get its ID and config
-            $sql = "SELECT s.id FROM sections s
-                    INNER JOIN styles st ON s.id_styles = st.id
-                    WHERE st.name = 'therapyChat'
-                    LIMIT 1";
-            $row = $this->db->query_db_first($sql);
-            if (!$row) return '';
-
-            $sectionId = (int)$row['id'];
+            $sectionId = $this->getTherapyChatSectionId();
             return json_encode(array(
-                'sectionId' => $sectionId,
                 'userId' => (int)$userId,
-                'isFloatingMode' => true
+                'sectionId' => $sectionId ? (int)$sectionId : null,
+                'baseUrl' => $chatUrl,
+                'isFloatingMode' => true,
             ));
         } catch (Exception $e) {
             return '';
+        }
+    }
+
+    /**
+     * Get the section ID for the therapyChat style component.
+     * Looks up the sections table for a section using the therapyChat style.
+     */
+    private function getTherapyChatSectionId()
+    {
+        try {
+            $sql = "SELECT s.id
+                    FROM sections s
+                    INNER JOIN styles st ON s.id_styles = st.id
+                    WHERE st.name = 'therapyChat'
+                    LIMIT 1";
+            $result = $this->db->query_db_first($sql);
+            return $result ? $result['id'] : null;
+        } catch (Exception $e) {
+            return null;
         }
     }
 
@@ -208,12 +238,44 @@ class TherapyChatHooks extends BaseHooks
     }
 
     /* =========================================================================
-     * HOOK: Load JS for Therapy Assignments on User Admin Pages
+     * HOOK: Load JS for Therapy Chat Floating Icon
      * Type: hook_overwrite_return
      * Target: BasePage::get_js_includes
      * ========================================================================= */
 
     /**
+     * Load JS for therapy chat floating icon on pages where it's displayed.
+     */
+    public function loadTherapyChatFloatingJs($args = null)
+    {
+        $userId = $_SESSION['id_user'] ?? null;
+        if (!$userId) return [];
+
+        // Don't load on CMS pages
+        if ($this->isCmsPage()) return [];
+
+        $isSubject = $this->messageService->isSubject($userId);
+        $isTherapist = $this->messageService->isTherapist($userId);
+
+        // Additional group check from config
+        $subjectGroupId = $this->getConfigValue('therapy_chat_subject_group');
+        $therapistGroupId = $this->getConfigValue('therapy_chat_therapist_group');
+
+        $isInSubjectGroup = $subjectGroupId && $this->isUserInGroup($userId, $subjectGroupId);
+        $isInTherapistGroup = $therapistGroupId && $this->isUserInGroup($userId, $therapistGroupId);
+
+        if (!$isSubject || !$isInSubjectGroup) $isSubject = false;
+        if (!$isTherapist || !$isInTherapistGroup) $isTherapist = false;
+
+        if (!$isSubject && !$isTherapist) return [];
+
+        return [
+            '/server/plugins/sh-shp-llm_therapy_chat/js/ext/therapy-chat.umd.js',
+            '/server/plugins/sh-shp-llm_therapy_chat/js/ext/therapy_chat_floating.js'
+        ];
+    }
+
+        /**
      * Load JS for therapy assignments on user admin pages.
      */
     public function loadTherapyAssignmentsJs($args = null)

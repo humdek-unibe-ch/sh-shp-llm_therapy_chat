@@ -114,14 +114,6 @@ class TherapyChatModel extends StyleModel
     }
 
     /**
-     * Get conversation by ID
-     */
-    public function getConversation($conversationId)
-    {
-        return $this->therapyService->getTherapyConversation($conversationId);
-    }
-
-    /**
      * Get messages for current conversation
      */
     public function getMessages($limit = 100, $afterId = null)
@@ -158,20 +150,23 @@ class TherapyChatModel extends StyleModel
         return $this->get_db_field('danger_keywords', '');
     }
 
-    public function getDangerNotificationEmails()
-    {
-        $emails = $this->get_db_field('danger_notification_emails', '');
-        if (empty($emails)) {
-            return array();
-        }
-        $parts = preg_split('/[;\n,]+/', $emails);
-        return array_filter(array_map('trim', $parts));
-    }
 
     public function getDangerBlockedMessage()
     {
         return $this->get_db_field('danger_blocked_message',
             'I noticed some concerning content. Please consider reaching out to a trusted person or crisis hotline.');
+    }
+
+    /**
+     * Get configured danger notification email addresses.
+     * These are additional emails (e.g., clinical supervisors) that receive
+     * urgent notifications when danger is detected.
+     *
+     * @return string Comma-separated email addresses
+     */
+    public function getDangerNotificationEmails()
+    {
+        return $this->get_db_field('danger_notification_emails', '');
     }
 
     public function isTaggingEnabled()
@@ -302,25 +297,8 @@ class TherapyChatModel extends StyleModel
      */
     public function sendPatientMessage($userId, $message, $conversationId = null)
     {
-        // Danger detection
-        if ($this->dangerDetection && $this->dangerDetection->isEnabled()) {
-            $dangerResult = $this->dangerDetection->checkMessage($message, $userId, $conversationId);
-            if (!$dangerResult['safe']) {
-                $this->therapyService->createDangerAlert(
-                    $conversationId,
-                    $dangerResult['detected_keywords'],
-                    $message
-                );
-                return array(
-                    'blocked' => true,
-                    'type' => 'danger_detected',
-                    'message' => $this->getDangerBlockedMessage(),
-                    'detected_keywords' => $dangerResult['detected_keywords']
-                );
-            }
-        }
-
-        // Get or create conversation
+        // Get or create conversation FIRST so we always have a valid conversation ID
+        // (needed for danger alerts, message saving, etc.)
         $conversation = null;
         if ($conversationId) {
             $conversation = $this->therapyService->getTherapyConversation($conversationId);
@@ -333,7 +311,92 @@ class TherapyChatModel extends StyleModel
         }
         $conversationId = $conversation['id'];
 
-        // Send user message
+        // Danger detection — check BEFORE sending the message
+        $isDangerDetected = false;
+        $dangerResult = null;
+        $extraDangerEmails = $this->getDangerNotificationEmails();
+
+        if ($this->dangerDetection && $this->dangerDetection->isEnabled()) {
+            $dangerResult = $this->dangerDetection->checkMessage($message, $userId, $conversationId);
+            if (!$dangerResult['safe']) {
+                $isDangerDetected = true;
+
+                // Save the message so therapists can see what was said
+                $this->therapyService->sendTherapyMessage(
+                    $conversationId, $userId, $message, TherapyMessageService::SENDER_SUBJECT
+                );
+
+                // Create danger alert (also escalates risk to critical)
+                // Passes extra notification emails from danger_notification_emails CMS field
+                $this->therapyService->createDangerAlert(
+                    $conversationId,
+                    $dangerResult['detected_keywords'],
+                    $message,
+                    $extraDangerEmails
+                );
+
+                // Disable AI on this conversation to prevent AI from responding
+                $this->therapyService->setAIEnabled($conversationId, false);
+
+                // Notify therapists urgently about this message
+                $this->notifyTherapistsNewMessage($conversationId, $userId, $message, false);
+
+                return array(
+                    'blocked' => true,
+                    'type' => 'danger_detected',
+                    'message' => $this->getDangerBlockedMessage(),
+                    'detected_keywords' => $dangerResult['detected_keywords'],
+                    'conversation_id' => $conversationId
+                );
+            }
+        }
+
+        // Also check for simple keyword-based danger detection (fallback)
+        if (!$isDangerDetected && $this->isDangerDetectionEnabled()) {
+            $dangerKeywords = $this->getDangerKeywords();
+            if (!empty($dangerKeywords)) {
+                $keywords = array_filter(array_map('trim', preg_split('/[,;\n]+/', $dangerKeywords)));
+                $detectedKeywords = array();
+                $messageLower = mb_strtolower($message);
+                foreach ($keywords as $kw) {
+                    if (mb_strpos($messageLower, mb_strtolower($kw)) !== false) {
+                        $detectedKeywords[] = $kw;
+                    }
+                }
+
+                if (!empty($detectedKeywords)) {
+                    // Save the message so therapists can see what was said
+                    $this->therapyService->sendTherapyMessage(
+                        $conversationId, $userId, $message, TherapyMessageService::SENDER_SUBJECT
+                    );
+
+                    // Create danger alert (also escalates risk to critical)
+                    // Passes extra notification emails from danger_notification_emails CMS field
+                    $this->therapyService->createDangerAlert(
+                        $conversationId,
+                        $detectedKeywords,
+                        $message,
+                        $extraDangerEmails
+                    );
+
+                    // Disable AI on this conversation
+                    $this->therapyService->setAIEnabled($conversationId, false);
+
+                    // Notify therapists urgently
+                    $this->notifyTherapistsNewMessage($conversationId, $userId, $message, false);
+
+                    return array(
+                        'blocked' => true,
+                        'type' => 'danger_detected',
+                        'message' => $this->getDangerBlockedMessage(),
+                        'detected_keywords' => $detectedKeywords,
+                        'conversation_id' => $conversationId
+                    );
+                }
+            }
+        }
+
+        // Send user message (normal flow)
         $result = $this->therapyService->sendTherapyMessage(
             $conversationId, $userId, $message, TherapyMessageService::SENDER_SUBJECT
         );
@@ -349,9 +412,29 @@ class TherapyChatModel extends StyleModel
         );
 
         // Determine if therapist should be emailed:
-        //  - when the patient tags @therapist
+        //  - when the patient tags @therapist or @SpecificName
         //  - when AI is disabled (all messages go to therapist)
-        $isTag = (bool)preg_match('/@(?:therapist|Therapist)\b/', $message);
+        $isTagAll = (bool)preg_match('/@(?:therapist|Therapist)\b/', $message);
+        $isTagSpecific = false;
+
+        // Check for specific therapist @mentions (e.g. @Dr. Smith)
+        if (!$isTagAll) {
+            $patientTherapists = $this->therapyService->getTherapistsForPatient($userId);
+            if (!empty($patientTherapists)) {
+                foreach ($patientTherapists as $t) {
+                    $tName = $t['name'] ?? '';
+                    if (!empty($tName)) {
+                        $escaped = preg_quote($tName, '/');
+                        if (preg_match('/@' . $escaped . '\b/i', $message)) {
+                            $isTagSpecific = true;
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+
+        $isTag = $isTagAll || $isTagSpecific;
         $conversation = $this->therapyService->getTherapyConversation($conversationId);
         $aiActive = $conversation && $conversation['ai_enabled']
             && $conversation['mode'] === THERAPY_MODE_AI_HYBRID
@@ -361,8 +444,9 @@ class TherapyChatModel extends StyleModel
             $this->notifyTherapistsNewMessage($conversationId, $userId, $message, $isTag);
         }
 
-        // Process AI response if enabled and conversation is not paused
-        if ($aiActive) {
+        // Process AI response ONLY if AI is active AND the message is NOT tagged
+        // Tagged messages go exclusively to therapists — no AI response needed
+        if ($aiActive && !$isTag) {
             $aiResponse = $this->processAIResponse($conversationId, $conversation);
             if ($aiResponse && !isset($aiResponse['error'])) {
                 $response['ai_message'] = array(

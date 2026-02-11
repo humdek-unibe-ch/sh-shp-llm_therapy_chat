@@ -29,8 +29,14 @@ import type {
 // Low-level helpers
 // ---------------------------------------------------------------------------
 
-function buildUrl(action: string, params: Record<string, string> = {}): string {
-  const url = new URL(window.location.href);
+/**
+ * Build a GET URL for an API action.
+ * When `customBaseUrl` is set (floating modal mode), use that instead of
+ * `window.location.href` so the request reaches the correct controller.
+ */
+function buildUrl(action: string, params: Record<string, string> = {}, customBaseUrl?: string): string {
+  const base = customBaseUrl || window.location.href;
+  const url = new URL(base, window.location.origin);
   url.searchParams.set('action', action);
   for (const [k, v] of Object.entries(params)) {
     url.searchParams.set(k, v);
@@ -38,8 +44,8 @@ function buildUrl(action: string, params: Record<string, string> = {}): string {
   return url.toString();
 }
 
-async function apiGet<T>(action: string, params: Record<string, string> = {}): Promise<T> {
-  const res = await fetch(buildUrl(action, params), {
+async function apiGet<T>(action: string, params: Record<string, string> = {}, customBaseUrl?: string): Promise<T> {
+  const res = await fetch(buildUrl(action, params, customBaseUrl), {
     method: 'GET',
     headers: { Accept: 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
     credentials: 'same-origin',
@@ -51,10 +57,11 @@ async function apiGet<T>(action: string, params: Record<string, string> = {}): P
   return data;
 }
 
-async function apiPost<T>(formData: FormData): Promise<T> {
+async function apiPost<T>(formData: FormData, customBaseUrl?: string): Promise<T> {
   // Use the full current URL (including query string) so SelfHelp can route
   // correctly. The POST body contains action + section_id for the controller.
-  const url = new URL(window.location.href);
+  const base = customBaseUrl || window.location.href;
+  const url = new URL(base, window.location.origin);
   // Remove volatile params that might conflict with form body
   url.searchParams.delete('action');
   const res = await fetch(url.toString(), {
@@ -85,40 +92,40 @@ function withSection(params: Record<string, string>, sectionId?: number): Record
 }
 
 // ---------------------------------------------------------------------------
-// Backward-compat placeholder
-// ---------------------------------------------------------------------------
-
-/** @deprecated Not used - kept for backward compatibility */
-export function setApiBaseUrl(_baseUrl: string): void {}
-
-// ---------------------------------------------------------------------------
 // Subject Chat API
 // ---------------------------------------------------------------------------
 
-export function createSubjectApi(sectionId?: number) {
+/**
+ * Create a Subject (patient) API instance.
+ *
+ * @param sectionId - The therapy chat section ID
+ * @param baseUrl   - Optional custom base URL. Required for floating modal mode
+ *                    where `window.location.href` points to a different page.
+ */
+export function createSubjectApi(sectionId?: number, baseUrl?: string) {
   return {
     async getConfig(): Promise<SubjectChatConfig> {
-      return apiGet('get_config', withSection({}, sectionId));
+      return apiGet('get_config', withSection({}, sectionId), baseUrl);
     },
 
     async getConversation(conversationId?: number | string): Promise<GetConversationResponse> {
       const p: Record<string, string> = {};
       if (conversationId != null) p.conversation_id = String(conversationId);
-      return apiGet('get_conversation', withSection(p, sectionId));
+      return apiGet('get_conversation', withSection(p, sectionId), baseUrl);
     },
 
     async getMessages(conversationId?: number | string, afterId?: number): Promise<GetMessagesResponse> {
       const p: Record<string, string> = {};
       if (conversationId != null) p.conversation_id = String(conversationId);
       if (afterId != null) p.after_id = String(afterId);
-      return apiGet('get_messages', withSection(p, sectionId));
+      return apiGet('get_messages', withSection(p, sectionId), baseUrl);
     },
 
     async sendMessage(conversationId: number | string | undefined, message: string): Promise<SendMessageResponse> {
       const fd = postData('send_message', sectionId);
       fd.append('message', message);
       if (conversationId != null) fd.append('conversation_id', String(conversationId));
-      return apiPost(fd);
+      return apiPost(fd, baseUrl);
     },
 
     async tagTherapist(conversationId: number | string, reason?: string, urgency?: string): Promise<TagTherapistResponse> {
@@ -126,17 +133,25 @@ export function createSubjectApi(sectionId?: number) {
       fd.append('conversation_id', String(conversationId));
       if (reason) fd.append('reason', reason);
       if (urgency) fd.append('urgency', urgency);
-      return apiPost(fd);
+      return apiPost(fd, baseUrl);
     },
 
     async markMessagesRead(conversationId?: number | string): Promise<{ success: boolean; unread_count: number }> {
       const fd = postData('mark_messages_read', sectionId);
       if (conversationId != null) fd.append('conversation_id', String(conversationId));
-      return apiPost(fd);
+      return apiPost(fd, baseUrl);
     },
 
     async checkUpdates(): Promise<{ latest_message_id: number | null; unread_count: number }> {
-      return apiGet('check_updates', withSection({}, sectionId));
+      return apiGet('check_updates', withSection({}, sectionId), baseUrl);
+    },
+
+    async getTherapists(): Promise<{ therapists: Array<{ id: number; display: string; name: string; email?: string }> }> {
+      return apiGet('get_therapists', withSection({}, sectionId), baseUrl);
+    },
+
+    async getTagReasons(): Promise<{ tag_reasons: Array<{ code: string; label: string; urgency: string }> }> {
+      return apiGet('get_tag_reasons', withSection({}, sectionId), baseUrl);
     },
   };
 }

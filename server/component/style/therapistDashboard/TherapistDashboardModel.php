@@ -568,7 +568,8 @@ class TherapistDashboardModel extends StyleModel
     public function getUnreadCounts($therapistId)
     {
         return array(
-            'total' => $this->messageService->getUnreadCountForUser($therapistId),
+            // Exclude AI messages — therapists only need to see patient messages as unread
+            'total' => $this->messageService->getUnreadCountForUser($therapistId, true),
             'totalAlerts' => $this->messageService->getUnreadAlertCount($therapistId),
             'bySubject' => $this->messageService->getUnreadBySubjectForTherapist($therapistId),
             'byGroup' => $this->messageService->getUnreadByGroupForTherapist($therapistId)
@@ -645,93 +646,6 @@ class TherapistDashboardModel extends StyleModel
             $jobScheduler->schedule_job($mail, transactionBy_by_system);
         } catch (Exception $e) {
             error_log("TherapyChat: Failed to schedule patient notification email: " . $e->getMessage());
-        }
-    }
-
-    /**
-     * Send email notification to therapist(s) when patient sends a message or tags.
-     *
-     * @param int $conversationId
-     * @param int $patientId
-     * @param string $messageContent
-     * @param bool $isTag Whether this is a @therapist tag
-     */
-    public function notifyTherapistNewMessage($conversationId, $patientId, $messageContent, $isTag = false)
-    {
-        $enabled = (bool)$this->get_db_field('enable_therapist_email_notification', '1');
-        if (!$enabled) return;
-
-        $conversation = $this->messageService->getTherapyConversation($conversationId);
-        if (!$conversation) return;
-
-        $services = $this->get_services();
-        $db = $services->get_db();
-        $jobScheduler = $services->get_job_scheduler();
-
-        // Get patient info
-        $patient = $db->select_by_uid('users', $patientId);
-        $patientName = $patient ? $patient['name'] : 'Patient';
-
-        // Get all assigned therapists
-        $therapists = $this->messageService->getTherapistsForPatient($patientId);
-        if (empty($therapists)) return;
-
-        // Get email configuration from style fields
-        $subjectTemplate = $isTag
-            ? $this->get_db_field('therapist_tag_email_subject', '[Therapy Chat] @therapist tag from {{patient_name}}')
-            : $this->get_db_field('therapist_notification_email_subject', '[Therapy Chat] New message from {{patient_name}}');
-
-        $bodyTemplate = $isTag
-            ? $this->get_db_field('therapist_tag_email_body',
-                '<p>Hello,</p>' .
-                '<p><strong>{{patient_name}}</strong> has tagged you (@therapist) in their therapy chat.</p>' .
-                '<p><em>Message preview:</em> {{message_preview}}</p>' .
-                '<p>Please log in to the Therapist Dashboard to respond.</p>' .
-                '<p>Best regards,<br>Therapy Chat</p>')
-            : $this->get_db_field('therapist_notification_email_body',
-                '<p>Hello,</p>' .
-                '<p>You have received a new message from <strong>{{patient_name}}</strong> in therapy chat.</p>' .
-                '<p>Please log in to the Therapist Dashboard to review.</p>' .
-                '<p>Best regards,<br>Therapy Chat</p>');
-
-        $fromEmail = $this->get_db_field('notification_from_email', 'noreply@selfhelp.local');
-        $fromName = $this->get_db_field('notification_from_name', 'Therapy Chat');
-
-        // Prepare message preview (truncated)
-        $preview = mb_substr(strip_tags($messageContent), 0, 200);
-        if (mb_strlen($messageContent) > 200) $preview .= '...';
-
-        foreach ($therapists as $therapist) {
-            if (empty($therapist['email'])) continue;
-
-            $subject = str_replace('{{patient_name}}', htmlspecialchars($patientName), $subjectTemplate);
-            $body = str_replace(
-                array('{{patient_name}}', '{{message_preview}}', '@user_name'),
-                array(htmlspecialchars($patientName), htmlspecialchars($preview), htmlspecialchars($therapist['name'] ?? '')),
-                $bodyTemplate
-            );
-
-            $mail = array(
-                "id_jobTypes" => $db->get_lookup_id_by_value(jobTypes, jobTypes_email),
-                "id_jobStatus" => $db->get_lookup_id_by_value(scheduledJobsStatus, scheduledJobsStatus_queued),
-                "date_to_be_executed" => date('Y-m-d H:i:s'),
-                "from_email" => $fromEmail,
-                "from_name" => $fromName,
-                "reply_to" => $fromEmail,
-                "recipient_emails" => $therapist['email'],
-                "subject" => $subject,
-                "body" => $body,
-                "description" => ($isTag ? "Therapy Chat: tag notification" : "Therapy Chat: message notification") . " to therapist #" . $therapist['id'],
-                "is_html" => 1,
-                "id_users" => array($therapist['id']),
-                "attachments" => array()
-            );
-
-            try {
-                $jobScheduler->schedule_job($mail, transactionBy_by_system);
-            } catch (Exception $e) {
-                error_log("TherapyChat: Failed to schedule therapist notification email: " . $e->getMessage());
-            }
         }
     }
 

@@ -136,18 +136,6 @@ class TherapyChatService extends LlmService
     }
 
     /**
-     * Get therapy conversation by LLM conversation ID.
-     *
-     * @param int $llmConversationId llmConversations.id
-     * @return array|null
-     */
-    public function getTherapyConversationByLlmId($llmConversationId)
-    {
-        $sql = "SELECT * FROM view_therapyConversations WHERE id_llmConversations = :id AND deleted = 0";
-        return $this->db->query_db_first($sql, array(':id' => $llmConversationId));
-    }
-
-    /**
      * Get active therapy conversation for a subject.
      * A subject has at most one active conversation.
      *
@@ -385,24 +373,6 @@ class TherapyChatService extends LlmService
     }
 
     /**
-     * Get therapists assigned to a specific group.
-     *
-     * @param int $groupId
-     * @return array [{id, name, email}, ...]
-     */
-    public function getTherapistsForGroup($groupId)
-    {
-        $sql = "SELECT u.id, u.name, u.email
-                FROM therapyTherapistAssignments tta
-                INNER JOIN users u ON u.id = tta.id_users
-                WHERE tta.id_groups = :gid
-                ORDER BY u.name";
-
-        $result = $this->db->query_db($sql, array(':gid' => $groupId));
-        return $result !== false ? $result : array();
-    }
-
-    /**
      * Get all therapists assigned to any group that a patient belongs to.
      *
      * @param int $patientId
@@ -477,33 +447,6 @@ class TherapyChatService extends LlmService
         }
 
         return $result;
-    }
-
-    /**
-     * Set conversation chat mode.
-     *
-     * @param int $conversationId
-     * @param string $mode Lookup code (ai_hybrid, human_only)
-     * @return bool
-     */
-    public function setTherapyMode($conversationId, $mode)
-    {
-        if (!in_array($mode, THERAPY_VALID_MODES)) {
-            return false;
-        }
-
-        $modeId = $this->db->get_lookup_id_by_code(THERAPY_LOOKUP_CHAT_MODES, $mode);
-        if (!$modeId) {
-            return false;
-        }
-
-        $aiEnabled = ($mode === THERAPY_MODE_AI_HYBRID) ? 1 : 0;
-
-        return $this->db->update_by_ids(
-            'therapyConversationMeta',
-            array('id_chatModes' => $modeId, 'ai_enabled' => $aiEnabled),
-            array('id' => $conversationId)
-        );
     }
 
     /**
@@ -760,13 +703,5 @@ class TherapyChatService extends LlmService
         return $stats;
     }
 
-    /* =========================================================================
-     * LOOKUP HELPERS
-     * ========================================================================= */
-
-    public function getLookupValues($typeCode)
-    {
-        return $this->db->get_lookups($typeCode);
-    }
 }
 ?>

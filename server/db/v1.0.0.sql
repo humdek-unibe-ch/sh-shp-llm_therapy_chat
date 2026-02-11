@@ -1004,6 +1004,10 @@ VALUES ((SELECT id FROM `groups` WHERE `name` = 'admin' LIMIT 1), (SELECT id FRO
 INSERT IGNORE INTO `hooks` (`id_hookTypes`, `name`, `description`, `class`, `function`, `exec_class`, `exec_function`)
 VALUES ((SELECT id FROM lookups WHERE lookup_code = 'hook_overwrite_return' LIMIT 0,1), 'therapyChat-assignments-script', 'Load JS for therapy assignments on user admin pages.', 'BasePage', 'get_js_includes', 'TherapyChatHooks', 'loadTherapyAssignmentsJs');
 
+-- Hook to load JS for therapy chat floating icon on pages where it's displayed
+INSERT IGNORE INTO `hooks` (`id_hookTypes`, `name`, `description`, `class`, `function`, `exec_class`, `exec_function`)
+VALUES ((SELECT id FROM lookups WHERE lookup_code = 'hook_overwrite_return' LIMIT 0,1), 'therapyChat-floating-script', 'Load JS for therapy chat floating icon on pages where users can access it.', 'BasePage', 'get_js_includes', 'TherapyChatHooks', 'loadTherapyChatFloatingJs');
+
 -- =====================================================
 -- TRANSACTION LOGGING
 -- =====================================================

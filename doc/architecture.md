@@ -113,6 +113,10 @@ TherapyMessageService (top-level)
 | `TherapyAlertService` | Alerts (danger, tag, activity), notifications |
 | `TherapyMessageService` | Sending messages, editing, deleting, drafts, recipients |
 
+### Danger Detection
+
+When danger is detected (LLM-based or keyword fallback), `TherapyAlertService::sendUrgentNotification()` sends emails to assigned therapists and to addresses in the `danger_notification_emails` CMS field (e.g., clinical supervisors). Emails are deduplicated.
+
 ## React Frontend Architecture
 
 The frontend is built as a single UMD bundle. Two React apps mount on different
@@ -122,6 +126,10 @@ DOM containers:
 - `.therapist-dashboard-root` → `TherapistDashboard` (therapist view)
 
 Configuration is passed via `data-config` JSON attribute from PHP.
+
+When the floating chat is enabled, the hook renders a panel that loads `therapy-chat.css`
+explicitly via a `<link>` tag so styles apply on any page; the React app mounts into
+the panel after config is fetched.
 
 ### Component Hierarchy
 
