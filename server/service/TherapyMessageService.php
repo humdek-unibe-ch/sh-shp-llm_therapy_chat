@@ -7,6 +7,12 @@
 
 require_once __DIR__ . '/TherapyAlertService.php';
 
+// Include LLM plugin services for proper JSON schema handling
+$llmResponseServicePath = __DIR__ . "/../../sh-shp-llm/server/service/LlmResponseService.php";
+if (file_exists($llmResponseServicePath)) {
+    require_once $llmResponseServicePath;
+}
+
 /**
  * Therapy Message Service
  *
@@ -240,14 +246,20 @@ class TherapyMessageService extends TherapyAlertService
 
     /**
      * Process AI response for a conversation.
-     * Includes therapist messages as high-priority context.
+     *
+     * The caller (TherapyChatModel) is responsible for building the full
+     * context including any schema/safety instructions via
+     * LlmResponseService::buildResponseContext(). This method simply:
+     *  1. Calls the LLM API with the provided context
+     *  2. Extracts displayable text from structured JSON responses
+     *  3. Saves the message and creates recipient entries
      *
      * @param int $conversationId therapyConversationMeta.id
-     * @param array $contextMessages Messages for AI context
+     * @param array $contextMessages Fully prepared messages (with schema instructions)
      * @param string $model
      * @param float|null $temperature
      * @param int|null $maxTokens
-     * @return array {success, message_id, content} or {error}
+     * @return array {success, message_id, content, raw_content} or {error}
      */
     public function processAIResponse($conversationId, $contextMessages, $model, $temperature = null, $maxTokens = null)
     {
@@ -261,6 +273,8 @@ class TherapyMessageService extends TherapyAlertService
         }
 
         try {
+            // Call LLM API directly — context already includes schema/safety
+            // instructions injected by the caller (TherapyChatModel).
             $response = $this->callLlmApi($contextMessages, $model, $temperature, $maxTokens);
 
             if (!$response || empty($response['content'])) {
@@ -308,8 +322,9 @@ class TherapyMessageService extends TherapyAlertService
     /**
      * Extract human-readable display text from an LLM response.
      *
-     * If the response is structured JSON (from LlmResponseService schema),
-     * extract the text from content.text_blocks[]. Otherwise return as-is.
+     * Handles structured JSON responses from the base LLM plugin.
+     * If safety indicates danger, returns safety message + emergency resources.
+     * Otherwise extracts from text_blocks.
      *
      * @param string $content Raw LLM response content
      * @return string Displayable text
@@ -329,23 +344,49 @@ class TherapyMessageService extends TherapyAlertService
         }
 
         $decoded = json_decode($trimmed, true);
-        if (!is_array($decoded) || !isset($decoded['content']['text_blocks'])) {
+        if (!is_array($decoded)) {
             return $content;
         }
 
-        // Extract text from text_blocks
-        $textParts = array();
-        foreach ($decoded['content']['text_blocks'] as $block) {
-            if (isset($block['content']) && is_string($block['content'])) {
-                $textParts[] = $block['content'];
+        // Check for safety protocol response from base plugin
+        if (isset($decoded['safety']) && isset($decoded['safety']['is_safe']) && !$decoded['safety']['is_safe']) {
+            $safetyText = $decoded['safety']['safety_message'] ?? 'Safety protocol activated due to detected concerns.';
+
+            // Check danger level
+            $dangerLevel = $decoded['safety']['danger_level'] ?? '';
+            if ($dangerLevel === 'emergency') {
+                $safetyText .= "\n\nEMERGENCY: Immediate professional help is required.";
+            }
+
+            // Add emergency resources
+            $safetyText .= "\n\nEmergency Resources:\n" .
+                "• Contact your therapist or healthcare provider immediately\n" .
+                "• Call emergency services (911 in the US, or your local emergency number)\n" .
+                "• Contact a crisis hotline:\n" .
+                "  - National Suicide Prevention Lifeline: 988 (US)\n" .
+                "  - Crisis Text Line: Text HOME to 741741 (US)\n" .
+                "  - International: Find local resources at befrienders.org\n\n" .
+                "Your safety is the top priority. Please seek professional help right away.";
+
+            return $safetyText;
+        }
+
+        // Standard response: extract from text_blocks
+        if (isset($decoded['content']['text_blocks'])) {
+            // Extract text from text_blocks
+            $textParts = array();
+            foreach ($decoded['content']['text_blocks'] as $block) {
+                if (isset($block['content']) && is_string($block['content'])) {
+                    $textParts[] = $block['content'];
+                }
+            }
+
+            if (!empty($textParts)) {
+                return implode("\n\n", $textParts);
             }
         }
 
-        if (empty($textParts)) {
-            return $content;
-        }
-
-        return implode("\n\n", $textParts);
+        return $content;
     }
 
     /**
@@ -815,7 +856,8 @@ class TherapyMessageService extends TherapyAlertService
             "- You are NOT a therapist or mental health professional\n" .
             "- You cannot provide diagnoses or treatment recommendations\n" .
             "- Messages marked [THERAPIST] are from the real therapist - follow their clinical guidance\n" .
-            "- If a user seems in crisis, encourage contacting their therapist or emergency services";
+            "- Always follow the response schema provided in the system context\n" .
+            "- For crisis situations, set appropriate safety flags in the response schema";
     }
 
     /* =========================================================================
