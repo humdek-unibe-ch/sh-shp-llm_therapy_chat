@@ -282,13 +282,7 @@ export interface SubjectChatConfig {
   speechToTextEnabled?: boolean;
   speechToTextModel?: string;
   speechToTextLanguage?: string;
-  /** Floating/modal chat configuration */
-  enableFloatingChat?: boolean;
-  floatingChatPosition?: 'bottom-right' | 'bottom-left' | 'top-right' | 'top-left' | 'bottom-center' | 'top-center';
-  floatingChatIcon?: string;
-  floatingChatLabel?: string;
-  floatingChatTitle?: string;
-  /** Internal flag set by FloatingChat to prevent recursion */
+  /** When true, the chat is rendered inside the floating modal panel (server-side) */
   isFloatingMode?: boolean;
 }
 

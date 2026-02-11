@@ -40,7 +40,13 @@ class TherapyChatHooks extends BaseHooks
      * ========================================================================= */
 
     /**
-     * Output floating therapy chat icon next to user profile
+     * Output floating therapy chat icon next to user profile.
+     *
+     * For subjects: when enable_floating_chat is enabled on the therapyChat
+     * style, the button opens an inline modal containing the React chat
+     * instead of navigating to the page. Otherwise it navigates normally.
+     *
+     * For therapists: always navigates to the therapist dashboard page.
      */
     public function outputTherapyChatIcon($args = null)
     {
@@ -72,6 +78,16 @@ class TherapyChatHooks extends BaseHooks
         $subjectPageUrl = $this->getPageUrl($subjectPageId, 'home');
         $therapistPageUrl = $this->getPageUrl($therapistPageId, 'home');
 
+        // Check if floating modal mode is enabled for subjects
+        $enableFloatingModal = false;
+        $floatingModalConfig = '';
+        if ($isSubject) {
+            $enableFloatingModal = $this->isFloatingChatModalEnabled();
+            if ($enableFloatingModal) {
+                $floatingModalConfig = $this->buildFloatingModalConfig($userId);
+            }
+        }
+
         if ($isTherapist) {
             $unreadCount = $this->messageService->getUnreadAlertCount($userId)
                 + $this->messageService->getUnreadCountForUser($userId);
@@ -93,6 +109,52 @@ class TherapyChatHooks extends BaseHooks
         $positionCss = $this->getPositionCss($position);
 
         include __DIR__ . '/TherapyChatHooks/tpl/floating_chat_icon.php';
+    }
+
+    /**
+     * Check if the floating chat modal mode is enabled.
+     * Looks up the `enable_floating_chat` field on any therapyChat section.
+     */
+    private function isFloatingChatModalEnabled()
+    {
+        try {
+            $sql = "SELECT sf.default_value
+                    FROM styles_fields sf
+                    INNER JOIN styles s ON sf.id_styles = s.id
+                    INNER JOIN fields f ON sf.id_fields = f.id
+                    WHERE s.name = 'therapyChat' AND f.name = 'enable_floating_chat'
+                    LIMIT 1";
+            $result = $this->db->query_db_first($sql);
+            return $result && ($result['default_value'] === '1' || $result['default_value'] === 1);
+        } catch (Exception $e) {
+            return false;
+        }
+    }
+
+    /**
+     * Build the React config JSON for the floating modal chat.
+     * Returns a minimal config that the React app can use.
+     */
+    private function buildFloatingModalConfig($userId)
+    {
+        try {
+            // Find the therapyChat section to get its ID and config
+            $sql = "SELECT s.id FROM sections s
+                    INNER JOIN styles st ON s.id_styles = st.id
+                    WHERE st.name = 'therapyChat'
+                    LIMIT 1";
+            $row = $this->db->query_db_first($sql);
+            if (!$row) return '';
+
+            $sectionId = (int)$row['id'];
+            return json_encode(array(
+                'sectionId' => $sectionId,
+                'userId' => (int)$userId,
+                'isFloatingMode' => true
+            ));
+        } catch (Exception $e) {
+            return '';
+        }
     }
 
     /* =========================================================================

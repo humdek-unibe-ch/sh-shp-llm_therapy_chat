@@ -722,13 +722,67 @@ class TherapyMessageService extends TherapyAlertService
     }
 
     /* =========================================================================
+     * THERAPIST TOOLS CONVERSATION (shared for drafts + summaries)
+     * ========================================================================= */
+
+    /**
+     * Get or create a dedicated LLM conversation for therapist tools
+     * (AI drafts, summaries) per section + user. This prevents draft/summary
+     * messages from appearing in the patient's conversation.
+     *
+     * @param int $therapistId
+     * @param int $sectionId The dashboard section
+     * @param string $purpose 'draft' or 'summary' (for title only)
+     * @return int The LLM conversation ID
+     */
+    public function getOrCreateTherapistToolsConversation($therapistId, $sectionId, $purpose = 'tools')
+    {
+        $title = 'Therapist Tools - Section #' . $sectionId;
+
+        // Look for an existing tools conversation for this therapist + section
+        $sql = "SELECT id FROM llmConversations
+                WHERE id_users = :uid AND id_sections = :sid AND title = :title
+                AND (deleted IS NULL OR deleted = 0)
+                ORDER BY id DESC LIMIT 1";
+        $existing = $this->db->query_db_first($sql, array(
+            ':uid' => $therapistId,
+            ':sid' => $sectionId,
+            ':title' => $title
+        ));
+
+        if ($existing) {
+            return (int)$existing['id'];
+        }
+
+        // Create a new one
+        $config = $this->getLlmConfig();
+        $llmConvId = $this->db->insert('llmConversations', array(
+            'id_users' => $therapistId,
+            'id_sections' => $sectionId,
+            'title' => $title,
+            'model' => $config['llm_default_model'],
+            'temperature' => $config['llm_temperature'],
+            'max_tokens' => $config['llm_max_tokens']
+        ));
+
+        if ($llmConvId) {
+            $this->logTransaction(
+                transactionTypes_insert, 'llmConversations', $llmConvId, $therapistId,
+                'Therapist tools conversation created for section #' . $sectionId
+            );
+        }
+
+        return $llmConvId;
+    }
+
+    /* =========================================================================
      * SUMMARIZATION
      * ========================================================================= */
 
     /**
-     * Create a new LLM conversation to store the summary request/response
-     * for audit trail. This uses the normal llmConversations table so the
-     * therapist's actions are fully logged.
+     * Store a summary request/response in the therapist's tools conversation.
+     * All summaries for the same therapist + section are appended to the
+     * same conversation instead of creating a new one each time.
      *
      * @param int $therapyConvId The therapy conversation being summarized
      * @param int $therapistId
@@ -736,23 +790,12 @@ class TherapyMessageService extends TherapyAlertService
      * @param string $summaryContent The AI-generated summary
      * @param array $requestMessages The messages sent to the LLM
      * @param array $response The raw LLM response
-     * @return int|null The new LLM conversation ID
+     * @return int|null The LLM conversation ID
      */
     public function createSummaryConversation($therapyConvId, $therapistId, $sectionId, $summaryContent, $requestMessages, $response)
     {
-        // Get LLM config for required model/temperature/max_tokens fields
-        $config = $this->getLlmConfig();
-
-        // Create a new LLM conversation for audit purposes
-        $llmConvId = $this->db->insert('llmConversations', array(
-            'id_users' => $therapistId,
-            'id_sections' => $sectionId,
-            'title' => 'Therapy Summary - Conversation #' . $therapyConvId,
-            'model' => $response['model'] ?? $config['llm_default_model'],
-            'temperature' => $config['llm_temperature'],
-            'max_tokens' => $config['llm_max_tokens']
-        ));
-
+        // Use the shared therapist tools conversation
+        $llmConvId = $this->getOrCreateTherapistToolsConversation($therapistId, $sectionId, 'summary');
         if (!$llmConvId) return null;
 
         // Log the user request (the summarization request)
@@ -788,8 +831,8 @@ class TherapyMessageService extends TherapyAlertService
 
         // Log transaction
         $this->logTransaction(
-            transactionTypes_insert, 'llmConversations', $llmConvId, $therapistId,
-            'Summary generated for therapy conversation #' . $therapyConvId
+            transactionTypes_insert, 'llmMessages', $llmConvId, $therapistId,
+            'Summary appended for therapy conversation #' . $therapyConvId
         );
 
         return $llmConvId;

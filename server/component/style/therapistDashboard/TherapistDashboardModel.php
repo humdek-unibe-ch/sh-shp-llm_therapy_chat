@@ -328,12 +328,25 @@ class TherapistDashboardModel extends StyleModel
 
         $aiContent = $response['content'];
 
-        // Save to llmMessages via parent LLM plugin for full audit trail
-        $conversation = $this->messageService->getTherapyConversation($conversationId);
-        if ($conversation) {
-            $llmConversationId = $conversation['id_llmConversations'];
+        // Save to llmMessages via the therapist's tools conversation (NOT the patient's)
+        // This prevents draft messages from appearing in the patient's chat
+        $toolsConvId = $this->messageService->getOrCreateTherapistToolsConversation(
+            $therapistId, $this->getSectionId(), 'draft'
+        );
+        if ($toolsConvId) {
             $this->messageService->addMessage(
-                $llmConversationId,
+                $toolsConvId,
+                'user',
+                'Generate draft response for therapy conversation #' . $conversationId,
+                null, null, null, null,
+                array(
+                    'therapy_sender_type' => 'therapist',
+                    'draft_for_conversation' => $conversationId,
+                    'is_draft' => true
+                )
+            );
+            $this->messageService->addMessage(
+                $toolsConvId,
                 'assistant',
                 $aiContent,
                 null,
@@ -343,6 +356,7 @@ class TherapistDashboardModel extends StyleModel
                 array(
                     'therapy_sender_type' => 'ai',
                     'draft_for_therapist' => $therapistId,
+                    'draft_for_conversation' => $conversationId,
                     'is_draft' => true
                 ),
                 $response['reasoning'] ?? null,

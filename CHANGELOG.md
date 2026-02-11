@@ -1,6 +1,6 @@
 # Changelog
 
-## v1.0.0 (2026-02-11) - Architecture Overhaul
+## v1.0.0 (2026-02-11) - Initial Release
 
 ### Breaking Changes
 - Removed `therapyTags` table — tag functionality absorbed into `therapyAlerts` with `tag_received` alert type
@@ -30,8 +30,9 @@
 - **Markdown rendering in AI draft editor**: AI-generated markdown is rendered as formatted HTML in the contentEditable editor for a rich editing experience
 - **Markdown rendering in summary modal**: Conversation summaries display with proper markdown formatting (headings, tables, lists, bold/italic)
 - **Markdown rendering in clinical notes**: Notes (including AI summaries saved as notes) render markdown content properly in the sidebar; `<br>` tags properly rendered using `rehype-raw`
-- **Conversation summarization**: New "Summarize" button opens a modal showing an AI-generated clinical summary; can be saved as a clinical note. Summary requests create a separate LLM conversation for full audit trail. Uses the LLM model configured on the `therapistDashboard` style
-- **AI draft audit trail**: Generated drafts are saved to `llmMessages` table via parent LLM plugin's `addMessage` call for full audit, in addition to the `therapyDraftMessages` workflow table
+- **Conversation summarization**: New "Summarize" button opens a modal showing an AI-generated clinical summary; can be saved as a clinical note. Summary messages are appended to the shared therapist tools conversation (all summaries for the same therapist + section in one conversation). Uses the LLM model configured on the `therapistDashboard` style
+- **AI draft audit trail**: Generated drafts are saved to `llmMessages` table via parent LLM plugin's `addMessage` call for full audit, in addition to the `therapyDraftMessages` workflow table. Audit messages go to a dedicated therapist tools conversation (per therapist + section) so drafts never appear in the patient's conversation
+- **Therapist tools conversation**: Shared LLM conversation per therapist + section for AI drafts and summaries. Created via `getOrCreateTherapistToolsConversation()`. Prevents drafts and summary audit messages from leaking into patient conversations
 - **Lightweight polling**: `check_updates` endpoint returns only counts/latest message ID; full data fetch only when something changed (both patient and therapist sides)
 - **Message editing**: Therapists can edit their own messages
 - **Message soft-deletion**: Messages marked as deleted (not removed)
@@ -45,9 +46,9 @@
 - **URL state persistence**: Therapist dashboard preserves selected group tab and patient in the URL (`?gid=...&uid=...`)
 - **Speech-to-text**: Integrated with `sh-shp-llm` plugin's STT service, cursor-position text insertion
 - **Floating chat badge**: Auto-clears on patient chat view and after each poll
-- **Floating/modal chat interface** (`therapyChat` style): Configurable floating button that expands into a modal chat panel. Fields: `enable_floating_chat`, `floating_chat_position` (6 positions), `floating_chat_icon`, `floating_chat_label`, `floating_chat_title`. Includes unread badge, mobile-responsive backdrop, Escape-to-close, and smooth animations. Prevents recursion by passing `isFloatingMode` flag to inner `SubjectChat`
+- **Floating modal chat** (`therapyChat` style): When `enable_floating_chat` is enabled, the server-rendered floating icon opens an inline modal panel instead of navigating to the chat page. Icon, position, and label are controlled by the main plugin config (`therapy_chat_floating_icon`, `therapy_chat_floating_position`, `therapy_chat_floating_label`). Includes mobile-responsive backdrop, Escape-to-close, and unread badge clearing on open
 - **Email notifications — therapist→patient**: When a therapist sends a message (or sends a draft), an email is queued to the patient via SelfHelp's `JobScheduler`. Configurable via `enable_patient_email_notification`, `patient_notification_email_subject`, `patient_notification_email_body` fields on `therapistDashboard` style. Placeholders: `@user_name`, `@therapist_name`
-- **Email notifications — patient→therapist**: When a patient sends a message, an email is queued to all assigned therapists. Tag messages (`@therapist`) use a separate template with message preview. Configurable via `enable_therapist_email_notification`, `therapist_notification_email_subject`, `therapist_notification_email_body`, `therapist_tag_email_subject`, `therapist_tag_email_body` fields on both `therapistDashboard` and `therapyChat` styles. Placeholders: `{{patient_name}}`, `{{message_preview}}`, `@user_name`. Default: enabled
+- **Email notifications — patient→therapist**: Therapists are emailed only when: (a) patient explicitly tags `@therapist`, or (b) AI is disabled for the conversation (all messages go to therapist). Tag messages use a separate template with message preview. Configurable via `enable_therapist_email_notification`, `therapist_notification_email_subject`, `therapist_notification_email_body`, `therapist_tag_email_subject`, `therapist_tag_email_body` fields on both `therapistDashboard` and `therapyChat` styles. Placeholders: `{{patient_name}}`, `{{message_preview}}`, `@user_name`. Default: enabled
 - **Email notification shared fields**: `notification_from_email` and `notification_from_name` on both styles
 - Comprehensive documentation in `doc/` folder
 
@@ -57,7 +58,7 @@
 - Simplified `MessageInput` — no heavy mention library, matches `sh-shp-llm` UI patterns
 - Cleaner `MessageList` with clear visual distinction per sender type
 - Simplified `TherapistDashboard` with group tabs, draft modal, summarization modal, stat header
-- Simplified `SubjectChat` — focused patient experience with paused-state awareness; header hidden in floating mode
+- Simplified `SubjectChat` — focused patient experience with paused-state awareness
 - Updated `api.ts` to factory pattern (`createSubjectApi`, `createTherapistApi`) with `editNote`, `deleteNote`, `checkUpdates`, `generateSummary` endpoints
 - Updated `useChatState` hook with stable refs, busy guard to prevent poll/load overlap, and string-safe ID dedup
 - Updated `usePolling` hook — simpler interface
@@ -83,3 +84,5 @@
 - Tag reason buttons from patient chat UI (replaced by help label)
 - `v1.0.1.sql` migration — all schema changes consolidated into `v1.0.0.sql`
 - Dead code and unused types
+- React-side `FloatingChat.tsx` component — floating modal is now rendered server-side by the hook template
+- Redundant `floating_chat_position`, `floating_chat_icon`, `floating_chat_label`, `floating_chat_title` style fields — these are already available in the main plugin config

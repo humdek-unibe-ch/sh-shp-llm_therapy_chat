@@ -14,7 +14,6 @@ import ReactDOM from 'react-dom/client';
 import 'bootstrap/dist/css/bootstrap.min.css';
 
 import { SubjectChat } from './components/subject/SubjectChat';
-import { FloatingChat } from './components/subject/FloatingChat';
 import { TherapistDashboard } from './components/therapist/TherapistDashboard';
 import { createSubjectApi, createTherapistApi } from './utils/api';
 import type { SubjectChatConfig, TherapistDashboardConfig } from './types';
@@ -55,12 +54,6 @@ const SubjectChatLoader: React.FC<{ fallback: SubjectChatConfig | null }> = ({ f
   if (loading) return <Spinner />;
   if (error || !config) return <ErrorMsg text={error || 'Configuration not available.'} />;
   if (!config.userId) return <WarningMsg text="Please log in to use the therapy chat." />;
-
-  // Render as floating chat if enabled (and not already in floating mode to prevent recursion)
-  if (config.enableFloatingChat && !config.isFloatingMode) {
-    return <FloatingChat config={config} />;
-  }
-
   return <SubjectChat config={config} />;
 };
 
@@ -187,5 +180,5 @@ if (document.readyState === 'loading') {
 }
 
 // Exports
-export { SubjectChat, FloatingChat, TherapistDashboard };
+export { SubjectChat, TherapistDashboard };
 export type { SubjectChatConfig, TherapistDashboardConfig };

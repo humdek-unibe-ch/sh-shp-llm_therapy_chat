@@ -8,15 +8,88 @@
  *
  * Template for the therapy chat floating icon with badge.
  * Variables available:
- * - $chatUrl: URL for the chat link
+ * - $chatUrl: URL for the chat link (used when not in modal mode)
  * - $iconTitle: Title attribute for the link
  * - $icon: FontAwesome icon class
  * - $badgeHtml: HTML for the notification badge
  * - $positionCss: CSS for positioning
  * - $label: Optional text label for the button
+ * - $enableFloatingModal: boolean - whether to open inline modal instead of navigating
+ * - $floatingModalConfig: JSON string with React config (only when modal enabled)
  */
 ?>
-<!-- Therapy Chat Floating Icon -->
+<?php if ($enableFloatingModal ?? false): ?>
+<!-- Therapy Chat Floating Icon — Modal Mode -->
+<button type="button" id="therapy-chat-floating-trigger" class="position-fixed d-flex align-items-center justify-content-center bg-primary text-white <?php echo !empty($label) ? 'rounded-pill px-3' : 'rounded-circle'; ?> shadow therapy-chat-icon" style="min-width: 50px; height: 50px; font-size: 1.5rem; z-index: 1000; border: none; cursor: pointer; transition: transform 0.2s, box-shadow 0.2s; <?php echo $positionCss; ?>" title="<?php echo $iconTitle; ?>" aria-label="<?php echo $iconTitle; ?>">
+    <?php if (!empty($label)): ?>
+        <span class="d-flex align-items-center">
+            <i class="fas <?php echo $icon; ?> me-2"></i>
+            <span><?php echo htmlspecialchars($label); ?></span>
+        </span>
+    <?php else: ?>
+        <i class="fas <?php echo $icon; ?>"></i>
+    <?php endif; ?>
+    <?php echo $badgeHtml; ?>
+</button>
+
+<!-- Floating Chat Modal Panel -->
+<div id="therapy-chat-floating-backdrop" class="therapy-chat-floating-backdrop" style="display:none;"></div>
+<div id="therapy-chat-floating-panel" class="therapy-chat-floating-panel" style="display:none; <?php echo $positionCss; ?>">
+    <div class="therapy-chat-floating-header">
+        <h6 class="mb-0 text-white"><?php echo htmlspecialchars($iconTitle); ?></h6>
+        <button type="button" id="therapy-chat-floating-close" class="therapy-chat-floating-close-btn" aria-label="Close">
+            <i class="fas fa-times"></i>
+        </button>
+    </div>
+    <div class="therapy-chat-floating-body">
+        <div class="therapy-chat-root" data-config="<?php echo htmlspecialchars($floatingModalConfig); ?>">
+            <!-- React app mounts here when panel opens -->
+        </div>
+    </div>
+</div>
+
+<script>
+(function() {
+    var trigger = document.getElementById('therapy-chat-floating-trigger');
+    var panel = document.getElementById('therapy-chat-floating-panel');
+    var backdrop = document.getElementById('therapy-chat-floating-backdrop');
+    var closeBtn = document.getElementById('therapy-chat-floating-close');
+    var isOpen = false;
+    var reactMounted = false;
+
+    function toggle() {
+        isOpen = !isOpen;
+        panel.style.display = isOpen ? 'flex' : 'none';
+        backdrop.style.display = isOpen ? 'block' : 'none';
+        trigger.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
+
+        if (isOpen && !reactMounted) {
+            reactMounted = true;
+            // React auto-mounts on .therapy-chat-root elements.
+            // If the bundle has already loaded, manually trigger mount.
+            if (window.TherapyChat && window.TherapyChat.mount) {
+                window.TherapyChat.mount();
+            }
+        }
+
+        // Clear badge when opening
+        if (isOpen) {
+            var badge = trigger.querySelector('.therapy-chat-badge');
+            if (badge) badge.style.display = 'none';
+        }
+    }
+
+    if (trigger) trigger.addEventListener('click', toggle);
+    if (closeBtn) closeBtn.addEventListener('click', function() { if (isOpen) toggle(); });
+    if (backdrop) backdrop.addEventListener('click', function() { if (isOpen) toggle(); });
+
+    document.addEventListener('keydown', function(e) {
+        if (e.key === 'Escape' && isOpen) toggle();
+    });
+})();
+</script>
+<?php else: ?>
+<!-- Therapy Chat Floating Icon — Link Mode -->
 <a href="<?php echo $chatUrl; ?>" class="position-fixed d-flex align-items-center justify-content-center bg-primary text-white <?php echo !empty($label) ? 'rounded-pill px-3' : 'rounded-circle'; ?> shadow therapy-chat-icon" style="min-width: 50px; height: 50px; font-size: 1.5rem; z-index: 1000; text-decoration: none; transition: transform 0.2s, box-shadow 0.2s; <?php echo $positionCss; ?>" title="<?php echo $iconTitle; ?>">
     <?php if (!empty($label)): ?>
         <span class="d-flex align-items-center">
@@ -28,6 +101,8 @@
     <?php endif; ?>
     <?php echo $badgeHtml; ?>
 </a>
+<?php endif; ?>
+
 <style>
     .therapy-chat-icon:hover {
         transform: scale(1.05);
@@ -48,5 +123,74 @@
         font-size: 0.9rem;
         font-weight: 500;
         white-space: nowrap;
+    }
+
+    /* Floating modal panel styles */
+    .therapy-chat-floating-backdrop {
+        position: fixed;
+        inset: 0;
+        background: rgba(0,0,0,0.35);
+        z-index: 10000;
+    }
+    .therapy-chat-floating-panel {
+        position: fixed;
+        width: 380px;
+        max-height: 560px;
+        z-index: 10001;
+        background: #fff;
+        border-radius: 12px;
+        box-shadow: 0 8px 30px rgba(0,0,0,0.2);
+        overflow: hidden;
+        flex-direction: column;
+    }
+    .therapy-chat-floating-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 0.65rem 1rem;
+        background: #0d6efd;
+        flex-shrink: 0;
+    }
+    .therapy-chat-floating-close-btn {
+        background: none;
+        border: none;
+        color: rgba(255,255,255,0.8);
+        font-size: 1.1rem;
+        cursor: pointer;
+        padding: 0.2rem 0.35rem;
+        border-radius: 4px;
+    }
+    .therapy-chat-floating-close-btn:hover {
+        color: #fff;
+        background: rgba(255,255,255,0.15);
+    }
+    .therapy-chat-floating-body {
+        flex: 1;
+        overflow: hidden;
+        display: flex;
+        flex-direction: column;
+    }
+    .therapy-chat-floating-body .tc-subject {
+        height: 100%;
+    }
+    .therapy-chat-floating-body .card {
+        border: none !important;
+        border-radius: 0 !important;
+        box-shadow: none !important;
+    }
+    /* Hide the inline card header since the floating panel has its own */
+    .therapy-chat-floating-body .card-header {
+        display: none !important;
+    }
+
+    @media (max-width: 767px) {
+        .therapy-chat-floating-panel {
+            width: calc(100vw - 24px) !important;
+            max-height: calc(100vh - 120px) !important;
+            left: 12px !important;
+            right: 12px !important;
+            bottom: 80px !important;
+            top: auto !important;
+        }
     }
 </style>

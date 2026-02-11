@@ -277,31 +277,14 @@ class TherapyChatModel extends StyleModel
      * ========================================================================= */
 
     /**
-     * Whether the chat should render as a floating modal button.
+     * Whether the chat should render as a floating modal.
+     * When enabled, the server-rendered floating icon opens an inline modal
+     * instead of navigating to the page. Icon/position/label are in the
+     * main plugin config (therapy_chat_floating_icon, etc.).
      */
     public function isFloatingChatEnabled()
     {
         return (bool)$this->get_db_field('enable_floating_chat', '0');
-    }
-
-    public function getFloatingChatPosition()
-    {
-        return $this->get_db_field('floating_chat_position', 'bottom-right');
-    }
-
-    public function getFloatingChatIcon()
-    {
-        return $this->get_db_field('floating_chat_icon', 'fa-comments');
-    }
-
-    public function getFloatingChatLabel()
-    {
-        return $this->get_db_field('floating_chat_label', 'Chat');
-    }
-
-    public function getFloatingChatTitle()
-    {
-        return $this->get_db_field('floating_chat_title', 'Therapy Chat');
     }
 
     /* =========================================================================
@@ -365,15 +348,21 @@ class TherapyChatModel extends StyleModel
             'conversation_id' => $conversationId
         );
 
-        // Send email notification to therapist(s)
+        // Determine if therapist should be emailed:
+        //  - when the patient tags @therapist
+        //  - when AI is disabled (all messages go to therapist)
         $isTag = (bool)preg_match('/@(?:therapist|Therapist)\b/', $message);
-        $this->notifyTherapistsNewMessage($conversationId, $userId, $message, $isTag);
+        $conversation = $this->therapyService->getTherapyConversation($conversationId);
+        $aiActive = $conversation && $conversation['ai_enabled']
+            && $conversation['mode'] === THERAPY_MODE_AI_HYBRID
+            && ($conversation['status'] ?? '') !== THERAPY_STATUS_PAUSED;
+
+        if ($isTag || !$aiActive) {
+            $this->notifyTherapistsNewMessage($conversationId, $userId, $message, $isTag);
+        }
 
         // Process AI response if enabled and conversation is not paused
-        $conversation = $this->therapyService->getTherapyConversation($conversationId);
-        if ($conversation && $conversation['ai_enabled']
-            && $conversation['mode'] === THERAPY_MODE_AI_HYBRID
-            && ($conversation['status'] ?? '') !== THERAPY_STATUS_PAUSED) {
+        if ($aiActive) {
             $aiResponse = $this->processAIResponse($conversationId, $conversation);
             if ($aiResponse && !isset($aiResponse['error'])) {
                 $response['ai_message'] = array(
@@ -614,12 +603,8 @@ class TherapyChatModel extends StyleModel
             'taggingEnabled' => $this->isTaggingEnabled(),
             'dangerDetectionEnabled' => $this->isDangerDetectionEnabled(),
 
-            // Floating chat
-            'enableFloatingChat' => $this->isFloatingChatEnabled(),
-            'floatingChatPosition' => $this->getFloatingChatPosition(),
-            'floatingChatIcon' => $this->getFloatingChatIcon(),
-            'floatingChatLabel' => $this->getFloatingChatLabel(),
-            'floatingChatTitle' => $this->getFloatingChatTitle(),
+            // Floating mode flag (set by server when rendered inside modal)
+            'isFloatingMode' => false,
 
             // Polling
             'pollingInterval' => $this->getPollingInterval() * 1000,

@@ -1063,26 +1063,17 @@ INSERT IGNORE INTO `styles_fields` (`id_styles`, `id_fields`, `default_value`, `
 -- =====================================================
 -- FLOATING CHAT CONFIGURATION FOR therapyChat
 -- =====================================================
+-- When enable_floating_chat is active, clicking the server-rendered floating
+-- icon opens an inline modal instead of navigating to the page.
+-- Position, icon, and label are controlled by the main plugin config page
+-- (therapy_chat_floating_icon, therapy_chat_floating_position, therapy_chat_floating_label).
 
--- Field definitions for floating/modal chat on therapyChat style
 INSERT IGNORE INTO `fields` (`id`, `name`, `id_type`, `display`) VALUES
-(NULL, 'enable_floating_chat', get_field_type_id('checkbox'), '0'),
-(NULL, 'floating_chat_position', get_field_type_id('text'), '0'),
-(NULL, 'floating_chat_icon', get_field_type_id('text'), '0'),
-(NULL, 'floating_chat_label', get_field_type_id('text'), '1'),
-(NULL, 'floating_chat_title', get_field_type_id('text'), '1');
+(NULL, 'enable_floating_chat', get_field_type_id('checkbox'), '0');
 
 INSERT IGNORE INTO `styles_fields` (`id_styles`, `id_fields`, `default_value`, `help`) VALUES
 (get_style_id('therapyChat'), get_field_id('enable_floating_chat'), '0',
- 'Enable floating/modal chat interface. When enabled, the chat renders as a floating button that expands into a modal panel instead of inline on the page.'),
-(get_style_id('therapyChat'), get_field_id('floating_chat_position'), 'bottom-right',
- 'Position of the floating chat button. Values: bottom-right, bottom-left, top-right, top-left, bottom-center, top-center.'),
-(get_style_id('therapyChat'), get_field_id('floating_chat_icon'), 'fa-comments',
- 'Font Awesome icon class for the floating chat button (e.g., fa-comments, fa-comment-dots).'),
-(get_style_id('therapyChat'), get_field_id('floating_chat_label'), 'Chat',
- 'Text label displayed on the floating chat button.'),
-(get_style_id('therapyChat'), get_field_id('floating_chat_title'), 'Therapy Chat',
- 'Title shown in the modal header when the floating chat panel is open.');
+ 'Enable floating/modal chat interface. When enabled, clicking the global floating icon opens the chat in a modal panel instead of navigating to the page. Icon, position and label are configured in the main plugin config page.');
 
 -- =====================================================
 -- EMAIL NOTIFICATION CONFIGURATION
