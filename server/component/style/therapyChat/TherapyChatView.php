@@ -41,6 +41,13 @@ class TherapyChatView extends StyleView
             return;
         }
 
+        // When floating chat mode is enabled, the chat is accessed via the
+        // floating icon/modal panel (rendered by the TherapyChatHooks hook).
+        // We do NOT render the inline chat on the page to avoid duplication.
+        if ($this->model->isFloatingChatEnabled()) {
+            return;
+        }
+
         $user_id = $this->model->getUserId();
         $section_id = $this->model->getSectionId();
 

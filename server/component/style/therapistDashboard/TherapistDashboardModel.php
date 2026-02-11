@@ -95,14 +95,6 @@ class TherapistDashboardModel extends StyleModel
     }
 
     /**
-     * Get conversation by ID
-     */
-    public function getConversationById($conversationId)
-    {
-        return $this->messageService->getTherapyConversation($conversationId);
-    }
-
-    /**
      * Get messages for a conversation
      */
     public function getMessages($conversationId, $limit = 100, $afterId = null)

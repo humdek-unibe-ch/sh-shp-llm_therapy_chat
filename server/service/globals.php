@@ -15,8 +15,7 @@
  */
 
 // Plugin identification
-define('LLM_THERAPY_CHAT_PLUGIN_NAME', 'sh-shp-llm_therapy_chat');
-define('LLM_THERAPY_CHAT_PLUGIN_VERSION', 'v1.0.1');
+define('LLM_THERAPY_CHAT_PLUGIN_VERSION', 'v1.0.0');
 
 // Load all therapy lookup constants
 require_once __DIR__ . "/../constants/TherapyLookups.php";

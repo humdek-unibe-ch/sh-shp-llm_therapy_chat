@@ -113,24 +113,28 @@ The `MentionItem` type is exported from `MessageInput.tsx`.
 
 ## Danger Detection Flow
 
-When a patient sends a message, danger detection runs in `TherapyChatModel::sendPatientMessage()`:
+When a patient sends a message, danger detection runs in `TherapyChatModel::sendPatientMessage()` using a two-layer approach:
 
-1. **Conversation created first**: The conversation is always created/fetched before danger detection so alerts have a valid conversation ID
-2. **LLM-based detection** (if `LlmDangerDetectionService` is available and `enable_danger_detection` is enabled): Calls `checkMessage()` on the service
-3. **Keyword-based fallback** (if LLM detection is unavailable but `enable_danger_detection` is enabled): Splits `danger_keywords` field by commas/semicolons/newlines and checks for case-insensitive matches in the message
-4. **On danger detected**:
-   - Message is saved (so therapists can see what was said)
-   - `createDangerAlert()` is called (creates alert + escalates risk to critical), with extra emails from `danger_notification_emails`
+**Important ID distinction**: `TherapyChatModel` works with `therapyConversationMeta.id` (`$conversationId`) for therapy-layer operations, but `LlmDangerDetectionService::checkMessage()` operates on `llmConversations.id` (`$llmConversationId`). Always pass `$conversation['id_llmConversations']` to the LLM service.
+
+1. **Conversation created first**: The conversation is always created/fetched before danger detection so alerts have a valid conversation ID.
+2. **Layer 1 — LLM-based detection** (if `LlmDangerDetectionService` is available and enabled): Calls `checkMessage($message, $userId, $llmConversationId)`. If danger is detected, `LlmDangerDetectionService` internally blocks the `llmConversations` record and sends email notifications to `getDangerNotificationEmails()`. Then `handleDangerDetected()` is called with an empty `$extraEmails` parameter to avoid duplicate emails.
+3. **Layer 2 — Keyword-based fallback** (if LLM detection is unavailable or didn't trigger): `scanKeywords()` splits `danger_keywords` by commas/semicolons/newlines and checks for case-insensitive substring matches. If danger keywords are found, `TherapyChatService::blockConversation()` is called explicitly to block the `llmConversations` record, then `handleDangerDetected()` is called with the extra danger emails.
+4. **`handleDangerDetected()` (shared for both layers)**:
+   - Saves the message (so therapists can see what was said)
+   - `createDangerAlert()` creates an alert, escalates risk to critical, and sends urgent notifications to assigned therapists plus any `$extraEmails`
    - AI is disabled on the conversation (`setAIEnabled(false)`)
-   - Urgent email notification sent to assigned therapists and extra configured emails
+   - Does NOT call `notifyTherapistsNewMessage()` — `createDangerAlert` already sends urgent emails to therapists, so calling both would duplicate notifications
    - Frontend receives `{ blocked: true, type: 'danger_detected', message: '...' }`
-5. **Email notification**: `sendUrgentNotification()` in `TherapyAlertService` emails both assigned therapists and addresses from the `danger_notification_emails` CMS field (e.g., clinical supervisors). Emails are deduplicated.
+5. **Email deduplication**: `sendUrgentNotification()` in `TherapyAlertService` merges assigned therapist emails with `$extraEmails`, deduplicates the list, and sends one email per unique address.
 
-**`danger_notification_emails` flow**: `TherapyChatModel::getDangerNotificationEmails()` reads the CMS field. Both LLM-based and keyword-based danger detection paths pass the extra emails to `TherapyAlertService::createDangerAlert()`. `sendUrgentNotification()` merges therapist addresses with these extra emails (deduplicated).
+**`danger_notification_emails` flow**: `TherapyChatModel::getDangerNotificationEmails()` reads the CMS field and returns an array of email addresses (supports comma, semicolon, and newline separators). For Layer 1, these emails are passed directly to `LlmDangerDetectionService::checkMessage()`. For Layer 2, they are passed to `TherapyAlertService::createDangerAlert()` via `handleDangerDetected()`.
 
 ## Floating Chat Modal
 
 When `enable_floating_chat` is enabled on the `therapyChat` style:
+
+**Inline chat suppression**: `TherapyChatView::output_content()` returns early when `isFloatingChatEnabled()` is true. This prevents the inline chat from rendering on the page — the floating modal panel is the sole chat interface in this mode.
 
 1. **Hook renders a `<button>`** instead of an `<a>` link
 2. **On click**: Panel opens, AJAX request fetches full config from chat page endpoint (`?action=get_config&section_id=X`)
@@ -212,11 +216,14 @@ The following unused methods were removed:
 |----------|--------|
 | `TherapyChatModel` | `getConversation()` |
 | `TherapistDashboardModel` | `notifyTherapistNewMessage()` |
-| `TherapyChatService` | `getTherapyConversationByLlmId()`, `getTherapistsForGroup()`, `setTherapyMode()`, `getLookupValues()` |
-| `api.ts` | `setApiBaseUrl()` |
+| `TherapyChatService` | `getTherapyConversationByLlmId()`, `getTherapistsForGroup()`, `setTherapyMode()`, `getLookupValues()`, `removeTherapistFromGroup()` |
+| `api.ts` | `setApiBaseUrl()`, `getErrorMessage()` |
 | `types/index.ts` | `DEFAULT_SUBJECT_LABELS`, `DEFAULT_THERAPIST_LABELS` |
+| `TherapyChatModel` | `hasAccess()`, `getDangerDetection()` |
+| `TherapistDashboardModel` | `getConversationById()` |
+| `globals.php` | `LLM_THERAPY_CHAT_PLUGIN_NAME` constant |
 
-Use `getOrCreateConversation()` instead of `getConversation()`. `getDangerNotificationEmails()` is active — it reads the `danger_notification_emails` CMS field for danger alerts.
+Use `getOrCreateConversation()` instead of `getConversation()`. `getDangerNotificationEmails()` is active — it reads the `danger_notification_emails` CMS field and returns an array of email addresses for danger alerts.
 
 ## Testing Locally
 

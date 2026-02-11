@@ -338,20 +338,6 @@ class TherapyChatService extends LlmService
     }
 
     /**
-     * Remove a therapist's assignment to a group.
-     *
-     * @param int $therapistId
-     * @param int $groupId
-     * @return bool
-     */
-    public function removeTherapistFromGroup($therapistId, $groupId)
-    {
-        $sql = "DELETE FROM therapyTherapistAssignments WHERE id_users = ? AND id_groups = ?";
-        $this->db->query_db($sql, array($therapistId, $groupId));
-        return true;
-    }
-
-    /**
      * Set all group assignments for a therapist (replaces existing).
      *
      * @param int $therapistId
@@ -470,6 +456,43 @@ class TherapyChatService extends LlmService
             $this->logTransaction(
                 transactionTypes_update, 'therapyConversationMeta', $conversationId, $uid,
                 'AI ' . ($enabled ? 'enabled' : 'disabled')
+            );
+        }
+
+        return $result;
+    }
+
+    /**
+     * Block the underlying llmConversation for a therapy conversation.
+     * Sets blocked=1, blocked_at, and blocked_reason on llmConversations.
+     *
+     * @param int $conversationId therapyConversationMeta.id
+     * @param string $reason Reason for blocking
+     * @return bool
+     */
+    public function blockConversation($conversationId, $reason = 'Danger keywords detected')
+    {
+        $conversation = $this->getTherapyConversation($conversationId);
+        if (!$conversation) {
+            return false;
+        }
+
+        $llmConvId = $conversation['id_llmConversations'];
+        $result = $this->db->update_by_ids(
+            'llmConversations',
+            array(
+                'blocked' => 1,
+                'blocked_reason' => $reason,
+                'blocked_at' => date('Y-m-d H:i:s')
+            ),
+            array('id' => $llmConvId)
+        );
+
+        if ($result) {
+            $this->logTransaction(
+                transactionTypes_update, 'llmConversations', $llmConvId,
+                $conversation['id_users'] ?? 0,
+                'Conversation blocked: ' . $reason
             );
         }
 

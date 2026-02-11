@@ -66,17 +66,6 @@ class TherapyChatModel extends StyleModel
      * ========================================================================= */
 
     /**
-     * Check if current user has access to the subject chat
-     */
-    public function hasAccess()
-    {
-        if (!$this->userId) {
-            return false;
-        }
-        return $this->therapyService->isSubject($this->userId);
-    }
-
-    /**
      * Check if user is a subject
      */
     public function isSubject()
@@ -162,11 +151,19 @@ class TherapyChatModel extends StyleModel
      * These are additional emails (e.g., clinical supervisors) that receive
      * urgent notifications when danger is detected.
      *
-     * @return string Comma-separated email addresses
+     * Returns an array to match the interface expected by LlmDangerDetectionService.
+     *
+     * @return array Array of validated email addresses
      */
     public function getDangerNotificationEmails()
     {
-        return $this->get_db_field('danger_notification_emails', '');
+        $raw = $this->get_db_field('danger_notification_emails', '');
+        if (empty($raw)) {
+            return array();
+        }
+        // Support comma, semicolon, and newline separators
+        $emails = preg_split('/[,;\n]+/', $raw);
+        return array_values(array_filter(array_map('trim', $emails)));
     }
 
     public function isTaggingEnabled()
@@ -257,11 +254,6 @@ class TherapyChatModel extends StyleModel
         return $this->therapyService;
     }
 
-    public function getDangerDetection()
-    {
-        return $this->dangerDetection;
-    }
-
     public function getUserId()
     {
         return $this->userId;
@@ -312,87 +304,41 @@ class TherapyChatModel extends StyleModel
         $conversationId = $conversation['id'];
 
         // Danger detection — check BEFORE sending the message
-        $isDangerDetected = false;
-        $dangerResult = null;
-        $extraDangerEmails = $this->getDangerNotificationEmails();
+        // IMPORTANT: LlmDangerDetectionService operates on llmConversations.id,
+        // while TherapyAlertService/TherapyMessageService use therapyConversationMeta.id.
+        $llmConversationId = $conversation['id_llmConversations'];
+        $extraDangerEmails = implode(',', $this->getDangerNotificationEmails());
 
+        // --- Layer 1: LLM plugin danger detection (word-boundary + typo tolerance) ---
+        // LlmDangerDetectionService::checkMessage already blocks the llmConversation,
+        // logs the transaction, and sends email to getDangerNotificationEmails().
+        // We still create a therapyAlerts record + escalate risk + disable AI here,
+        // but skip the extra email param to avoid duplicate notifications.
         if ($this->dangerDetection && $this->dangerDetection->isEnabled()) {
-            $dangerResult = $this->dangerDetection->checkMessage($message, $userId, $conversationId);
+            $dangerResult = $this->dangerDetection->checkMessage($message, $userId, $llmConversationId);
             if (!$dangerResult['safe']) {
-                $isDangerDetected = true;
-
-                // Save the message so therapists can see what was said
-                $this->therapyService->sendTherapyMessage(
-                    $conversationId, $userId, $message, TherapyMessageService::SENDER_SUBJECT
-                );
-
-                // Create danger alert (also escalates risk to critical)
-                // Passes extra notification emails from danger_notification_emails CMS field
-                $this->therapyService->createDangerAlert(
-                    $conversationId,
+                return $this->handleDangerDetected(
+                    $conversationId, $userId, $message,
                     $dangerResult['detected_keywords'],
-                    $message,
-                    $extraDangerEmails
-                );
-
-                // Disable AI on this conversation to prevent AI from responding
-                $this->therapyService->setAIEnabled($conversationId, false);
-
-                // Notify therapists urgently about this message
-                $this->notifyTherapistsNewMessage($conversationId, $userId, $message, false);
-
-                return array(
-                    'blocked' => true,
-                    'type' => 'danger_detected',
-                    'message' => $this->getDangerBlockedMessage(),
-                    'detected_keywords' => $dangerResult['detected_keywords'],
-                    'conversation_id' => $conversationId
+                    '' // LlmDangerDetectionService already sent to extra emails
                 );
             }
         }
 
-        // Also check for simple keyword-based danger detection (fallback)
-        if (!$isDangerDetected && $this->isDangerDetectionEnabled()) {
-            $dangerKeywords = $this->getDangerKeywords();
-            if (!empty($dangerKeywords)) {
-                $keywords = array_filter(array_map('trim', preg_split('/[,;\n]+/', $dangerKeywords)));
-                $detectedKeywords = array();
-                $messageLower = mb_strtolower($message);
-                foreach ($keywords as $kw) {
-                    if (mb_strpos($messageLower, mb_strtolower($kw)) !== false) {
-                        $detectedKeywords[] = $kw;
-                    }
-                }
-
-                if (!empty($detectedKeywords)) {
-                    // Save the message so therapists can see what was said
-                    $this->therapyService->sendTherapyMessage(
-                        $conversationId, $userId, $message, TherapyMessageService::SENDER_SUBJECT
-                    );
-
-                    // Create danger alert (also escalates risk to critical)
-                    // Passes extra notification emails from danger_notification_emails CMS field
-                    $this->therapyService->createDangerAlert(
-                        $conversationId,
-                        $detectedKeywords,
-                        $message,
-                        $extraDangerEmails
-                    );
-
-                    // Disable AI on this conversation
-                    $this->therapyService->setAIEnabled($conversationId, false);
-
-                    // Notify therapists urgently
-                    $this->notifyTherapistsNewMessage($conversationId, $userId, $message, false);
-
-                    return array(
-                        'blocked' => true,
-                        'type' => 'danger_detected',
-                        'message' => $this->getDangerBlockedMessage(),
-                        'detected_keywords' => $detectedKeywords,
-                        'conversation_id' => $conversationId
-                    );
-                }
+        // --- Layer 2: Simple keyword fallback (when LLM plugin unavailable or missed) ---
+        if ($this->isDangerDetectionEnabled()) {
+            $detectedKeywords = $this->scanKeywords($message);
+            if (!empty($detectedKeywords)) {
+                // Block the llmConversation (Layer 1 does this inside checkMessage,
+                // but Layer 2 must do it explicitly)
+                $this->therapyService->blockConversation(
+                    $conversationId,
+                    'Automatic: Danger keywords detected - ' . implode(', ', $detectedKeywords)
+                );
+                return $this->handleDangerDetected(
+                    $conversationId, $userId, $message,
+                    $detectedKeywords, $extraDangerEmails
+                );
             }
         }
 
@@ -460,6 +406,72 @@ class TherapyChatModel extends StyleModel
         }
 
         return $response;
+    }
+
+    /**
+     * Handle a confirmed danger detection: save message, create alert, disable AI, notify.
+     *
+     * @param int $conversationId therapyConversationMeta.id
+     * @param int $userId Patient ID
+     * @param string $message The dangerous message
+     * @param array $detectedKeywords
+     * @param string $extraEmails Comma-separated extra notification emails
+     * @return array Blocked response for frontend
+     */
+    private function handleDangerDetected($conversationId, $userId, $message, $detectedKeywords, $extraEmails)
+    {
+        // Save the message so therapists can see what was said
+        $this->therapyService->sendTherapyMessage(
+            $conversationId, $userId, $message, TherapyMessageService::SENDER_SUBJECT
+        );
+
+        // Create danger alert (escalates risk to critical + sends urgent email
+        // to all assigned therapists and any extra notification addresses)
+        $this->therapyService->createDangerAlert(
+            $conversationId, $detectedKeywords, $message, $extraEmails
+        );
+
+        // Disable AI on this conversation
+        $this->therapyService->setAIEnabled($conversationId, false);
+
+        // NOTE: We do NOT call notifyTherapistsNewMessage() here because
+        // createDangerAlert already sends an urgent notification to therapists.
+        // Sending both would duplicate emails.
+
+        return array(
+            'blocked' => true,
+            'type' => 'danger_detected',
+            'message' => $this->getDangerBlockedMessage(),
+            'detected_keywords' => $detectedKeywords,
+            'conversation_id' => $conversationId
+        );
+    }
+
+    /**
+     * Scan a message for configured danger keywords (simple substring match).
+     * Fallback when LlmDangerDetectionService is unavailable.
+     *
+     * @param string $message
+     * @return array Detected keywords (empty if none found)
+     */
+    private function scanKeywords($message)
+    {
+        $dangerKeywords = $this->getDangerKeywords();
+        if (empty($dangerKeywords)) {
+            return array();
+        }
+
+        $keywords = array_filter(array_map('trim', preg_split('/[,;\n]+/', $dangerKeywords)));
+        $detected = array();
+        $messageLower = mb_strtolower($message);
+
+        foreach ($keywords as $kw) {
+            if (mb_strpos($messageLower, mb_strtolower($kw)) !== false) {
+                $detected[] = $kw;
+            }
+        }
+
+        return $detected;
     }
 
     /**

@@ -60,6 +60,15 @@
   5. **Audit logging**: All danger detections are logged via transaction service
 - Comprehensive documentation in `doc/` folder
 
+### Fixed
+- **Critical: Danger detection conversation ID mismatch** — `LlmDangerDetectionService::checkMessage()` was receiving `therapyConversationMeta.id` but operates on `llmConversations.id`. Now correctly passes `id_llmConversations` so conversation blocking works against the right table
+- **Critical: `getDangerNotificationEmails()` return type** — Method returned a raw string but `LlmDangerDetectionService::sendNotifications()` expected an array. Now returns a parsed array (supports comma, semicolon, newline separators), matching the parent `LlmChatModel` interface
+- **Layer 2 (fallback) danger detection now blocks conversation** — Added `TherapyChatService::blockConversation()` method and called it from the keyword fallback path so `llmConversations.blocked` is properly set
+- **Duplicate danger notifications** — Layer 1 (LLM service) already sends to `getDangerNotificationEmails()`; no longer passes extra emails to `createDangerAlert` for Layer 1 to avoid duplicate emails to configured addresses
+- **Duplicate floating UI** — When `enable_floating_chat` is enabled, `TherapyChatView::output_content()` now returns early to avoid rendering the inline chat on the page (the floating modal panel handles it)
+- **Plugin version constant** — Fixed `LLM_THERAPY_CHAT_PLUGIN_VERSION` from `v1.0.1` to `v1.0.0`
+- **Removed dead code**: `hasAccess()`, `getDangerDetection()` (TherapyChatModel), `getConversationById()` (TherapistDashboardModel), `removeTherapistFromGroup()` (TherapyChatService), `getErrorMessage()` (api.ts), `LLM_THERAPY_CHAT_PLUGIN_NAME` constant
+
 ### Changed
 - Rewrote entire React frontend (types, API, hooks, all components)
 - Single CSS file with `tc-` prefix instead of scattered per-component CSS
