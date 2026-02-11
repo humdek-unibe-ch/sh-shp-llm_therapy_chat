@@ -249,6 +249,9 @@ class TherapyChatHooks extends BaseHooks
     public function loadTherapyChatLLMJs($args = null)
     {
         $includes = $this->execute_private_method($args);
+        if (!is_array($includes)) {
+            $includes = array();
+        }
         $router = $this->services->get_router();
         if ($router->is_active('userSelect') || $router->is_active('userUpdate')) {
             $includes[] = '/server/plugins/sh-shp-llm_therapy_chat/js/ext/therapy_assignments.js';

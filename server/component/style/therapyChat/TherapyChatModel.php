@@ -607,32 +607,33 @@ class TherapyChatModel extends StyleModel
                 $this->therapyService->blockConversation($conversationId, $reason);
             }
 
-            // Create danger alert + escalate risk + disable AI
+            // Create danger alert + escalate risk + disable AI + send urgent
+            // email to assigned therapists AND extra notification addresses.
+            // NOTE: Do NOT also call $this->dangerDetection->sendNotifications()
+            // because createDangerAlert already sends to all recipients. Calling
+            // both would produce duplicate emails.
             $extraEmails = implode(',', $this->getDangerNotificationEmails());
             $this->therapyService->createDangerAlert(
                 $conversationId, $detectedConcerns, $content, $extraEmails
             );
             $this->therapyService->setAIEnabled($conversationId, false);
 
-            // Send notifications if danger detection is enabled
-            if ($this->dangerDetection && $this->dangerDetection->isEnabled()) {
-                $sectionId = $this->getSectionId();
-                $userId = $conversation['id_users'] ?? 0;
-                $this->dangerDetection->sendNotifications(
-                    $detectedConcerns,
-                    $safety['safety_message'] ?? 'Dangerous content detected by AI',
-                    $userId, $llmConversationId, $sectionId
+            // Log to transactions via the service container (logTransaction is
+            // protected in the LlmLoggingTrait, so we use the services directly)
+            try {
+                $transaction = $this->get_services()->get_transaction();
+                $transaction->add_transaction(
+                    transactionTypes_update,
+                    transactionBy_by_system,
+                    $conversation['id_users'] ?? 0,
+                    'llmConversations',
+                    $llmConversationId,
+                    false,
+                    'Post-LLM safety detection: ' . $reason
                 );
+            } catch (Exception $e) {
+                error_log('TherapyChat: Failed to log post-LLM safety transaction: ' . $e->getMessage());
             }
-
-            // Log to transactions
-            $this->therapyService->logTransaction(
-                transactionTypes_update,
-                'llmConversations',
-                $llmConversationId,
-                $conversation['id_users'] ?? 0,
-                'Post-LLM safety detection: ' . $reason
-            );
         }
     }
 

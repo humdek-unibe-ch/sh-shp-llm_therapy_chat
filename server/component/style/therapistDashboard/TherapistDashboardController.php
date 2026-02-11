@@ -274,7 +274,10 @@ class TherapistDashboardController extends BaseController
 
         try {
             $this->model->markMessagesRead($cid, $uid);
-            $this->json(['success' => true]);
+            // Return updated unread count so frontend can refresh badges
+            $unreadCount = $this->model->getTherapyService()
+                ->getUnreadCountForUser($uid, true);
+            $this->json(['success' => true, 'unread_count' => $unreadCount]);
         } catch (Exception $e) {
             $this->json(['error' => $e->getMessage()], 500);
         }

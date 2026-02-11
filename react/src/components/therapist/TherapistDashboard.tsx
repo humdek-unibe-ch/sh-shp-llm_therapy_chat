@@ -167,12 +167,23 @@ export const TherapistDashboard: React.FC<Props> = ({ config }) => {
     try {
       const res = await api.getUnreadCounts();
       const uc = res?.unread_counts;
+      const total = (uc?.total ?? 0) + (uc?.totalAlerts ?? 0);
       setUnreadCounts({
         total: uc?.total ?? 0,
         totalAlerts: uc?.totalAlerts ?? 0,
         bySubject: uc?.bySubject ?? {},
         byGroup: uc?.byGroup ?? {},
       });
+      // Sync the floating icon badge (server-rendered) with live data
+      const badge = document.querySelector('.therapy-chat-badge') as HTMLElement | null;
+      if (badge) {
+        if (total <= 0) {
+          badge.style.display = 'none';
+        } else {
+          badge.textContent = String(total);
+          badge.style.display = '';
+        }
+      }
     } catch (err) {
       console.error('Unread counts error:', err);
     }

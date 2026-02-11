@@ -72,6 +72,11 @@
 - **Therapist unread/seen message tracking** — `handleGetMessages()` (polling endpoint) now calls `markMessagesRead()` so messages polled while a conversation is open are properly marked as seen. Previously only `updateLastSeen` was called, leaving `therapyMessageRecipients.is_new = 1` for polled messages
 - **"Mark as Read" button** — Added explicit "Mark read" button in therapist dashboard conversation header. Shows only when the selected conversation has unread messages
 - **Plugin version constant** — Fixed `LLM_THERAPY_CHAT_PLUGIN_VERSION` from `v1.0.1` to `v1.0.0`
+- **PHP Fatal: `array_merge()` null in `BasePage::output_js_includes()`** — `loadTherapyChatLLMJs` hook now guards against `execute_private_method()` returning null by defaulting to an empty array. Prevents crash when the base method returns null
+- **Protected `logTransaction()` call** — `TherapyChatModel::handlePostLlmSafetyDetection()` was calling `$this->therapyService->logTransaction()` which is protected in `LlmLoggingTrait`. Now uses `$this->get_services()->get_transaction()->add_transaction()` directly
+- **Duplicate danger email in post-LLM safety detection** — Removed call to `$this->dangerDetection->sendNotifications()` from `handlePostLlmSafetyDetection()`. `createDangerAlert()` already sends to all assigned therapists. The parent LLM plugin's `checkMessage()` sends its own email via `LlmDangerDetectionService::sendNotifications()` — that email is expected (from the dependency plugin) and is not a duplication
+- **Therapist floating badge not updating** — `loadUnreadCounts()` in `TherapistDashboard.tsx` now syncs the server-rendered floating icon badge (`.therapy-chat-badge`) with live unread data after each poll/mark-read
+- **`handleMarkMessagesRead` response** — Now returns `unread_count` in the JSON response so the frontend can update badges immediately
 - **Removed dead code**: `hasAccess()`, `getDangerDetection()` (TherapyChatModel), `getConversationById()` (TherapistDashboardModel), `removeTherapistFromGroup()` (TherapyChatService), `getErrorMessage()` (api.ts), `LLM_THERAPY_CHAT_PLUGIN_NAME` constant
 
 ### Changed
