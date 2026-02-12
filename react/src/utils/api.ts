@@ -150,10 +150,6 @@ export function createSubjectApi(sectionId?: number, baseUrl?: string) {
     async getTherapists(): Promise<{ therapists: Array<{ id: number; display: string; name: string; email?: string }> }> {
       return apiGet('get_therapists', withSection({}, sectionId), baseUrl);
     },
-
-    async getTagReasons(): Promise<{ tag_reasons: Array<{ code: string; label: string; urgency: string }> }> {
-      return apiGet('get_tag_reasons', withSection({}, sectionId), baseUrl);
-    },
   };
 }
 

@@ -958,6 +958,42 @@ class TherapyMessageService extends TherapyAlertService
     }
 
     /* =========================================================================
+     * SPEECH-TO-TEXT (shared by both models)
+     * ========================================================================= */
+
+    /**
+     * Transcribe audio to text using the LLM plugin's speech service.
+     * Centralised here to avoid code duplication between TherapyChatModel
+     * and TherapistDashboardModel.
+     *
+     * @param string $tempPath Path to uploaded audio file
+     * @param string $model    Speech-to-text model name
+     * @param string $language Language code ('auto' is converted to null)
+     * @return array {success, text} or {error}
+     */
+    public function transcribeSpeech($tempPath, $model, $language)
+    {
+        $llmSpeechServicePath = __DIR__ . "/../../../../sh-shp-llm/server/service/LlmSpeechToTextService.php";
+        if (!file_exists($llmSpeechServicePath)) {
+            return array('error' => 'Speech-to-text service not available.');
+        }
+
+        require_once $llmSpeechServicePath;
+
+        $speechService = new LlmSpeechToTextService($this->services);
+        $result = $speechService->transcribeAudio(
+            $tempPath,
+            $model,
+            $language !== 'auto' ? $language : null
+        );
+
+        if (isset($result['error'])) {
+            return array('error' => $result['error']);
+        }
+        return array('success' => true, 'text' => $result['text'] ?? '');
+    }
+
+    /* =========================================================================
      * THERAPIST TOOLS CONVERSATION (shared for drafts + summaries)
      * ========================================================================= */
 

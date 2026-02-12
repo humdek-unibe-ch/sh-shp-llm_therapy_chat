@@ -4,18 +4,20 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
 ?>
 <?php
-require_once __DIR__ . "/../../../../../../component/BaseController.php";
-require_once __DIR__ . "/../../../constants/TherapyLookups.php";
+require_once __DIR__ . "/../TherapyBaseController.php";
 
 /**
  * Therapist Dashboard Controller
  *
- * Thin controller: validates input and delegates to TherapistDashboardModel.
- * All business logic (LLM calls, DB operations, email notifications) lives in the model.
+ * Thin controller: validates input, delegates to TherapistDashboardModel.
+ * All business logic lives in the model.
+ *
+ * Shared infrastructure (JSON response, section routing, audio validation,
+ * error handlers) is in TherapyBaseController.
  *
  * @package LLM Therapy Chat Plugin
  */
-class TherapistDashboardController extends BaseController
+class TherapistDashboardController extends TherapyBaseController
 {
     public function __construct($model)
     {
@@ -25,76 +27,69 @@ class TherapistDashboardController extends BaseController
             return;
         }
 
+        $this->setupJsonErrorHandler();
         $this->handleRequest();
     }
 
-    private function isRequestForThisSection()
-    {
-        $requested = $_GET['section_id'] ?? $_POST['section_id'] ?? null;
-        $model_id = $this->model->getSectionId();
-
-        if ($requested === null) {
-            $action = $_GET['action'] ?? $_POST['action'] ?? null;
-            return $action === null;
-        }
-
-        return (int)$requested === (int)$model_id;
-    }
+    /* =========================================================================
+     * REQUEST ROUTING
+     * ========================================================================= */
 
     private function handleRequest()
     {
         if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-            $action = $_POST['action'] ?? null;
-            $this->handlePostRequest($action);
+            $this->handlePostRequest($_POST['action'] ?? null);
         } elseif ($_SERVER['REQUEST_METHOD'] === 'GET') {
-            $action = $_GET['action'] ?? null;
-            $this->handleGetRequest($action);
+            $this->handleGetRequest($_GET['action'] ?? null);
         }
     }
 
     private function handlePostRequest($action)
     {
         switch ($action) {
-            case 'send_message': $this->handleSendMessage(); break;
-            case 'edit_message': $this->handleEditMessage(); break;
-            case 'delete_message': $this->handleDeleteMessage(); break;
-            case 'toggle_ai': $this->handleToggleAI(); break;
-            case 'set_risk': $this->handleSetRisk(); break;
-            case 'set_status': $this->handleSetStatus(); break;
-            case 'add_note': $this->handleAddNote(); break;
-            case 'edit_note': $this->handleEditNote(); break;
-            case 'delete_note': $this->handleDeleteNote(); break;
-            case 'mark_alert_read': $this->handleMarkAlertRead(); break;
-            case 'mark_all_read': $this->handleMarkAllRead(); break;
-            case 'mark_messages_read': $this->handleMarkMessagesRead(); break;
-            case 'create_draft': $this->handleCreateDraft(); break;
-            case 'update_draft': $this->handleUpdateDraft(); break;
-            case 'send_draft': $this->handleSendDraft(); break;
-            case 'discard_draft': $this->handleDiscardDraft(); break;
-            case 'speech_transcribe': $this->handleSpeechTranscribe(); break;
-            case 'generate_summary': $this->handleGenerateSummary(); break;
-            case 'initialize_conversation': $this->handleInitializeConversation(); break;
+            case 'send_message':              $this->handleSendMessage(); break;
+            case 'edit_message':              $this->handleEditMessage(); break;
+            case 'delete_message':            $this->handleDeleteMessage(); break;
+            case 'toggle_ai':                 $this->handleToggleAI(); break;
+            case 'set_risk':                  $this->handleSetRisk(); break;
+            case 'set_status':                $this->handleSetStatus(); break;
+            case 'add_note':                  $this->handleAddNote(); break;
+            case 'edit_note':                 $this->handleEditNote(); break;
+            case 'delete_note':               $this->handleDeleteNote(); break;
+            case 'mark_alert_read':           $this->handleMarkAlertRead(); break;
+            case 'mark_all_read':             $this->handleMarkAllRead(); break;
+            case 'mark_messages_read':        $this->handleMarkMessagesRead(); break;
+            case 'create_draft':              $this->handleCreateDraft(); break;
+            case 'update_draft':              $this->handleUpdateDraft(); break;
+            case 'send_draft':                $this->handleSendDraft(); break;
+            case 'discard_draft':             $this->handleDiscardDraft(); break;
+            case 'generate_summary':          $this->handleGenerateSummary(); break;
+            case 'initialize_conversation':   $this->handleInitializeConversation(); break;
+            case 'speech_transcribe':
+                $this->validateTherapistOrFail();
+                $this->processSpeechTranscription();
+                break;
         }
     }
 
     private function handleGetRequest($action)
     {
         switch ($action) {
-            case 'get_config': $this->handleGetConfig(); break;
+            case 'get_config':        $this->handleGetConfig(); break;
             case 'get_conversations': $this->handleGetConversations(); break;
-            case 'get_conversation': $this->handleGetConversation(); break;
-            case 'get_messages': $this->handleGetMessages(); break;
-            case 'get_alerts': $this->handleGetAlerts(); break;
-            case 'get_stats': $this->handleGetStats(); break;
-            case 'get_notes': $this->handleGetNotes(); break;
+            case 'get_conversation':  $this->handleGetConversation(); break;
+            case 'get_messages':      $this->handleGetMessages(); break;
+            case 'get_alerts':        $this->handleGetAlerts(); break;
+            case 'get_stats':         $this->handleGetStats(); break;
+            case 'get_notes':         $this->handleGetNotes(); break;
             case 'get_unread_counts': $this->handleGetUnreadCounts(); break;
-            case 'get_groups': $this->handleGetGroups(); break;
-            case 'check_updates': $this->handleCheckUpdates(); break;
+            case 'get_groups':        $this->handleGetGroups(); break;
+            case 'check_updates':     $this->handleCheckUpdates(); break;
         }
     }
 
     /* =========================================================================
-     * POST HANDLERS — validate input, delegate to model
+     * POST HANDLERS
      * ========================================================================= */
 
     private function handleSendMessage()
@@ -275,7 +270,6 @@ class TherapistDashboardController extends BaseController
 
         try {
             $this->model->markMessagesRead($cid, $uid);
-            // Return updated unread count so frontend can refresh badges
             $unreadCount = $this->model->getTherapyService()
                 ->getUnreadCountForUser($uid, true);
             $this->json(['success' => true, 'unread_count' => $unreadCount]);
@@ -284,9 +278,7 @@ class TherapistDashboardController extends BaseController
         }
     }
 
-    /* =========================================================================
-     * DRAFT HANDLERS — validate input, delegate to model
-     * ========================================================================= */
+    /* ---- Drafts ---- */
 
     private function handleCreateDraft()
     {
@@ -349,7 +341,7 @@ class TherapistDashboardController extends BaseController
     }
 
     /* =========================================================================
-     * GET HANDLERS — validate input, delegate to model
+     * GET HANDLERS
      * ========================================================================= */
 
     private function handleGetConfig()
@@ -403,9 +395,6 @@ class TherapistDashboardController extends BaseController
 
         try {
             $messages = $this->model->getMessages($cid, 100, $afterId);
-            // Mark messages as seen AND update last_seen timestamp.
-            // Without markMessagesRead, polled messages stay is_new=1 and
-            // unread counts never decrease while the conversation is open.
             $this->model->markMessagesRead($cid, $uid);
             $this->json(['messages' => $messages, 'conversation_id' => $cid]);
         } catch (Exception $e) {
@@ -496,50 +485,6 @@ class TherapistDashboardController extends BaseController
         }
     }
 
-    private function handleSpeechTranscribe()
-    {
-        $this->validateTherapistOrFail();
-
-        if (!$this->model->isSpeechToTextEnabled()) {
-            $this->json(['error' => 'Speech-to-text is not enabled'], 400);
-            return;
-        }
-
-        if (!isset($_FILES['audio']) || $_FILES['audio']['error'] !== UPLOAD_ERR_OK) {
-            $this->json(['error' => 'No audio file uploaded'], 400);
-            return;
-        }
-
-        $audioFile = $_FILES['audio'];
-        if ($audioFile['size'] > 25 * 1024 * 1024) {
-            $this->json(['error' => 'Audio file too large (max 25MB)'], 400);
-            return;
-        }
-
-        $mimeType = $audioFile['type'] ?? '';
-        $baseMime = explode(';', $mimeType)[0];
-        $allowedTypes = [
-            'audio/webm', 'audio/webm;codecs=opus', 'audio/wav', 'audio/mp3',
-            'audio/mpeg', 'audio/mp4', 'audio/ogg', 'audio/flac', 'video/webm',
-        ];
-        if (!in_array($mimeType, $allowedTypes) && !in_array($baseMime, $allowedTypes)) {
-            $this->json(['error' => 'Invalid audio format: ' . $mimeType], 400);
-            return;
-        }
-
-        try {
-            $result = $this->model->transcribeSpeech($audioFile['tmp_name']);
-            if (isset($result['error'])) { $this->json($result, 500); return; }
-            $this->json($result);
-        } catch (Exception $e) {
-            $this->json(['success' => false, 'error' => defined('DEBUG') && DEBUG ? $e->getMessage() : 'Speech transcription failed'], 500);
-        }
-    }
-
-    /* =========================================================================
-     * CONVERSATION INITIALIZATION
-     * ========================================================================= */
-
     private function handleInitializeConversation()
     {
         $uid = $this->validateTherapistOrFail();
@@ -560,7 +505,7 @@ class TherapistDashboardController extends BaseController
     }
 
     /* =========================================================================
-     * HELPERS
+     * VALIDATION
      * ========================================================================= */
 
     private function validateTherapistOrFail()
@@ -569,19 +514,6 @@ class TherapistDashboardController extends BaseController
         if (!$uid) { $this->json(['error' => 'User not authenticated'], 401); exit; }
         if (!$this->model->hasAccess()) { $this->json(['error' => 'Access denied - therapist role required'], 403); exit; }
         return $uid;
-    }
-
-    private function json($data, $status = 200)
-    {
-        // Log user activity before exiting so it is recorded in user_activity table.
-        $this->model->get_services()->get_router()->log_user_activity();
-
-        if (!headers_sent()) {
-            http_response_code($status);
-            header('Content-Type: application/json');
-        }
-        echo json_encode($data);
-        exit;
     }
 }
 ?>

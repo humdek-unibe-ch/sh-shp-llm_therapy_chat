@@ -718,34 +718,19 @@ class TherapistDashboardModel extends StyleModel
      * ========================================================================= */
 
     /**
-     * Transcribe audio to text using the LLM plugin's speech service.
+     * Transcribe audio to text.
+     * Delegates to TherapyMessageService to avoid code duplication.
      *
      * @param string $tempPath Path to uploaded audio file
      * @return array {success, text} or {error}
      */
     public function transcribeSpeech($tempPath)
     {
-        $llmSpeechServicePath = __DIR__ . "/../../../../../sh-shp-llm/server/service/LlmSpeechToTextService.php";
-
-        if (!file_exists($llmSpeechServicePath)) {
-            return array('error' => 'Speech-to-text service not available');
-        }
-
-        require_once $llmSpeechServicePath;
-
-        $speechService = new LlmSpeechToTextService($this->get_services(), $this);
-
-        $result = $speechService->transcribeAudio(
+        return $this->messageService->transcribeSpeech(
             $tempPath,
             $this->getSpeechToTextModel(),
-            $this->getSpeechToTextLanguage() !== 'auto' ? $this->getSpeechToTextLanguage() : null
+            $this->getSpeechToTextLanguage()
         );
-
-        if (isset($result['error'])) {
-            return array('error' => $result['error']);
-        }
-
-        return array('success' => true, 'text' => $result['text'] ?? '');
     }
 
     /* =========================================================================

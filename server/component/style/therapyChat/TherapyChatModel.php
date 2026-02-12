@@ -228,16 +228,20 @@ class TherapyChatModel extends StyleModel
     }
 
     /* =========================================================================
-     * LABEL GETTERS
+     * LABELS
      * ========================================================================= */
 
+    /**
+     * Get UI labels for the React frontend.
+     * Note: tag_reasons is NOT included here - it is a data structure, not a label.
+     * Use getTagReasonsForReact() for tag reasons data.
+     */
     public function getLabels()
     {
         return array(
             'ai_label' => $this->get_db_field('therapy_ai_label', 'AI Assistant'),
             'therapist_label' => $this->get_db_field('therapy_therapist_label', 'Therapist'),
             'tag_button_label' => $this->get_db_field('therapy_tag_button_label', 'Tag Therapist'),
-            'tag_reasons' => $this->getTagReasons(),
             'empty_message' => $this->get_db_field('therapy_empty_message', 'No messages yet. Start the conversation!'),
             'ai_thinking' => $this->get_db_field('therapy_ai_thinking_text', 'AI is thinking...'),
             'mode_ai' => $this->get_db_field('therapy_mode_indicator_ai', 'AI-assisted chat'),
@@ -249,9 +253,53 @@ class TherapyChatModel extends StyleModel
         );
     }
 
+    /* =========================================================================
+     * TAG REASONS
+     * ========================================================================= */
+
+    /**
+     * Parse the raw tag reasons JSON from the database into a PHP array.
+     * Single source of truth: used by getTagReasonsForReact() and tagTherapist().
+     *
+     * @return array Array of raw reason items with 'key', 'label', 'urgency'
+     */
     public function getTagReasons()
     {
-        return $this->get_db_field('therapy_tag_reasons', '');
+        $raw = $this->get_db_field('therapy_tag_reasons', '');
+        if (empty($raw)) {
+            return array();
+        }
+        if (is_string($raw)) {
+            $decoded = json_decode($raw, true);
+            return is_array($decoded) ? $decoded : array();
+        }
+        return is_array($raw) ? $raw : array();
+    }
+
+    /* =========================================================================
+     * FORMATTED DATA FOR REACT (API responses)
+     * ========================================================================= */
+
+    /**
+     * Format therapist list for the @mention autocomplete.
+     * Called by the controller for the get_therapists endpoint.
+     *
+     * @param int $patientId
+     * @return array [{id, display, name, email}, ...]
+     */
+    public function getFormattedTherapists($patientId)
+    {
+        $therapists = $this->therapyService->getTherapistsForPatient($patientId);
+        $formatted = array();
+        foreach ($therapists as $t) {
+            $formatted[] = array(
+                'id' => (int)$t['id'],
+                'display' => $t['name'],
+                'name' => $t['name'],
+                'email' => $t['email'] ?? null
+            );
+        }
+        return $formatted;
     }
 
     /* =========================================================================
@@ -746,29 +794,18 @@ class TherapyChatModel extends StyleModel
 
     /**
      * Transcribe audio to text.
+     * Delegates to TherapyMessageService to avoid code duplication.
      *
      * @param string $tempPath
-     * @return array
+     * @return array {success, text} or {error}
      */
     public function transcribeSpeech($tempPath)
     {
-        $llmSpeechServicePath = __DIR__ . "/../../../../../sh-shp-llm/server/service/LlmSpeechToTextService.php";
-        if (!file_exists($llmSpeechServicePath)) {
-            return array('error' => 'Speech-to-text service not available.');
-        }
-
-        require_once $llmSpeechServicePath;
-        $speechService = new LlmSpeechToTextService($this->get_services(), $this);
-        $result = $speechService->transcribeAudio(
+        return $this->therapyService->transcribeSpeech(
             $tempPath,
             $this->getSpeechToTextModel(),
-            $this->getSpeechToTextLanguage() !== 'auto' ? $this->getSpeechToTextLanguage() : null
+            $this->getSpeechToTextLanguage()
         );
-
-        if (isset($result['error'])) {
-            return array('error' => $result['error']);
-        }
-        return array('success' => true, 'text' => $result['text'] ?? '');
     }
 
     /* =========================================================================
@@ -902,10 +939,17 @@ class TherapyChatModel extends StyleModel
         );
     }
 
-    private function getTagReasonsForReact()
+    /**
+     * Format tag reasons for the React frontend config.
+     *
+     * Returns a normalized array of {code, label, urgency}.
+     * Falls back to sensible defaults when no reasons are configured.
+     *
+     * @return array
+     */
+    public function getTagReasonsForReact()
     {
-        $labels = $this->getLabels();
-        $reasons = $labels['tag_reasons'] ?? array();
+        $reasons = $this->getTagReasons();
 
         if (empty($reasons)) {
             return array(

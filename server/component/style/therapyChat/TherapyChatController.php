@@ -4,33 +4,21 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
 ?>
 <?php
-require_once __DIR__ . "/../../../../../../component/BaseController.php";
-require_once __DIR__ . "/../../../constants/TherapyLookups.php";
+require_once __DIR__ . "/../TherapyBaseController.php";
 
 /**
  * Therapy Chat Controller (Subject/Patient)
  *
- * Thin controller: validates input and delegates to TherapyChatModel.
- * All business logic (LLM calls, DB operations, danger detection, email
- * notifications) lives in the model.
+ * Thin controller: validates input, delegates to TherapyChatModel.
+ * All business logic lives in the model.
  *
- * API Actions:
- * - send_message: Send a new message (delegates to model->sendPatientMessage)
- * - get_messages: Get messages for polling
- * - get_conversation: Get conversation data
- * - tag_therapist: Tag therapist(s) via alert system (delegates to model->tagTherapist)
- * - get_config: Get React configuration
- * - speech_transcribe: Transcribe audio (delegates to model->transcribeSpeech)
- * - mark_messages_read: Mark messages as read
- * - check_updates: Lightweight polling endpoint
+ * Shared infrastructure (JSON response, section routing, audio validation,
+ * error handlers) is in TherapyBaseController.
  *
  * @package LLM Therapy Chat Plugin
  */
-class TherapyChatController extends BaseController
+class TherapyChatController extends TherapyBaseController
 {
-    /**
-     * Constructor
-     */
     public function __construct($model)
     {
         parent::__construct($model);
@@ -43,68 +31,19 @@ class TherapyChatController extends BaseController
         $this->handleRequest();
     }
 
-    /**
-     * Check if the incoming request is for this section
-     */
-    private function isRequestForThisSection()
-    {
-        $requested_section_id = $_GET['section_id'] ?? $_POST['section_id'] ?? null;
-        $model_section_id = $this->model->getSectionId();
+    /* =========================================================================
+     * REQUEST ROUTING
+     * ========================================================================= */
 
-        if ($requested_section_id === null) {
-            $action = $_GET['action'] ?? $_POST['action'] ?? null;
-            return $action === null;
-        }
-
-        return (int) $requested_section_id === (int) $model_section_id;
-    }
-
-    /**
-     * Set up error handler to return JSON for AJAX requests
-     */
-    private function setupJsonErrorHandler()
-    {
-        $action = $_GET['action'] ?? $_POST['action'] ?? null;
-        if ($action === null && $_SERVER['REQUEST_METHOD'] !== 'POST') {
-            return;
-        }
-
-        set_error_handler(function ($errno, $errstr, $errfile, $errline) {
-            error_log("TherapyChat Error [$errno]: $errstr in $errfile:$errline");
-            if (!(error_reporting() & $errno)) {
-                return false;
-            }
-            if (in_array($errno, [E_ERROR, E_USER_ERROR, E_RECOVERABLE_ERROR])) {
-                $this->json([
-                    'error' => DEBUG ? "$errstr in $errfile:$errline" : 'An internal error occurred'
-                ], 500);
-            }
-            return true;
-        });
-
-        set_exception_handler(function ($exception) {
-            error_log("TherapyChat Exception: " . $exception->getMessage());
-            $this->json([
-                'error' => DEBUG ? $exception->getMessage() : 'An internal error occurred'
-            ], 500);
-        });
-    }
-
-    /**
-     * Route incoming request
-     */
     private function handleRequest()
     {
         if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-            $action = $_POST['action'] ?? 'send_message';
-            $this->handlePostRequest($action);
+            $this->handlePostRequest($_POST['action'] ?? 'send_message');
             return;
         }
 
         if ($_SERVER['REQUEST_METHOD'] === 'GET') {
-            $action = $_GET['action'] ?? null;
-            $this->handleGetRequest($action);
-            return;
+            $this->handleGetRequest($_GET['action'] ?? null);
         }
     }
 
@@ -118,7 +57,8 @@ class TherapyChatController extends BaseController
                 $this->handleTagTherapist();
                 break;
             case 'speech_transcribe':
-                $this->handleSpeechTranscribe();
+                $this->validatePatientOrFail();
+                $this->processSpeechTranscription();
                 break;
             case 'mark_messages_read':
                 $this->handleMarkMessagesRead();
@@ -134,41 +74,19 @@ class TherapyChatController extends BaseController
     private function handleGetRequest($action)
     {
         switch ($action) {
-            case 'get_config':
-                $this->handleGetConfig();
-                break;
-            case 'get_conversation':
-                $this->handleGetConversation();
-                break;
-            case 'get_messages':
-                $this->handleGetMessages();
-                break;
-            case 'send_message':
-                $this->handleSendMessage();
-                break;
-            case 'get_therapists':
-                $this->handleGetTherapists();
-                break;
-            case 'get_tag_reasons':
-                $this->handleGetTagReasons();
-                break;
-            case 'check_updates':
-                $this->handleCheckUpdates();
-                break;
-            default:
-                break;
+            case 'get_config':       $this->handleGetConfig(); break;
+            case 'get_conversation': $this->handleGetConversation(); break;
+            case 'get_messages':     $this->handleGetMessages(); break;
+            case 'get_therapists':   $this->handleGetTherapists(); break;
+            case 'check_updates':    $this->handleCheckUpdates(); break;
+            default: break;
         }
     }
 
     /* =========================================================================
-     * POST HANDLERS — validate input, delegate to model
+     * POST HANDLERS
      * ========================================================================= */
 
-    /**
-     * Send a message from the patient.
-     * All business logic (danger detection, AI response, email notification)
-     * is handled by model->sendPatientMessage().
-     */
     private function handleSendMessage()
     {
         $userId = $this->validatePatientOrFail();
@@ -181,18 +99,15 @@ class TherapyChatController extends BaseController
 
         $conversationId = $_POST['conversation_id'] ?? $_GET['conversation_id'] ?? null;
         if ($conversationId) {
-            $conversationId = (int) $conversationId;
+            $conversationId = (int)$conversationId;
         }
 
         try {
             $result = $this->model->sendPatientMessage($userId, $message, $conversationId);
 
-            if (isset($result['blocked'])) {
-                $this->json($result);
-                return;
-            }
-            if (isset($result['error'])) {
-                $this->json(['error' => $result['error']], 500);
+            if (isset($result['blocked']) || isset($result['error'])) {
+                $statusCode = isset($result['blocked']) ? 200 : 500;
+                $this->json($result, $statusCode);
                 return;
             }
 
@@ -202,10 +117,6 @@ class TherapyChatController extends BaseController
         }
     }
 
-    /**
-     * Handle tag therapist request.
-     * Delegates to model->tagTherapist().
-     */
     private function handleTagTherapist()
     {
         $userId = $this->validatePatientOrFail();
@@ -240,69 +151,6 @@ class TherapyChatController extends BaseController
         }
     }
 
-    /**
-     * Handle speech transcription.
-     * Validates audio file, delegates to model->transcribeSpeech().
-     */
-    private function handleSpeechTranscribe()
-    {
-        $this->validatePatientOrFail();
-
-        if (!$this->model->isSpeechToTextEnabled()) {
-            $this->json(['error' => 'Speech-to-text is not enabled'], 400);
-            return;
-        }
-
-        if (!isset($_FILES['audio']) || $_FILES['audio']['error'] !== UPLOAD_ERR_OK) {
-            $this->json(['error' => 'No audio file uploaded'], 400);
-            return;
-        }
-
-        $audioFile = $_FILES['audio'];
-        if ($audioFile['size'] > 25 * 1024 * 1024) {
-            $this->json(['error' => 'Audio file too large (max 25MB)'], 400);
-            return;
-        }
-
-        $mimeType = $audioFile['type'] ?? '';
-        $baseMime = explode(';', $mimeType)[0];
-        $allowedTypes = [
-            'audio/webm',
-            'audio/webm;codecs=opus',
-            'audio/wav',
-            'audio/mp3',
-            'audio/mpeg',
-            'audio/mp4',
-            'audio/ogg',
-            'audio/flac',
-            'video/webm',
-        ];
-        if (!in_array($mimeType, $allowedTypes) && !in_array($baseMime, $allowedTypes)) {
-            $this->json([
-                'error' => 'Invalid audio format: ' . $mimeType . '. Supported: WebM, WAV, MP3, OGG, FLAC'
-            ], 400);
-            return;
-        }
-
-        try {
-            $result = $this->model->transcribeSpeech($audioFile['tmp_name']);
-            if (isset($result['error'])) {
-                $this->json($result, 500);
-                return;
-            }
-            $this->json($result);
-        } catch (Exception $e) {
-            error_log("TherapyChat speech transcription error: " . $e->getMessage());
-            $this->json([
-                'success' => false,
-                'error' => DEBUG ? $e->getMessage() : 'Speech transcription failed'
-            ], 500);
-        }
-    }
-
-    /**
-     * Mark messages as read for the current patient.
-     */
     private function handleMarkMessagesRead()
     {
         $this->validatePatientOrFail();
@@ -328,7 +176,7 @@ class TherapyChatController extends BaseController
     }
 
     /* =========================================================================
-     * GET HANDLERS — validate input, delegate to model
+     * GET HANDLERS
      * ========================================================================= */
 
     private function handleGetConfig()
@@ -346,39 +194,7 @@ class TherapyChatController extends BaseController
         $userId = $this->validatePatientOrFail();
 
         try {
-            $therapists = $this->model->getTherapyService()->getTherapistsForPatient($userId);
-            $formatted = array();
-            foreach ($therapists as $t) {
-                $formatted[] = array(
-                    'id' => (int) $t['id'],
-                    'display' => $t['name'],
-                    'name' => $t['name'],
-                    'email' => $t['email'] ?? null
-                );
-            }
-            $this->json(['therapists' => $formatted]);
-        } catch (Exception $e) {
-            $this->json(['error' => $e->getMessage()], 500);
-        }
-    }
-
-    private function handleGetTagReasons()
-    {
-        $this->validatePatientOrFail();
-
-        try {
-            $tagReasons = $this->model->getTagReasons();
-            $formatted = array();
-            if (is_array($tagReasons)) {
-                foreach ($tagReasons as $reason) {
-                    $formatted[] = array(
-                        'code' => $reason['key'] ?? $reason['code'] ?? '',
-                        'label' => $reason['label'] ?? '',
-                        'urgency' => $reason['urgency'] ?? THERAPY_URGENCY_NORMAL
-                    );
-                }
-            }
-            $this->json(['tag_reasons' => $formatted]);
+            $this->json(['therapists' => $this->model->getFormattedTherapists($userId)]);
         } catch (Exception $e) {
             $this->json(['error' => $e->getMessage()], 500);
         }
@@ -390,7 +206,7 @@ class TherapyChatController extends BaseController
 
         $conversationId = $_GET['conversation_id'] ?? null;
         if ($conversationId) {
-            $conversationId = (int) $conversationId;
+            $conversationId = (int)$conversationId;
         }
 
         try {
@@ -399,8 +215,7 @@ class TherapyChatController extends BaseController
 
             if ($conversationId) {
                 $conversation = $therapyService->getTherapyConversation($conversationId);
-
-                if ($conversation && (int) $conversation['id_users'] !== (int) $userId) {
+                if ($conversation && (int)$conversation['id_users'] !== (int)$userId) {
                     $this->json(['error' => 'Access denied'], 403);
                     return;
                 }
@@ -441,12 +256,9 @@ class TherapyChatController extends BaseController
             }
 
             $cid = $conversation['id'];
-            $latestId = $therapyService->getLatestMessageIdForConversation($cid);
-            $unread = $therapyService->getUnreadCountForUser($userId);
-
             $this->json([
-                'latest_message_id' => $latestId,
-                'unread_count' => (int) $unread
+                'latest_message_id' => $therapyService->getLatestMessageIdForConversation($cid),
+                'unread_count' => (int)$therapyService->getUnreadCountForUser($userId)
             ]);
         } catch (Exception $e) {
             $this->json(['error' => $e->getMessage()], 500);
@@ -458,7 +270,7 @@ class TherapyChatController extends BaseController
         $userId = $this->validatePatientOrFail();
 
         $conversationId = $_GET['conversation_id'] ?? null;
-        $afterId = isset($_GET['after_id']) ? (int) $_GET['after_id'] : null;
+        $afterId = isset($_GET['after_id']) ? (int)$_GET['after_id'] : null;
 
         if (!$conversationId) {
             $conversation = $this->model->getOrCreateConversation();
@@ -488,22 +300,16 @@ class TherapyChatController extends BaseController
     }
 
     /* =========================================================================
-     * VALIDATION HELPERS
+     * VALIDATION
      * ========================================================================= */
 
-    private function validateUserOrFail()
+    private function validatePatientOrFail()
     {
         $userId = $this->model->getUserId();
         if (!$userId) {
             $this->json(['error' => 'User not authenticated'], 401);
             exit;
         }
-        return $userId;
-    }
-
-    private function validatePatientOrFail()
-    {
-        $userId = $this->validateUserOrFail();
 
         $therapyService = $this->model->getTherapyService();
         if ($therapyService && $therapyService->isTherapist($userId)) {
@@ -512,19 +318,6 @@ class TherapyChatController extends BaseController
         }
 
         return $userId;
-    }
-
-    private function json($data, $statusCode = 200)
-    {
-        // Log user activity before exiting so it is recorded in user_activity table.
-        $this->model->get_services()->get_router()->log_user_activity();
-
-        if (!headers_sent()) {
-            http_response_code($statusCode);
-            header('Content-Type: application/json');
-        }
-        echo json_encode($data);
-        exit;
     }
 }
 ?>
