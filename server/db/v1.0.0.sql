@@ -1137,3 +1137,41 @@ INSERT IGNORE INTO `styles_fields` (`id_styles`, `id_fields`, `default_value`, `
  'Sender email address for therapy chat notifications from patient side.'),
 (get_style_id('therapyChat'), get_field_id('notification_from_name'), 'Therapy Chat',
  'Sender display name for therapy chat notifications from patient side.');
+
+-- =====================================================
+-- NEW FIELDS: auto_start and auto_start_context
+-- =====================================================
+
+-- therapy_auto_start: checkbox field to enable auto-start of conversations
+-- When enabled, the system/therapist can initialize conversations with
+-- an automatic context message.
+INSERT IGNORE INTO `fields` (`id`, `name`, `id_type`, `display`) VALUES
+(NULL, 'therapy_auto_start', get_field_type_id('checkbox'), '0'),
+(NULL, 'therapy_auto_start_context', get_field_type_id('markdown'), '1');
+
+-- Add fields to therapyChat style
+INSERT IGNORE INTO `styles_fields` (`id_styles`, `id_fields`, `default_value`, `help`) VALUES
+(get_style_id('therapyChat'), get_field_id('therapy_auto_start'), '0', 'Enable auto-start welcome message. When enabled, the text from therapy_auto_start_context is inserted as the first message when a new conversation is created (patient visits page or therapist initializes). No LLM calls — plain text insert. Default: disabled.'),
+(get_style_id('therapyChat'), get_field_id('therapy_auto_start_context'), '', 'Auto-start welcome message. Shown to the patient as the first message when a conversation is created. Example: "Welcome! Feel free to share how you are feeling." Supports multilingual content via field translations.');
+
+-- Add fields to therapistDashboard style (so therapist dashboard can read them)
+INSERT IGNORE INTO `styles_fields` (`id_styles`, `id_fields`, `default_value`, `help`) VALUES
+(get_style_id('therapistDashboard'), get_field_id('therapy_auto_start'), '0', 'Enable auto-start welcome message when therapist initializes a conversation. When enabled, therapy_auto_start_context is inserted as the first message. Default: disabled.'),
+(get_style_id('therapistDashboard'), get_field_id('therapy_auto_start_context'), '', 'Welcome message sent when therapist initializes a conversation for a patient. Plain text insert, no LLM calls.');
+
+-- Also inherit therapy_chat_default_mode and therapy_enable_ai on therapistDashboard
+-- so the model can read them when initializing conversations
+INSERT IGNORE INTO `styles_fields` (`id_styles`, `id_fields`, `default_value`, `help`) VALUES
+(get_style_id('therapistDashboard'), get_field_id('therapy_chat_default_mode'), 'ai_hybrid', 'Default chat mode when initializing conversations from the dashboard'),
+(get_style_id('therapistDashboard'), get_field_id('therapy_enable_ai'), '1', 'Enable AI when initializing conversations from the dashboard');
+
+-- New dashboard label fields
+INSERT IGNORE INTO `fields` (`id`, `name`, `id_type`, `display`) VALUES
+(NULL, 'dashboard_start_conversation', get_field_type_id('text'), '1'),
+(NULL, 'dashboard_no_conversation_yet', get_field_type_id('text'), '1'),
+(NULL, 'dashboard_initializing_conversation', get_field_type_id('text'), '1');
+
+INSERT IGNORE INTO `styles_fields` (`id_styles`, `id_fields`, `default_value`, `help`) VALUES
+(get_style_id('therapistDashboard'), get_field_id('dashboard_start_conversation'), 'Start Conversation', 'Button label for initializing a conversation with a patient'),
+(get_style_id('therapistDashboard'), get_field_id('dashboard_no_conversation_yet'), 'No conversation yet', 'Text shown for patients who have not started a conversation'),
+(get_style_id('therapistDashboard'), get_field_id('dashboard_initializing_conversation'), 'Initializing conversation...', 'Text shown while a conversation is being initialized');

@@ -1,6 +1,6 @@
 # Changelog
 
-## v1.0.0 (2026-02-11) - Initial Release
+## v1.0.0 (2026-02-12) - Initial Release
 
 ### Breaking Changes
 - Removed `therapyTags` table — tag functionality absorbed into `therapyAlerts` with `tag_received` alert type
@@ -59,6 +59,12 @@
   3. **`danger_notification_emails`** field: Configurable list of additional email addresses to receive urgent danger notifications (e.g., clinical supervisors). Used by `TherapyAlertService::sendUrgentNotification()`
   4. **Danger blocked message**: Customizable message shown to the patient when danger is detected (`danger_blocked_message` field)
   5. **Audit logging**: All danger detections are logged via transaction service
+- **Therapist-initiated conversations**: Therapists can now start conversations for patients who haven't chatted yet. The therapist dashboard shows ALL assigned patients (even those without an existing conversation) and provides a "Start Conversation" button to initialize one. No `enableAutoStart` gate — therapists can always start conversations
+- **`therapy_auto_start` field**: Per-style checkbox to control whether conversations include an initial welcome message. When enabled and `therapy_auto_start_context` is set, the configured text is inserted as the first message when a conversation is created (either by patient page visit or therapist initialization). Does NOT gate the therapist's ability to manually start conversations
+- **`therapy_auto_start_context` field**: Markdown field for the initial message shown to the patient when a conversation is created. Plain text insert, no LLM calls. Example: "Welcome! Your therapist has opened this conversation for you." Supports multilingual content via field translations
+- **Patient visibility in therapist dashboard**: `getTherapyConversationsByTherapist` now queries all patients in assigned groups (via `users` + `users_groups` LEFT JOIN), not just those with existing conversations. Patients without conversations appear with a muted style and "No conversation yet" label
+- **`initializeConversationForPatient()` method**: Creates `llmConversations` + `therapyConversationMeta` records for a patient, owned by the patient. Optionally sends an auto-start context message. No AI/LLM calls are made during initialization
+- **Dashboard labels**: New configurable labels: `dashboard_start_conversation`, `dashboard_no_conversation_yet`, `dashboard_initializing_conversation`
 - Comprehensive documentation in `doc/` folder
 
 ### Fixed
@@ -89,6 +95,8 @@
 - **Critical: Wrong `require_once` path for `LlmResponseService`** — `TherapyMessageService.php` had `../../sh-shp-llm/...` (2 levels up) but the correct path is `../../../sh-shp-llm/...` (3 levels up to reach `plugins/`). Because `file_exists()` returned false silently, `class_exists('LlmResponseService')` was always false, so the unified JSON response schema was **never injected** into any LLM call. All calls went through the simple fallback path. Now correctly loads `LlmResponseService` and always injects the structured response schema
 - **Schema not injected for drafts and summaries** — `TherapistDashboardModel::generateDraft()` and `generateSummary()` called `callLlmApi()` directly without injecting the response schema. Now both use `TherapyMessageService::injectResponseSchema()` to prepend the structured JSON schema with safety instructions, matching the patient chat flow. Display content is extracted from structured JSON via `extractDisplayContent()`
 - **`sent_context` only saved sender type** — AI response messages in `llmMessages` had `sent_context = {"therapy_sender_type":"ai"}` with no useful debugging info. Now includes `context_message_count` alongside sender type. The full API request payload (including all messages sent to the LLM) is saved in the `request_payload` column as before
+- **Critical: Non-floating mode URL generation** — `TherapyChatModel::getBaseUrl()` was returning `/selfhelp/index.php` for all modes, causing React API calls to hit SelfHelp's "page not found" handler instead of the therapy chat controller. Now uses the router's `get_link_url()` to resolve the correct page URL (e.g., `/selfhelp/therapy-chat/subject`). Falls back to `REQUEST_URI` without query string. Fixes both non-floating page mode and floating modal mode
+- **Auto-start message on patient page visit** — `getOrCreateTherapyConversation()` now accepts an optional `$autoStartContext` parameter. When `therapy_auto_start` is enabled and `therapy_auto_start_context` is configured, the message is inserted as a system message when the conversation is first created (patient visits page). No LLM calls — just a plain text DB insert
 - **Removed dead code**: `hasAccess()`, `getDangerDetection()` (TherapyChatModel), `getConversationById()` (TherapistDashboardModel), `removeTherapistFromGroup()` (TherapyChatService), `getErrorMessage()` (api.ts), `LLM_THERAPY_CHAT_PLUGIN_NAME` constant
 
 ### Changed

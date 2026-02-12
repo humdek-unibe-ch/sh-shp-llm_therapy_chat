@@ -196,6 +196,62 @@ class TherapistDashboardModel extends StyleModel
     }
 
     /* =========================================================================
+     * CONVERSATION INITIALIZATION (business logic)
+     * ========================================================================= */
+
+    /**
+     * Initialize a conversation for a patient who doesn't have one yet.
+     * The therapist triggers this; the conversation is owned by the patient.
+     *
+     * @param int $patientId
+     * @param int $therapistId
+     * @return array {success, conversation} or {error}
+     */
+    public function initializeConversation($patientId, $therapistId)
+    {
+        // Verify the therapist can access this patient
+        if (!$this->messageService->canTherapistAccessPatient($therapistId, $patientId)) {
+            return array('error' => 'Access denied - patient is not in your assigned groups', 'status' => 403);
+        }
+
+        // Check if patient already has an active conversation
+        $existing = $this->messageService->getTherapyConversationBySubject($patientId);
+        if ($existing) {
+            return array(
+                'success' => true,
+                'conversation' => $existing,
+                'already_exists' => true
+            );
+        }
+
+        // Get config from the linked therapyChat style fields
+        $mode = $this->get_db_field('therapy_chat_default_mode', THERAPY_MODE_AI_HYBRID);
+        $model = $this->get_db_field('llm_model', '');
+        $aiEnabled = (bool)$this->get_db_field('therapy_enable_ai', '1');
+        $autoStartContext = $this->get_db_field('therapy_auto_start_context', '');
+
+        $conversation = $this->messageService->initializeConversationForPatient(
+            $patientId,
+            $therapistId,
+            $this->getSectionId(),
+            $mode,
+            $model,
+            $aiEnabled,
+            $autoStartContext
+        );
+
+        if (!$conversation) {
+            return array('error' => 'Failed to initialize conversation');
+        }
+
+        return array(
+            'success' => true,
+            'conversation' => $conversation,
+            'already_exists' => false
+        );
+    }
+
+    /* =========================================================================
      * CONVERSATION CONTROLS (business logic)
      * ========================================================================= */
 
@@ -872,6 +928,9 @@ class TherapistDashboardModel extends StyleModel
 
                 'allGroupsTab' => $getField('dashboard_all_groups_tab', 'All Groups'),
                 'emptyMessage' => $getField('dashboard_empty_message', 'No messages yet.'),
+                'startConversation' => $getField('dashboard_start_conversation', 'Start Conversation'),
+                'noConversationYet' => $getField('dashboard_no_conversation_yet', 'No conversation yet'),
+                'initializingConversation' => $getField('dashboard_initializing_conversation', 'Initializing conversation...'),
 
                 'interventionMessage' => $getField('dashboard_intervention_message', 'Your therapist has joined the conversation.'),
                 'aiPausedNotice' => $getField('dashboard_ai_paused_notice', 'AI responses have been paused. Your therapist will respond directly.'),

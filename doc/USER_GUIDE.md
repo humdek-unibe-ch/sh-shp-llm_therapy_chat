@@ -57,7 +57,7 @@ Click again to stop recording.
 
 The therapist dashboard has three main areas:
 
-1. **Patient List** (left sidebar): All patients you are assigned to monitor
+1. **Patient List** (left sidebar): All patients you are assigned to monitor, including those who have not started a conversation yet
 2. **Conversation View** (center): Full message history with the selected patient
 3. **Notes & Controls** (right sidebar): Clinical notes, risk controls
 
@@ -65,6 +65,11 @@ The therapist dashboard has three main areas:
 
 If you monitor patients in multiple groups, you'll see **tabs** at the top.
 Click a tab to filter the patient list by group. The "All Groups" tab shows everyone.
+
+### Starting Conversations
+
+If a patient does not have an active conversation yet, you will see a "Start Conversation" button next to their name.
+Clicking it initializes a new conversation for that patient, allowing you to begin communication proactively.
 
 ### Unread Tracking
 

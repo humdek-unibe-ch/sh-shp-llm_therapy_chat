@@ -271,6 +271,35 @@ export const TherapistDashboard: React.FC<Props> = ({ config }) => {
     enabled: true,
   });
 
+  // ---- Conversation initialization (for patients without conversations) ----
+
+  const [initializingPatientId, setInitializingPatientId] = useState<number | null>(null);
+
+  const handleInitializeConversation = useCallback(
+    async (patientId: number, patientName?: string) => {
+      setInitializingPatientId(patientId);
+      try {
+        const res = await api.initializeConversation(patientId);
+        if (res.success && res.conversation) {
+          // Refresh the conversations list
+          await loadConversations(activeGroupIdRef.current, activeFilterRef.current, false);
+          // Select the new conversation
+          if (res.conversation.id) {
+            setSelectedId(res.conversation.id);
+            pushUrlState(activeGroupIdRef.current, res.conversation.id);
+            chat.loadConversation(res.conversation.id);
+            loadNotes(res.conversation.id);
+          }
+        }
+      } catch (err) {
+        console.error('Initialize conversation error:', err);
+      } finally {
+        setInitializingPatientId(null);
+      }
+    },
+    [api, loadConversations, chat.loadConversation, loadNotes],
+  );
+
   // ---- Conversation selection ----
 
   const selectConversation = useCallback(
@@ -673,14 +702,65 @@ export const TherapistDashboard: React.FC<Props> = ({ config }) => {
                 <div className="p-3 text-center text-muted">{labels.noConversations}</div>
               ) : (
                 conversations.map((conv) => {
+                  const hasConversation = !conv.no_conversation || Number(conv.no_conversation) === 0;
                   // Safely access bySubject – guard against undefined/null and
                   // handle both numeric and zero-padded string user IDs
                   const bySubject = unreadCounts?.bySubject ?? {};
                   const uid = conv.id_users ?? 0;
                   const uc = bySubject[uid] ?? bySubject[String(uid)] ?? null;
-                  const unread = uc?.unreadCount ?? 0;
-                  const isActive = selectedId != null && String(selectedId) === String(conv.id);
+                  const unread = hasConversation ? (uc?.unreadCount ?? 0) : 0;
+                  const isActive = hasConversation && selectedId != null && String(selectedId) === String(conv.id);
+                  const isInitializing = initializingPatientId === uid;
 
+                  // Patient without a conversation
+                  if (!hasConversation) {
+                    return (
+                      <div
+                        key={`patient-${uid}`}
+                        className="list-group-item tc-patient-list__no-conv"
+                      >
+                        <div className="d-flex justify-content-between align-items-center mb-1">
+                          <div className="d-flex align-items-center" style={{ minWidth: 0 }}>
+                            <strong className="text-truncate text-muted">
+                              {conv.subject_name || 'Unknown'}
+                            </strong>
+                          </div>
+                          <span className="badge badge-light text-muted" style={{ fontSize: '0.65rem' }}>
+                            <i className="fas fa-comment-slash mr-1" />
+                            {labels.noConversationYet}
+                          </span>
+                        </div>
+                        <div className="d-flex justify-content-between align-items-center">
+                          <small className="text-muted">
+                            {conv.subject_code}
+                          </small>
+                          <button
+                            className="btn btn-outline-primary btn-sm py-0 px-2"
+                            style={{ fontSize: '0.75rem' }}
+                            disabled={isInitializing}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleInitializeConversation(uid, conv.subject_name);
+                            }}
+                          >
+                            {isInitializing ? (
+                              <>
+                                <span className="spinner-border spinner-border-sm mr-1" style={{ width: '0.7rem', height: '0.7rem' }} role="status" />
+                                {labels.initializingConversation}
+                              </>
+                            ) : (
+                              <>
+                                <i className="fas fa-plus mr-1" />
+                                {labels.startConversation}
+                              </>
+                            )}
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  }
+
+                  // Patient with an existing conversation
                   return (
                     <button
                       key={conv.id}

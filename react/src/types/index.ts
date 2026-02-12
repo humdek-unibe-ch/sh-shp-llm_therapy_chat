@@ -87,6 +87,8 @@ export interface Conversation {
   message_count?: number;
   unread_count?: number;
   unread_alerts?: number;
+  /** When true, the patient has no conversation yet (therapist can initialize one) */
+  no_conversation?: boolean | number;
 }
 
 /** Alert (from view_therapyAlerts) */
@@ -244,6 +246,12 @@ export interface TherapistDashboardLabels {
   filterUnread: string;
   allGroupsTab: string;
   emptyMessage: string;
+  /** Label for the "Start Conversation" button for patients without conversations */
+  startConversation?: string;
+  /** Label shown for patients who have no conversation yet */
+  noConversationYet?: string;
+  /** Label shown while a conversation is being initialized */
+  initializingConversation?: string;
 }
 
 // ---------------------------------------------------------------------------

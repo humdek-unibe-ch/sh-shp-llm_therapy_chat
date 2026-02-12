@@ -17,6 +17,7 @@ import type {
   GetConversationResponse,
   GetConversationsResponse,
   TagTherapistResponse,
+  Conversation,
   Alert,
   Note,
   Draft,
@@ -238,6 +239,14 @@ export function createTherapistApi(sectionId?: number) {
       return apiPost(fd);
     },
 
+    // ---- Conversation initialization ----
+
+    async initializeConversation(patientId: number): Promise<InitializeConversationResponse> {
+      const fd = postData('initialize_conversation', sectionId);
+      fd.append('patient_id', String(patientId));
+      return apiPost(fd);
+    },
+
     // ---- Conversation controls ----
 
     async toggleAI(conversationId: number | string, enabled: boolean): Promise<{ success: boolean; ai_enabled: boolean }> {
@@ -365,5 +374,16 @@ export interface SummaryResponse {
 
 interface ApiOk {
   success: boolean;
+}
+
+// ---------------------------------------------------------------------------
+// Initialize conversation response type
+// ---------------------------------------------------------------------------
+
+export interface InitializeConversationResponse {
+  success: boolean;
+  conversation: Conversation;
+  already_exists: boolean;
+  error?: string;
 }
 

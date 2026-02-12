@@ -26,6 +26,8 @@
 - [x] Markdown rendering for AI messages
 - [x] Lightweight two-phase polling (check_updates + conditional full fetch)
 - [x] Admin setup via SelfHelp page configuration
+- [x] Therapist can see all patients in assigned groups, even those without active conversations yet
+- [x] Therapist-initiated conversations with auto-start context messages
 
 ### Not Yet Implemented
 
@@ -46,8 +48,8 @@
 
 ### v1.1.0 (Planned)
 - WebSocket support for real-time messaging
-- Conversation summary AI generation (implemented: `generate_summary` endpoint, modal UI, save as clinical note)
 - Message search
+- Conversation export
 
 ### v1.2.0 (Planned)
 - File attachments

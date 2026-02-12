@@ -91,12 +91,21 @@ class TherapyChatModel extends StyleModel
         $model = $this->get_db_field('llm_model', '');
         $aiEnabled = (bool)$this->get_db_field('therapy_enable_ai', '1');
 
+        // Auto-start context: if enabled, pass the configured message to be
+        // inserted as the first message when the conversation is created.
+        // This is a plain text insert, no LLM calls.
+        $autoStartContext = null;
+        if ((bool)$this->get_db_field('therapy_auto_start', '0')) {
+            $autoStartContext = $this->get_db_field('therapy_auto_start_context', '');
+        }
+
         $this->conversation = $this->therapyService->getOrCreateTherapyConversation(
             $this->userId,
             $this->getSectionId(),
             $mode,
             $model,
-            $aiEnabled
+            $aiEnabled,
+            $autoStartContext
         );
 
         return $this->conversation;
@@ -918,23 +927,26 @@ class TherapyChatModel extends StyleModel
 
     private function getBaseUrl()
     {
-        $scriptPath = $_SERVER['SCRIPT_NAME'] ?? '/index.php';
-        if (strpos($scriptPath, '/index.php') !== false) {
-            return $scriptPath;
-        }
-
-        $requestUri = $_SERVER['REQUEST_URI'] ?? '';
-        $pathParts = explode('/', trim($requestUri, '/'));
-
-        $basePath = '';
-        foreach ($pathParts as $part) {
-            if ($part === 'therapy-chat' || $part === 'therapist-dashboard') {
-                break;
+        // Use the router to get the correct page URL based on the current page keyword.
+        // This ensures the React app sends API requests to the correct SelfHelp page,
+        // not to index.php which would result in a "page not found" response.
+        try {
+            $router = $this->get_services()->get_router();
+            $keyword = $router->current_keyword ?? null;
+            if ($keyword) {
+                $url = $router->get_link_url($keyword);
+                if (!empty($url)) {
+                    return $url;
+                }
             }
-            $basePath .= '/' . $part;
+        } catch (Exception $e) {
+            // Fall through to fallback
         }
 
-        return $basePath . '/index.php';
+        // Fallback: use the current REQUEST_URI (without query string)
+        $requestUri = $_SERVER['REQUEST_URI'] ?? '';
+        $pos = strpos($requestUri, '?');
+        return $pos !== false ? substr($requestUri, 0, $pos) : $requestUri;
     }
 }
 ?>

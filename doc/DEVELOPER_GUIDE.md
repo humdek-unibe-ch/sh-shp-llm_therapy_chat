@@ -28,7 +28,7 @@ Controllers only instantiate `TherapyMessageService` — it inherits all methods
        exit;
    ```
 
-3. **Add database changes** to the existing migration file (`server/db/v1.0.0.sql`) for initial release, or create a new versioned migration (e.g., `server/db/v1.1.0.sql`) for post-release updates
+3. **Add database changes** to the existing migration file (`server/db/v1.0.0.sql`) for initial release, or create a new versioned migration (e.g., `server/db/v1.2.0.sql`) for post-release updates
 
 ### Frontend
 

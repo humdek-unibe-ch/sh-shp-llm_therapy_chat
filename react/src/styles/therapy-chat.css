@@ -310,6 +310,18 @@
   border-left-color: #fff;
 }
 
+/* Patient without conversation - muted appearance */
+.tc-patient-list__no-conv {
+  background-color: #f8f9fa;
+  border-left: 3px solid #dee2e6;
+  opacity: 0.85;
+  padding: 0.5rem 0.75rem;
+}
+.tc-patient-list__no-conv:hover {
+  background-color: #f0f0f0;
+  opacity: 1;
+}
+
 /* ============================================================
    NOTES LIST (Therapist Dashboard)
    ============================================================ */

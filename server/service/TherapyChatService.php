@@ -64,7 +64,7 @@ class TherapyChatService extends LlmService
      * @param bool $aiEnabled Whether AI is enabled for this conversation
      * @return array|null Conversation data with therapy metadata
      */
-    public function getOrCreateTherapyConversation($userId, $sectionId = null, $mode = THERAPY_MODE_AI_HYBRID, $model = null, $aiEnabled = true)
+    public function getOrCreateTherapyConversation($userId, $sectionId = null, $mode = THERAPY_MODE_AI_HYBRID, $model = null, $aiEnabled = true, $autoStartContext = null)
     {
         // Try to find existing active therapy conversation for this user
         $existing = $this->getTherapyConversationBySubject($userId);
@@ -119,7 +119,15 @@ class TherapyChatService extends LlmService
             'Therapy conversation created'
         );
 
-        return $this->getTherapyConversation($therapyMetaId);
+        $conversation = $this->getTherapyConversation($therapyMetaId);
+
+        // If auto-start context is provided, insert it as the first message.
+        // This is a plain text insert — no LLM calls.
+        if ($conversation && !empty($autoStartContext)) {
+            $this->sendAutoStartMessage($conversation, $autoStartContext, $userId);
+        }
+
+        return $conversation;
     }
 
     /**
@@ -158,8 +166,10 @@ class TherapyChatService extends LlmService
     }
 
     /**
-     * Get all conversations a therapist can access.
+     * Get all patients a therapist can access, including those without conversations.
      * Uses therapyTherapistAssignments to determine which groups they monitor.
+     * Patients without conversations are returned with null conversation fields
+     * so the therapist can initialize a conversation for them.
      *
      * @param int $therapistId
      * @param array $filters Optional (status, risk_level, group_id)
@@ -181,22 +191,54 @@ class TherapyChatService extends LlmService
         // Find all patients in these groups
         $groupPlaceholders = implode(',', array_fill(0, count($groupIds), '?'));
 
-        $sql = "SELECT vtc.*,
-                       (SELECT COUNT(*) FROM llmMessages lm
-                        WHERE lm.id_llmConversations = vtc.id_llmConversations AND lm.deleted = 0) as message_count,
-                       (SELECT COUNT(*) FROM therapyAlerts ta
-                        WHERE ta.id_llmConversations = vtc.id_llmConversations AND ta.is_read = 0
-                        AND (ta.id_users IS NULL OR ta.id_users = ?)) as unread_alerts
-                FROM view_therapyConversations vtc
-                INNER JOIN users_groups ug ON ug.id_users = vtc.id_users
-                WHERE ug.id_groups IN ($groupPlaceholders)
-                AND vtc.deleted = 0";
+        // LEFT JOIN to view_therapyConversations so patients without conversations
+        // are still included. We use users_groups as the base to find all patients,
+        // then optionally join their therapy conversation data.
+        $sql = "SELECT
+                    u.id as id_users,
+                    u.name as subject_name,
+                    u.email as subject_email,
+                    vc.code as subject_code,
+                    vtc.id,
+                    vtc.id_llmConversations,
+                    vtc.ai_enabled,
+                    vtc.mode,
+                    vtc.mode_label,
+                    vtc.status,
+                    vtc.status_label,
+                    vtc.risk_level,
+                    vtc.risk_level_label,
+                    vtc.title,
+                    vtc.model,
+                    vtc.created_at,
+                    vtc.updated_at,
+                    vtc.therapist_last_seen,
+                    vtc.subject_last_seen,
+                    CASE WHEN vtc.id IS NOT NULL THEN
+                        (SELECT COUNT(*) FROM llmMessages lm
+                         WHERE lm.id_llmConversations = vtc.id_llmConversations AND lm.deleted = 0)
+                    ELSE 0 END as message_count,
+                    CASE WHEN vtc.id IS NOT NULL THEN
+                        (SELECT COUNT(*) FROM therapyAlerts ta
+                         WHERE ta.id_llmConversations = vtc.id_llmConversations AND ta.is_read = 0
+                         AND (ta.id_users IS NULL OR ta.id_users = ?))
+                    ELSE 0 END as unread_alerts,
+                    CASE WHEN vtc.id IS NULL THEN 1 ELSE 0 END as no_conversation
+                FROM users u
+                INNER JOIN users_groups ug ON ug.id_users = u.id
+                LEFT JOIN view_therapyConversations vtc ON vtc.id_users = u.id AND (vtc.deleted = 0 OR vtc.deleted IS NULL)
+                LEFT JOIN validation_codes vc ON vc.id_users = u.id AND vc.consumed IS NULL
+                WHERE ug.id_groups IN ($groupPlaceholders)";
 
         // First param is therapist ID for alert count
         $params = array($therapistId);
         $params = array_merge($params, $groupIds);
 
-        // Apply filters
+        // Exclude the therapist themselves from the patient list
+        $sql .= " AND u.id != ?";
+        $params[] = $therapistId;
+
+        // Apply filters - these only apply to patients WITH conversations
         if (!empty($filters['status'])) {
             $sql .= " AND vtc.status = ?";
             $params[] = $filters['status'];
@@ -210,14 +252,134 @@ class TherapyChatService extends LlmService
             $params[] = $filters['group_id'];
         }
 
-        $sql .= " GROUP BY vtc.id
+        $sql .= " GROUP BY u.id
                    ORDER BY
-                    FIELD(vtc.risk_level, '" . THERAPY_RISK_CRITICAL . "', '" . THERAPY_RISK_HIGH . "', '" . THERAPY_RISK_MEDIUM . "', '" . THERAPY_RISK_LOW . "'),
-                    vtc.updated_at DESC
+                    no_conversation ASC,
+                    CASE vtc.risk_level
+                        WHEN '" . THERAPY_RISK_CRITICAL . "' THEN 1
+                        WHEN '" . THERAPY_RISK_HIGH . "' THEN 2
+                        WHEN '" . THERAPY_RISK_MEDIUM . "' THEN 3
+                        WHEN '" . THERAPY_RISK_LOW . "' THEN 4
+                        ELSE 5
+                    END ASC,
+                    vtc.updated_at DESC,
+                    u.name ASC
                   LIMIT " . (int)$limit . " OFFSET " . (int)$offset;
 
         $result = $this->db->query_db($sql, $params);
         return $result !== false ? $result : array();
+    }
+
+    /**
+     * Initialize a therapy conversation for a patient by the therapist.
+     * Creates the conversation as if the patient owns it, but triggered by the therapist.
+     *
+     * @param int $patientId The patient user ID
+     * @param int $therapistId The therapist who is initializing
+     * @param int|null $sectionId Section ID
+     * @param string $mode Chat mode (ai_hybrid or human_only)
+     * @param string|null $model LLM model to use
+     * @param bool $aiEnabled Whether AI is enabled
+     * @param string|null $autoStartContext Context for the auto-start system message
+     * @return array|null Conversation data with therapy metadata
+     */
+    public function initializeConversationForPatient($patientId, $therapistId, $sectionId = null, $mode = THERAPY_MODE_AI_HYBRID, $model = null, $aiEnabled = true, $autoStartContext = null)
+    {
+        // Check if patient already has an active conversation
+        $existing = $this->getTherapyConversationBySubject($patientId);
+        if ($existing) {
+            return $existing;
+        }
+
+        // Verify therapist has access to this patient
+        if (!$this->canTherapistAccessPatient($therapistId, $patientId)) {
+            return null;
+        }
+
+        // Get LLM config for model
+        $config = $this->getLlmConfig();
+        $modelToUse = $model ?: $config['llm_default_model'];
+
+        // Create base LLM conversation owned by the patient
+        $conversationId = $this->createConversation(
+            $patientId,
+            'Therapy Chat',
+            $modelToUse,
+            $config['llm_temperature'],
+            $config['llm_max_tokens'],
+            $sectionId
+        );
+
+        if (!$conversationId) {
+            return null;
+        }
+
+        // Get lookup IDs
+        $modeId = $this->db->get_lookup_id_by_code(THERAPY_LOOKUP_CHAT_MODES, $mode);
+        $statusId = $this->db->get_lookup_id_by_code(THERAPY_LOOKUP_CONVERSATION_STATUS, THERAPY_STATUS_ACTIVE);
+        $riskId = $this->db->get_lookup_id_by_code(THERAPY_LOOKUP_RISK_LEVELS, THERAPY_RISK_LOW);
+
+        // Add therapy metadata
+        $therapyData = array(
+            'id_llmConversations' => $conversationId,
+            'id_chatModes' => $modeId,
+            'ai_enabled' => $aiEnabled ? 1 : 0,
+            'id_conversationStatus' => $statusId,
+            'id_riskLevels' => $riskId
+        );
+
+        $therapyMetaId = $this->db->insert('therapyConversationMeta', $therapyData);
+
+        if (!$therapyMetaId) {
+            return null;
+        }
+
+        $this->logTransaction(
+            transactionTypes_insert,
+            'therapyConversationMeta',
+            $therapyMetaId,
+            $therapistId,
+            'Therapy conversation initialized by therapist for patient #' . $patientId
+        );
+
+        $conversation = $this->getTherapyConversation($therapyMetaId);
+
+        // If auto-start context is provided, send an initial system message
+        if ($conversation && !empty($autoStartContext)) {
+            $this->sendAutoStartMessage($conversation, $autoStartContext, $therapistId);
+        }
+
+        return $conversation;
+    }
+
+    /**
+     * Send an auto-start system message when a conversation is initialized.
+     * This allows the system/therapist to set up the conversation context.
+     *
+     * @param array $conversation The conversation data
+     * @param string $autoStartContext The auto-start context/message
+     * @param int $initiatorId The user who triggered the initialization
+     */
+    protected function sendAutoStartMessage($conversation, $autoStartContext, $initiatorId)
+    {
+        try {
+            $llmConvId = $conversation['id_llmConversations'];
+
+            // Add a system message to establish conversation context
+            $this->addMessage(
+                $llmConvId,
+                'system',
+                $autoStartContext,
+                null, null, null, null,
+                array(
+                    'therapy_sender_type' => 'system',
+                    'therapy_sender_id' => $initiatorId,
+                    'auto_start' => true
+                )
+            );
+        } catch (Exception $e) {
+            error_log("TherapyChat: Failed to send auto-start message: " . $e->getMessage());
+        }
     }
 
     /* =========================================================================

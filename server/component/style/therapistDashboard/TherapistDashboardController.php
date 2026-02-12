@@ -73,6 +73,7 @@ class TherapistDashboardController extends BaseController
             case 'discard_draft': $this->handleDiscardDraft(); break;
             case 'speech_transcribe': $this->handleSpeechTranscribe(); break;
             case 'generate_summary': $this->handleGenerateSummary(); break;
+            case 'initialize_conversation': $this->handleInitializeConversation(); break;
         }
     }
 
@@ -532,6 +533,29 @@ class TherapistDashboardController extends BaseController
             $this->json($result);
         } catch (Exception $e) {
             $this->json(['success' => false, 'error' => defined('DEBUG') && DEBUG ? $e->getMessage() : 'Speech transcription failed'], 500);
+        }
+    }
+
+    /* =========================================================================
+     * CONVERSATION INITIALIZATION
+     * ========================================================================= */
+
+    private function handleInitializeConversation()
+    {
+        $uid = $this->validateTherapistOrFail();
+        $patientId = $_POST['patient_id'] ?? null;
+
+        if (!$patientId) { $this->json(['error' => 'Patient ID is required'], 400); return; }
+
+        try {
+            $result = $this->model->initializeConversation((int)$patientId, $uid);
+            if (isset($result['error'])) {
+                $this->json(['error' => $result['error']], $result['status'] ?? 400);
+                return;
+            }
+            $this->json($result);
+        } catch (Exception $e) {
+            $this->json(['error' => $e->getMessage()], 500);
         }
     }
 
