@@ -56,7 +56,7 @@ class TherapyChatController extends BaseController
             return $action === null;
         }
 
-        return (int)$requested_section_id === (int)$model_section_id;
+        return (int) $requested_section_id === (int) $model_section_id;
     }
 
     /**
@@ -111,10 +111,18 @@ class TherapyChatController extends BaseController
     private function handlePostRequest($action)
     {
         switch ($action) {
-            case 'send_message': $this->handleSendMessage(); break;
-            case 'tag_therapist': $this->handleTagTherapist(); break;
-            case 'speech_transcribe': $this->handleSpeechTranscribe(); break;
-            case 'mark_messages_read': $this->handleMarkMessagesRead(); break;
+            case 'send_message':
+                $this->handleSendMessage();
+                break;
+            case 'tag_therapist':
+                $this->handleTagTherapist();
+                break;
+            case 'speech_transcribe':
+                $this->handleSpeechTranscribe();
+                break;
+            case 'mark_messages_read':
+                $this->handleMarkMessagesRead();
+                break;
             default:
                 if (isset($_POST['message'])) {
                     $this->handleSendMessage();
@@ -126,14 +134,29 @@ class TherapyChatController extends BaseController
     private function handleGetRequest($action)
     {
         switch ($action) {
-            case 'get_config': $this->handleGetConfig(); break;
-            case 'get_conversation': $this->handleGetConversation(); break;
-            case 'get_messages': $this->handleGetMessages(); break;
-            case 'send_message': $this->handleSendMessage(); break;
-            case 'get_therapists': $this->handleGetTherapists(); break;
-            case 'get_tag_reasons': $this->handleGetTagReasons(); break;
-            case 'check_updates': $this->handleCheckUpdates(); break;
-            default: break;
+            case 'get_config':
+                $this->handleGetConfig();
+                break;
+            case 'get_conversation':
+                $this->handleGetConversation();
+                break;
+            case 'get_messages':
+                $this->handleGetMessages();
+                break;
+            case 'send_message':
+                $this->handleSendMessage();
+                break;
+            case 'get_therapists':
+                $this->handleGetTherapists();
+                break;
+            case 'get_tag_reasons':
+                $this->handleGetTagReasons();
+                break;
+            case 'check_updates':
+                $this->handleCheckUpdates();
+                break;
+            default:
+                break;
         }
     }
 
@@ -158,7 +181,7 @@ class TherapyChatController extends BaseController
 
         $conversationId = $_POST['conversation_id'] ?? $_GET['conversation_id'] ?? null;
         if ($conversationId) {
-            $conversationId = (int)$conversationId;
+            $conversationId = (int) $conversationId;
         }
 
         try {
@@ -244,8 +267,15 @@ class TherapyChatController extends BaseController
         $mimeType = $audioFile['type'] ?? '';
         $baseMime = explode(';', $mimeType)[0];
         $allowedTypes = [
-            'audio/webm', 'audio/webm;codecs=opus', 'audio/wav', 'audio/mp3',
-            'audio/mpeg', 'audio/mp4', 'audio/ogg', 'audio/flac', 'video/webm',
+            'audio/webm',
+            'audio/webm;codecs=opus',
+            'audio/wav',
+            'audio/mp3',
+            'audio/mpeg',
+            'audio/mp4',
+            'audio/ogg',
+            'audio/flac',
+            'video/webm',
         ];
         if (!in_array($mimeType, $allowedTypes) && !in_array($baseMime, $allowedTypes)) {
             $this->json([
@@ -320,7 +350,7 @@ class TherapyChatController extends BaseController
             $formatted = array();
             foreach ($therapists as $t) {
                 $formatted[] = array(
-                    'id' => (int)$t['id'],
+                    'id' => (int) $t['id'],
                     'display' => $t['name'],
                     'name' => $t['name'],
                     'email' => $t['email'] ?? null
@@ -360,7 +390,7 @@ class TherapyChatController extends BaseController
 
         $conversationId = $_GET['conversation_id'] ?? null;
         if ($conversationId) {
-            $conversationId = (int)$conversationId;
+            $conversationId = (int) $conversationId;
         }
 
         try {
@@ -370,7 +400,7 @@ class TherapyChatController extends BaseController
             if ($conversationId) {
                 $conversation = $therapyService->getTherapyConversation($conversationId);
 
-                if ($conversation && (int)$conversation['id_users'] !== (int)$userId) {
+                if ($conversation && (int) $conversation['id_users'] !== (int) $userId) {
                     $this->json(['error' => 'Access denied'], 403);
                     return;
                 }
@@ -416,7 +446,7 @@ class TherapyChatController extends BaseController
 
             $this->json([
                 'latest_message_id' => $latestId,
-                'unread_count' => (int)$unread
+                'unread_count' => (int) $unread
             ]);
         } catch (Exception $e) {
             $this->json(['error' => $e->getMessage()], 500);
@@ -428,7 +458,7 @@ class TherapyChatController extends BaseController
         $userId = $this->validatePatientOrFail();
 
         $conversationId = $_GET['conversation_id'] ?? null;
-        $afterId = isset($_GET['after_id']) ? (int)$_GET['after_id'] : null;
+        $afterId = isset($_GET['after_id']) ? (int) $_GET['after_id'] : null;
 
         if (!$conversationId) {
             $conversation = $this->model->getOrCreateConversation();
@@ -486,6 +516,9 @@ class TherapyChatController extends BaseController
 
     private function json($data, $statusCode = 200)
     {
+        // Log user activity before exiting so it is recorded in user_activity table.
+        $this->model->get_services()->get_router()->log_user_activity();
+
         if (!headers_sent()) {
             http_response_code($statusCode);
             header('Content-Type: application/json');

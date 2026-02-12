@@ -549,6 +549,9 @@ class TherapistDashboardController extends BaseController
 
     private function json($data, $status = 200)
     {
+        // Log user activity before exiting so it is recorded in user_activity table.
+        $this->model->get_services()->get_router()->log_user_activity();
+
         if (!headers_sent()) {
             http_response_code($status);
             header('Content-Type: application/json');
