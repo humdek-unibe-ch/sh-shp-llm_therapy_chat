@@ -202,7 +202,7 @@
 /* Outer container: border wraps both textarea and action bar */
 .tc-input-container {
   border-radius: 0.5rem;
-  overflow: hidden;
+  overflow: visible;
   transition: box-shadow 0.2s ease, border-color 0.2s ease;
 }
 .tc-input-container:focus-within {

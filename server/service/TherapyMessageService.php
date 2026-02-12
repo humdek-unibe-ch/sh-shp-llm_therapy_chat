@@ -973,7 +973,7 @@ class TherapyMessageService extends TherapyAlertService
      */
     public function transcribeSpeech($tempPath, $model, $language)
     {
-        $llmSpeechServicePath = __DIR__ . "/../../../../sh-shp-llm/server/service/LlmSpeechToTextService.php";
+        $llmSpeechServicePath = __DIR__ . "/../../../sh-shp-llm/server/service/LlmSpeechToTextService.php";
         if (!file_exists($llmSpeechServicePath)) {
             return array('error' => 'Speech-to-text service not available.');
         }

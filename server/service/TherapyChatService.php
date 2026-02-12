@@ -24,8 +24,8 @@
  * @requires sh-shp-llm plugin
  */
 
-$llmServicePath = __DIR__ . "/../../sh-shp-llm/server/service/LlmService.php";
-$llmGlobalsPath = __DIR__ . "/../../sh-shp-llm/server/service/globals.php";
+$llmServicePath = __DIR__ . "/../../../sh-shp-llm/server/service/LlmService.php";
+$llmGlobalsPath = __DIR__ . "/../../../sh-shp-llm/server/service/globals.php";
 
 if (file_exists($llmServicePath)) {
     require_once $llmServicePath;
