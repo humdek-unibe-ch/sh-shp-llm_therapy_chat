@@ -547,8 +547,12 @@ class TherapyChatHooks extends BaseHooks
     private function isUserInGroup($userId, $groupId)
     {
         try {
-            $sql = "SELECT COUNT(*) as count FROM users_groups WHERE id_users = ? AND id_groups = ?";
-            $result = $this->db->query_db_first($sql, [$userId, $groupId]);
+            $groups = array_filter(explode(',', $groupId));
+            if (empty($groups)) return false;
+            $placeholders = str_repeat('?,', count($groups) - 1) . '?';
+            $sql = "SELECT COUNT(*) as count FROM users_groups WHERE id_users = ? AND id_groups IN ($placeholders)";
+            $params = array_merge([$userId], $groups);
+            $result = $this->db->query_db_first($sql, $params);
             return $result['count'] > 0;
         } catch (Exception $e) {
             return false;
