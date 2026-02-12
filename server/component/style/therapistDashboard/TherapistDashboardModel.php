@@ -45,7 +45,7 @@ class TherapistDashboardModel extends StyleModel
 
         $this->messageService = new TherapyMessageService($services);
         $this->userId = $_SESSION['id_user'] ?? null;
-        $this->selectedGroupId = $params['gid'] ?? null;
+        $this->selectedGroupId = isset($params['gid']) ? (int)$params['gid'] : null;
         $this->selectedSubjectId = $params['uid'] ?? null;
     }
 

@@ -89,7 +89,7 @@ export const TherapistDashboard: React.FC<Props> = ({ config }) => {
   const [newNote, setNewNote] = useState('');
   const [unreadCounts, setUnreadCounts] = useState<UnreadCounts>({ total: 0, totalAlerts: 0, bySubject: {} });
   const [groups, setGroups] = useState<TherapistGroup[]>(config.groups || config.assignedGroups || []);
-  const [activeGroupId, setActiveGroupId] = useState<number | null>(urlState.gid);
+  const [activeGroupId, setActiveGroupId] = useState<number | null>(config.selectedGroupId ?? urlState.gid);
   const [activeFilter, setActiveFilter] = useState<FilterType>('all');
   const [listLoading, setListLoading] = useState(true);
   const [listError, setListError] = useState<string | null>(null);
@@ -620,7 +620,7 @@ export const TherapistDashboard: React.FC<Props> = ({ config }) => {
             return (
               <li key={g.id_groups} className="nav-item">
                 <button
-                  className={`nav-link ${activeGroupId === g.id_groups ? 'active' : ''}`}
+                  className={`nav-link ${activeGroupId == g.id_groups ? 'active' : ''}`}
                   onClick={() => switchGroup(g.id_groups)}
                 >
                   {g.group_name}

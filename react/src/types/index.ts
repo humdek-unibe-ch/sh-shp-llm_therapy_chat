@@ -291,6 +291,8 @@ export interface TherapistDashboardConfig {
   baseUrl?: string;
   userId: number;
   sectionId: number;
+  selectedGroupId?: number | null;
+  selectedSubjectId?: number | string | null;
   stats: DashboardStats;
   groups?: TherapistGroup[];
   assignedGroups?: TherapistGroup[];
