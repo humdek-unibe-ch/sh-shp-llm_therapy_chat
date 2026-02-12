@@ -1015,8 +1015,7 @@ VALUES ('transactionBy', 'by_therapy_chat_plugin', 'By Therapy Chat Plugin', 'Ac
 -- CONFIG PAGE FIELD VALUES
 -- =====================================================
 
-INSERT IGNORE INTO `pages_fields_translation` (`id_pages`, `id_fields`, `id_languages`, `content`)
-VALUES
+INSERT IGNORE INTO `pages_fields_translation` (`id_pages`, `id_fields`, `id_languages`, `content`) VALUES
 (@id_page_therapy_chat_config, get_field_id('therapy_chat_subject_group'), '0000000001', (SELECT id FROM `groups` WHERE `name` = 'subject' LIMIT 1)),
 (@id_page_therapy_chat_config, get_field_id('therapy_chat_therapist_group'), '0000000001', (SELECT id FROM `groups` WHERE `name` = 'therapist' LIMIT 1)),
 (@id_page_therapy_chat_config, get_field_id('therapy_chat_subject_page'), '0000000001', (SELECT id FROM pages WHERE keyword = 'therapyChatSubject')),
@@ -1026,8 +1025,7 @@ VALUES
 (@id_page_therapy_chat_config, get_field_id('therapy_chat_floating_position'), '0000000001', 'bottom-right'),
 (@id_page_therapy_chat_config, get_field_id('therapy_chat_default_mode'), '0000000001', 'ai_hybrid'),
 (@id_page_therapy_chat_config, get_field_id('therapy_chat_polling_interval'), '0000000001', '3'),
-(@id_page_therapy_chat_config, get_field_id('therapy_chat_enable_tagging'), '0000000001', '1'),
-(@id_page_therapy_chat_config, get_field_id('therapy_tag_reasons'), '0000000002', '[{"key":"overwhelmed","label":"I am feeling overwhelmed","urgency":"normal"},{"key":"need_talk","label":"I need to talk soon","urgency":"urgent"},{"key":"urgent","label":"This feels urgent","urgency":"urgent"},{"key":"emergency","label":"Emergency - please respond immediately","urgency":"emergency"}]');
+(@id_page_therapy_chat_config, get_field_id('therapy_chat_enable_tagging'), '0000000001', '1');
 
 -- =====================================================
 -- SPEECH-TO-TEXT CONFIGURATION
@@ -1074,6 +1072,9 @@ INSERT IGNORE INTO `fields` (`id`, `name`, `id_type`, `display`) VALUES
 INSERT IGNORE INTO `styles_fields` (`id_styles`, `id_fields`, `default_value`, `help`) VALUES
 (get_style_id('therapyChat'), get_field_id('enable_floating_chat'), '0',
  'Enable floating/modal chat interface. When enabled, clicking the global floating icon opens the chat in a modal panel instead of navigating to the page. Icon, position and label are configured in the main plugin config page.');
+
+INSERT IGNORE INTO `styles_fields` (`id_styles`, `id_fields`, `default_value`, `help`) VALUES
+(get_style_id('therapyChat'), get_field_id('therapy_tag_reasons'), '[{"key":"overwhelmed","label":"I am feeling overwhelmed","urgency":"normal"},{"key":"need_talk","label":"I need to talk soon","urgency":"urgent"},{"key":"urgent","label":"This feels urgent","urgency":"urgent"},{"key":"emergency","label":"Emergency - please respond immediately","urgency":"emergency"}]', 'JSON array of tag reasons with key, label, and urgency for patient tagging options.');
 
 -- =====================================================
 -- EMAIL NOTIFICATION CONFIGURATION
