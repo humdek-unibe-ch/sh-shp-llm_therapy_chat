@@ -40,7 +40,7 @@ This generates `js/ext/therapy-chat.umd.js` and `css/ext/therapy-chat.css`.
    - **Therapist Group**: Select the group containing your therapists
    - **Subject Page**: The page where the patient chat component lives
    - **Therapist Page**: The page where the therapist dashboard component lives
-   - **Danger Words**: Comma-separated keywords that trigger safety alerts
+   - **Danger Keywords (topic hints)**: Comma-separated safety topics for LLM context (e.g., suicide, self-harm). The LLM uses these to focus its contextual safety assessment — no server-side keyword matching is performed
    - **Floating Position**: Where the floating button appears (e.g., `bottom-right`)
 
 ### 5. Create Chat Pages

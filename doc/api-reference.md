@@ -101,6 +101,17 @@ Returns dashboard configuration including stats, groups, features, labels.
 
 **Response**: `{ messages: Message[], conversation_id }`
 
+### GET `export_csv`
+Exports conversations as a semicolon-delimited CSV file download. Access control enforced.
+
+| Param | Type | Required | Description |
+|-------|------|----------|-------------|
+| `scope` | string | Yes | `patient`, `group`, or `all` |
+| `conversation_id` | int | When scope=patient | Specific conversation to export |
+| `group_id` | int | When scope=group | Group whose conversations to export |
+
+**Response**: CSV file download with headers: `conversation_id`, `patient_name`, `patient_code`, `group_name`, `mode`, `ai_enabled`, `status`, `risk_level`, `message_id`, `timestamp`, `sender_type`, `sender_name`, `role`, `content`
+
 ### GET `get_alerts`
 | Param | Type | Required | Description |
 |-------|------|----------|-------------|

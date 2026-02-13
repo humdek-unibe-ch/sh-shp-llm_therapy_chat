@@ -112,41 +112,39 @@ Tag reasons come from `get_config` → `config.tagReasons`, not a separate endpo
 
 The `MentionItem` type is exported from `MessageInput.tsx`.
 
-## Danger Detection Flow
+## Safety Detection Flow
 
-When a patient sends a message, danger detection runs in `TherapyChatModel::sendPatientMessage()` using a two-layer approach:
+Safety detection is **purely context-based** via the LLM's structured response. There is no keyword matching or pre-message scanning — the LLM evaluates the full conversation context and returns a safety assessment as part of every response.
 
-**Important ID distinction**: `TherapyChatModel` works with `therapyConversationMeta.id` (`$conversationId`) for therapy-layer operations, but `LlmDangerDetectionService::checkMessage()` operates on `llmConversations.id` (`$llmConversationId`). Always pass `$conversation['id_llmConversations']` to the LLM service.
+### How It Works
 
-1. **Conversation created first**: The conversation is always created/fetched before danger detection so alerts have a valid conversation ID.
-2. **Layer 1 — LLM-based detection** (if `LlmDangerDetectionService` is available and enabled): Calls `checkMessage($message, $userId, $llmConversationId)`. If danger is detected, `LlmDangerDetectionService` internally blocks the `llmConversations` record and sends email notifications to `getDangerNotificationEmails()`. Then `handleDangerDetected()` is called with an empty `$extraEmails` parameter to avoid duplicate emails.
-3. **Layer 2 — Keyword-based fallback** (if LLM detection is unavailable or didn't trigger): `scanKeywords()` splits `danger_keywords` by commas/semicolons/newlines and checks for case-insensitive substring matches. If danger keywords are found, `TherapyChatService::blockConversation()` is called explicitly to block the `llmConversations` record, then `handleDangerDetected()` is called with the extra danger emails.
-4. **`handleDangerDetected()` (shared for both layers)**:
-   - Saves the message (so therapists can see what was said)
-   - `createDangerAlert()` creates an alert, escalates risk to critical, and sends urgent notifications to assigned therapists plus any `$extraEmails`
-   - AI is disabled on the conversation (`setAIEnabled(false)`)
-   - Does NOT call `notifyTherapistsNewMessage()` — `createDangerAlert` already sends urgent emails to therapists, so calling both would duplicate notifications
-   - Frontend receives `{ blocked: true, type: 'danger_detected', message: '...' }`
-5. **Email deduplication**: `sendUrgentNotification()` in `TherapyAlertService` merges assigned therapist emails with `$extraEmails`, deduplicates the list, and sends one email per unique address.
-
-**`danger_notification_emails` flow**: `TherapyChatModel::getDangerNotificationEmails()` reads the CMS field and returns an array of email addresses (supports comma, semicolon, and newline separators). For Layer 1, these emails are passed directly to `LlmDangerDetectionService::checkMessage()`. For Layer 2, they are passed to `TherapyAlertService::createDangerAlert()` via `handleDangerDetected()`.
-
-### Post-LLM Safety Detection (Layer 3)
-
-After the AI responds, `handlePostLlmSafetyDetection()` evaluates the LLM's own safety assessment:
-
-1. If `LlmResponseService` is available (parent plugin present), the therapy plugin injects the full structured response schema (JSON with `safety`, `content.text_blocks`, `metadata`) plus safety instructions with danger keywords via `LlmResponseService::buildResponseContext()`.
-2. The LLM returns structured JSON. `TherapyMessageService::extractDisplayContent()` extracts human-readable text from `content.text_blocks[]` for storage; the raw JSON is preserved in `raw_content`.
-3. `TherapyChatModel::parseStructuredResponse()` extracts the `safety` field from the JSON.
-4. `LlmResponseService::assessSafety()` evaluates the safety assessment.
-5. If `danger_level` is `critical` or `emergency`:
+1. **Patient sends a message** → `TherapyChatModel::sendPatientMessage()` saves the message and triggers AI response processing.
+2. **Blocked check**: Before processing, the method checks if the conversation is already blocked (from a prior safety detection). If blocked, returns `{ blocked: true, type: 'conversation_blocked' }`.
+3. **Schema injection**: `TherapyChatModel::processAIResponse()` injects the structured JSON response schema via `LlmResponseService::buildResponseContext()`. The schema includes safety categories (suicide, self-harm, harm to others, etc.) and danger level definitions. The `danger_keywords` CMS field provides **topic hints** to the LLM (not matched server-side).
+4. **LLM responds** with structured JSON containing a `safety` field: `{ is_safe, danger_level, detected_concerns, requires_intervention, safety_message }`.
+5. **Post-LLM evaluation**: `handlePostLlmSafetyDetection()` parses the structured response and evaluates the safety assessment via `LlmResponseService::assessSafety()`.
+6. **If `danger_level` is `critical` or `emergency`**:
    - Conversation is blocked via `LlmDangerDetectionService::blockConversation()` or `TherapyChatService::blockConversation()`
    - A danger alert is created (risk escalated to critical)
-   - AI is disabled on the conversation
-   - Email notifications sent to therapists and configured extra emails
+   - AI is disabled on the conversation (`setAIEnabled(false)`)
+   - Email notifications sent to therapists and configured extra addresses (`danger_notification_emails`)
    - Transaction logged for audit
 
-This matches the parent `sh-shp-llm` plugin's `LlmChatController::handleSafetyDetection()` behavior. If `LlmResponseService` is not available, the plugin falls back to the simple `getCriticalSafetyContext()` text injection (no structured response parsing).
+### Important ID Distinction
+
+`TherapyChatModel` works with `therapyConversationMeta.id` for therapy-layer operations, but `LlmDangerDetectionService::blockConversation()` operates on `llmConversations.id`. Always pass `$conversation['id_llmConversations']` to the LLM service.
+
+### Email Notifications
+
+`TherapyAlertService::sendUrgentNotification()` sends emails to all assigned therapists plus any additional addresses in the `danger_notification_emails` CMS field (e.g., clinical supervisors). Emails are deduplicated.
+
+### Pause/Resume AI and Conversation Blocking
+
+Two independent states control conversation access:
+- **`therapyConversationMeta.ai_enabled`**: Controls whether AI generates responses (therapist toggle)
+- **`llmConversations.blocked`**: Hard block set by safety detection (prevents all LLM interaction)
+
+When a therapist resumes AI (`setAIEnabled(true)`), the system also calls `unblockConversation()` to clear the `llmConversations.blocked` flag, allowing messages to flow again.
 
 ### CSS Architecture
 

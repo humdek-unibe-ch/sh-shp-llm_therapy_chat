@@ -324,7 +324,9 @@ class TherapistDashboardModel extends StyleModel
             return array('error' => 'No conversations found for export');
         }
 
-        // Build CSV rows
+        // Build a patient-ID → group-names lookup from the therapist's assigned groups
+        $groupLookup = $this->buildPatientGroupLookup($therapistId);
+
         $headers = array(
             'conversation_id',
             'patient_name',
@@ -344,17 +346,19 @@ class TherapistDashboardModel extends StyleModel
 
         $rows = array();
         foreach ($conversations as $conv) {
-            // Skip patients without conversations
             if (!empty($conv['no_conversation'])) {
                 continue;
             }
 
             $convId = $conv['id'];
+            $patientId = $conv['id_users'] ?? 0;
             $messages = $this->messageService->getTherapyMessages($convId, THERAPY_STATS_LIMIT);
 
             if (empty($messages)) {
                 continue;
             }
+
+            $groupName = $groupLookup[$patientId] ?? '';
 
             foreach ($messages as $msg) {
                 if (!empty($msg['is_deleted'])) {
@@ -365,7 +369,7 @@ class TherapistDashboardModel extends StyleModel
                     $convId,
                     $conv['subject_name'] ?? $conv['name'] ?? '',
                     $conv['subject_code'] ?? $conv['code'] ?? '',
-                    $conv['group_name'] ?? '',
+                    $groupName,
                     $conv['mode'] ?? '',
                     $conv['ai_enabled'] ? 'yes' : 'no',
                     $conv['status'] ?? '',
@@ -392,8 +396,16 @@ class TherapistDashboardModel extends StyleModel
                 $filename = "therapy_export_{$patientName}_{$datePart}.csv";
                 break;
             case 'group':
-                $groupName = preg_replace('/[^a-zA-Z0-9_-]/', '_', $conversations[0]['group_name'] ?? 'group');
-                $filename = "therapy_export_group_{$groupName}_{$datePart}.csv";
+                $groups = $this->messageService->getTherapistAssignedGroups($therapistId);
+                $gLabel = 'group';
+                foreach ($groups as $g) {
+                    if ((string)$g['id_groups'] === (string)$groupId) {
+                        $gLabel = $g['group_name'];
+                        break;
+                    }
+                }
+                $gLabel = preg_replace('/[^a-zA-Z0-9_-]/', '_', $gLabel);
+                $filename = "therapy_export_group_{$gLabel}_{$datePart}.csv";
                 break;
             default:
                 $filename = "therapy_export_all_{$datePart}.csv";
@@ -405,6 +417,50 @@ class TherapistDashboardModel extends StyleModel
             'headers' => $headers,
             'rows' => $rows
         );
+    }
+
+    /**
+     * Build a patient-ID → group-names map for CSV export.
+     *
+     * Queries the therapist's assigned groups and maps each patient
+     * to a comma-separated list of group names they belong to.
+     *
+     * @param int $therapistId
+     * @return array patientId => "group1, group2"
+     */
+    private function buildPatientGroupLookup($therapistId)
+    {
+        $groups = $this->messageService->getTherapistAssignedGroups($therapistId);
+        if (empty($groups)) {
+            return array();
+        }
+
+        $groupIds = array_column($groups, 'id_groups');
+        $groupNames = array_column($groups, 'group_name', 'id_groups');
+
+        $placeholders = implode(',', array_fill(0, count($groupIds), '?'));
+        $sql = "SELECT ug.id_users, ug.id_groups
+                FROM users_groups ug
+                WHERE ug.id_groups IN ($placeholders)";
+
+        $rows = $this->db->query_db($sql, $groupIds);
+        if (!$rows) {
+            return array();
+        }
+
+        $lookup = array();
+        foreach ($rows as $row) {
+            $uid = $row['id_users'];
+            $gid = $row['id_groups'];
+            $gname = $groupNames[$gid] ?? '';
+            if (!isset($lookup[$uid])) {
+                $lookup[$uid] = $gname;
+            } else {
+                $lookup[$uid] .= ', ' . $gname;
+            }
+        }
+
+        return $lookup;
     }
 
     /* =========================================================================

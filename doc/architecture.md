@@ -115,7 +115,7 @@ TherapyMessageService (top-level)
 
 ### Danger Detection
 
-When danger is detected (LLM-based or keyword fallback), `TherapyAlertService::sendUrgentNotification()` sends emails to assigned therapists and to addresses in the `danger_notification_emails` CMS field (e.g., clinical supervisors). Emails are deduplicated.
+When the LLM's safety assessment returns `danger_level: critical` or `emergency`, `TherapyAlertService::sendUrgentNotification()` sends emails to assigned therapists and to addresses in the `danger_notification_emails` CMS field (e.g., clinical supervisors). Emails are deduplicated. There is no server-side keyword matching — safety detection is purely context-based via the LLM.
 
 ## React Frontend Architecture
 

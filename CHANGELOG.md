@@ -1,8 +1,9 @@
 # Changelog
 
-## v1.0.0 (2026-02-12) - Initial Release
+## v1.0.0 (2026-02-13) - Initial Release
 
 ### Breaking Changes
+- **Danger detection is now purely context-based via LLM** — all server-side keyword matching (Layer 1 `LlmDangerDetectionService::checkMessage()`, Layer 2 `scanKeywords()`) has been removed. Safety assessment relies entirely on the LLM's structured response `safety` field. The `danger_keywords` CMS field now provides topic hints to the LLM, not keywords for server-side matching
 - Removed `therapyTags` table — tag functionality absorbed into `therapyAlerts` with `tag_received` alert type
 - Removed `id_therapist` from `therapyConversationMeta` — multiple therapists per conversation supported via `therapyTherapistAssignments`
 - Removed `id_groups` from `therapyConversationMeta` — access control via therapist-to-group assignments
@@ -53,12 +54,15 @@
 - **Email notification shared fields**: `notification_from_email` and `notification_from_name` on both styles
 - **@mention autocomplete**: Typing `@` in the message input opens a dropdown of assigned therapists; typing `#` shows predefined tag reasons/topics. Keyboard navigation (Arrow keys, Enter, Tab, Escape) supported
 - **@tagged messages skip AI**: When a patient tags a therapist (`@therapist` or `@SpecificName`), the message is sent only to therapists — no AI response is generated. This ensures the therapist sees the message directly without AI interference
-- **Danger detection** (multi-layer):
-  1. **LLM-based detection**: If the parent `sh-shp-llm` plugin's `LlmDangerDetectionService` is available, the LLM evaluates every message and returns a structured SafetyAssessment with danger_level (null, warning, critical, emergency). For critical/emergency, conversation is blocked, AI disabled, risk escalated, and urgent email sent to all assigned therapists
-  2. **Keyword-based fallback**: When LLM detection is unavailable, configurable `danger_keywords` (comma/semicolon separated) are checked with simple substring matching. Same blocking and notification behavior applies
-  3. **`danger_notification_emails`** field: Configurable list of additional email addresses to receive urgent danger notifications (e.g., clinical supervisors). Used by `TherapyAlertService::sendUrgentNotification()`
-  4. **Danger blocked message**: Customizable message shown to the patient when danger is detected (`danger_blocked_message` field)
-  5. **Audit logging**: All danger detections are logged via transaction service
+- **Context-based safety detection** (LLM only, no keyword matching):
+  1. The LLM evaluates every response via structured JSON schema with a `safety` field containing `is_safe`, `danger_level` (null/warning/critical/emergency), `detected_concerns`, `requires_intervention`, `safety_message`
+  2. For critical/emergency danger levels: conversation is blocked, AI disabled, risk escalated to critical, and urgent email sent to all assigned therapists
+  3. **`danger_keywords` field**: Provides topic hints to the LLM (e.g., suicide, self-harm) — injected into LLM context but NOT matched server-side
+  4. **`danger_notification_emails` field**: Additional email addresses for urgent safety notifications (e.g., clinical supervisors)
+  5. **Danger blocked message**: Customizable message shown to the patient when conversation is blocked (`danger_blocked_message` field)
+  6. **Conversation blocked check**: Subsequent messages to a blocked conversation return `{ blocked: true }` immediately
+  7. **Audit logging**: All safety detections logged via transaction service
+- **CSV export**: Therapists can export conversations as CSV files (semicolon-delimited for Excel). Three scopes: single patient, all patients in a group, or all conversations the therapist has access to. Includes patient name, code, group name, timestamps, sender info, and full message content. Access control enforced — only assigned conversations are exported
 - **Therapist-initiated conversations**: Therapists can now start conversations for patients who haven't chatted yet. The therapist dashboard shows ALL assigned patients (even those without an existing conversation) and provides a "Start Conversation" button to initialize one. No `enableAutoStart` gate — therapists can always start conversations
 - **`therapy_auto_start` field**: Per-style checkbox to control whether conversations include an initial welcome message. When enabled and `therapy_auto_start_context` is set, the configured text is inserted as the first message when a conversation is created (either by patient page visit or therapist initialization). Does NOT gate the therapist's ability to manually start conversations
 - **`therapy_auto_start_context` field**: Markdown field for the initial message shown to the patient when a conversation is created. Plain text insert, no LLM calls. Example: "Welcome! Your therapist has opened this conversation for you." Supports multilingual content via field translations
@@ -68,12 +72,17 @@
 - Comprehensive documentation in `doc/` folder
 
 ### Fixed
-- **Critical: Danger detection conversation ID mismatch** — `LlmDangerDetectionService::checkMessage()` was receiving `therapyConversationMeta.id` but operates on `llmConversations.id`. Now correctly passes `id_llmConversations` so conversation blocking works against the right table
+- **Critical: Pause/resume AI did not unblock conversation** — When danger was detected, both `therapyConversationMeta.ai_enabled` was set to 0 and `llmConversations.blocked` was set to 1. Resuming AI only reset `ai_enabled`, leaving the conversation permanently blocked. `setAIEnabled(true)` now also calls `unblockConversation()` to clear the block
+- **System message HTML rendering** — System messages (e.g., danger-blocked messages with `<p>` tags) now render via `MarkdownRenderer` instead of plain text
+- **LLM JSON schema compliance after pause/resume** — Added a reinforcement system message at the end of the LLM context to improve JSON format compliance after long or resumed conversations
+- **CSV export empty lines and BOM** — Removed UTF-8 BOM character and cleaned output buffers before sending CSV to prevent empty lines and invisible characters at file start
+- **CSV export missing group name** — Group names now resolved via patient-to-group lookup from therapist assignments
+- **CSV export semicolon delimiter** — Changed from comma to semicolon delimiter for better Excel compatibility
+- **Alert emails updated** — Email subject now includes patient name, body uses HTML table layout with full AI assessment context instead of truncated keyword list
+- **AlertBanner display text** — Frontend now shows "Safety concerns detected" with LLM concern categories instead of "Danger keywords detected"
 - **Critical: `getDangerNotificationEmails()` return type** — Method returned a raw string but `LlmDangerDetectionService::sendNotifications()` expected an array. Now returns a parsed array (supports comma, semicolon, newline separators), matching the parent `LlmChatModel` interface
 - **Critical: Post-LLM safety detection** — Added structured response schema injection (via `LlmResponseService::buildResponseContext()`) into AI context messages, matching the parent `sh-shp-llm` plugin. The LLM now returns JSON with a `safety` assessment (danger_level: null/warning/critical/emergency). After receiving the response, `handlePostLlmSafetyDetection()` parses the safety object and triggers conversation blocking + notifications for critical/emergency levels
 - **Critical: Structured JSON response text extraction** — `TherapyMessageService::processAIResponse()` now extracts human-readable text from `content.text_blocks[]` in structured JSON responses. Prevents raw JSON from being saved as the chat message content
-- **Layer 2 (fallback) danger detection now blocks conversation** — Added `TherapyChatService::blockConversation()` method and called it from the keyword fallback path so `llmConversations.blocked` is properly set
-- **Duplicate danger notifications** — Layer 1 (LLM service) already sends to `getDangerNotificationEmails()`; no longer passes extra emails to `createDangerAlert` for Layer 1 to avoid duplicate emails to configured addresses
 - **Duplicate floating UI** — When `enable_floating_chat` is enabled, `TherapyChatView::output_content()` now returns early to avoid rendering the inline chat on the page (the floating modal panel handles it)
 - **CSS duplication** — Removed `bootstrap/dist/css/bootstrap.min.css` import from React bundle. Bootstrap 4.6 is already loaded globally by SelfHelp; bundling it duplicated 167KB of CSS. `css/ext/therapy-chat.css` now contains only custom `tc-` prefixed styles (6KB)
 - **Therapist unread/seen message tracking** — `handleGetMessages()` (polling endpoint) now calls `markMessagesRead()` so messages polled while a conversation is open are properly marked as seen. Previously only `updateLastSeen` was called, leaving `therapyMessageRecipients.is_new = 1` for polled messages
@@ -81,13 +90,13 @@
 - **Plugin version constant** — Fixed `LLM_THERAPY_CHAT_PLUGIN_VERSION` from `v1.0.1` to `v1.0.0`
 - **PHP Fatal: `array_merge()` null in `BasePage::output_js_includes()`** — `loadTherapyChatLLMJs` hook now guards against `execute_private_method()` returning null by defaulting to an empty array. Prevents crash when the base method returns null
 - **Protected `logTransaction()` call** — `TherapyChatModel::handlePostLlmSafetyDetection()` was calling `$this->therapyService->logTransaction()` which is protected in `LlmLoggingTrait`. Now uses `$this->get_services()->get_transaction()->add_transaction()` directly
-- **Duplicate danger email in post-LLM safety detection** — Removed call to `$this->dangerDetection->sendNotifications()` from `handlePostLlmSafetyDetection()`. `createDangerAlert()` already sends to all assigned therapists. The parent LLM plugin's `checkMessage()` sends its own email via `LlmDangerDetectionService::sendNotifications()` — that email is expected (from the dependency plugin) and is not a duplication
+- **Duplicate danger email in post-LLM safety detection** — Removed call to `$this->dangerDetection->sendNotifications()` from `handlePostLlmSafetyDetection()`. `createDangerAlert()` already sends to all assigned therapists
 - **Therapist floating badge not updating** — `loadUnreadCounts()` in `TherapistDashboard.tsx` now syncs the server-rendered floating icon badge (`.therapy-chat-badge`) with live unread data after each poll/mark-read
 - **`handleMarkMessagesRead` response** — Now returns `unread_count` in the JSON response so the frontend can update badges immediately
 - **Critical: Alerts never marked as read** — `markAllAlertsRead()` in `TherapyAlertService` received `therapyConversationMeta.id` but queried `therapyAlerts.id_llmConversations` (which stores `llmConversations.id`). IDs never matched, so no alerts were ever marked as read. Now resolves `therapyConversationMeta.id` → `llmConversations.id` internally. Also supports marking ALL alerts (no conversation filter) for the "Dismiss all" use case
 - **Auto-mark alerts read on conversation open** — `selectConversation` in `TherapistDashboard.tsx` now calls both `markMessagesRead()` and `markAllAlertsRead()` when a therapist opens a conversation
 - **"Dismiss all alerts" button** — Added a "Dismiss all alerts" button in the alert banner when multiple critical alerts are present. Calls `markAllAlertsRead()` without a conversation ID to clear all unread alerts
-- **Alert text display: raw JSON cleaned** — Alert banner now extracts clean display text from alert metadata (`detected_keywords`, `reason`) instead of showing the raw `message` field which could contain JSON. For danger alerts, shows "Danger keywords detected: X"; for tag alerts, shows "Tagged: reason"
+- **Alert text display: raw JSON cleaned** — Alert banner now extracts clean display text from alert metadata (`detected_concerns`, `reason`) instead of showing the raw `message` field which could contain JSON. For danger alerts, shows "Safety concerns detected: X"; for tag alerts, shows "Tagged: reason"
 - **Danger alert message content** — `handlePostLlmSafetyDetection()` now passes the LLM's human-readable `safety_message` to `createDangerAlert()` instead of the raw structured JSON response. Alert text is now meaningful for therapists
 - **Alerts stat shows unread count** — Dashboard header "Alerts" stat now shows `totalAlerts` (unread count) instead of `alerts.length` (total loaded), bold when > 0
 - **Therapist unread for AI conversations** — When AI is enabled, patient messages and AI responses no longer create `therapyMessageRecipients` entries for therapists. Only explicitly tagged therapists (via `@therapist` or `@Dr. Name`) get unread entries. When AI is disabled, all patient messages are marked unread for therapists as before (since messages are intended for them). Tag processing now runs before recipient creation so tagged IDs are available
@@ -100,6 +109,14 @@
 - **Removed dead code**: `hasAccess()`, `getDangerDetection()` (TherapyChatModel), `getConversationById()` (TherapistDashboardModel), `removeTherapistFromGroup()` (TherapyChatService), `getErrorMessage()` (api.ts), `LLM_THERAPY_CHAT_PLUGIN_NAME` constant
 
 ### Changed
+- **Safety detection**: Replaced three-layer detection (LLM keyword scan + keyword fallback + post-LLM assessment) with single-layer context-based detection (post-LLM assessment only). No server-side keyword matching
+- **TherapistDashboard.tsx**: Split into smaller components (`StatsHeader`, `AlertBanner`, `GroupTabs`, `PatientList`, `ConversationHeader`, `NotesPanel`, `DraftEditor`)
+- **TherapyChatHooks.php**: Split into traits (`FloatingChatHooks`, `TherapistAssignmentHooks`)
+- **TherapyChatModel.php**: Extracted `TherapyViewHelper`, `TherapyEmailHelper`, centralized `parseLlmJson` in `TherapyMessageService`
+- **MessageInput.tsx**: Extracted `VoiceRecorder.tsx` component
+- **Asset versioning**: Centralized via `TherapyViewHelper::assetVersion()`
+- **Email scheduling**: Centralized via `TherapyEmailHelper::scheduleEmail()`
+- **Inline styles replaced with CSS classes** throughout React components
 - Rewrote entire React frontend (types, API, hooks, all components)
 - Single CSS file with `tc-` prefix instead of scattered per-component CSS
 - Simplified `MessageInput` — no heavy mention library, matches `sh-shp-llm` UI patterns. Accepts `onFetchMentions` callback and `topicSuggestions` prop for autocomplete
@@ -126,6 +143,10 @@
 - Updated all documentation to match new architecture
 
 ### Removed
+- **`scanKeywords()` method** — Server-side keyword matching removed entirely
+- **`checkDangerLayers()` method** — Pre-message danger detection removed; safety is now assessed contextually by the LLM
+- **`handleDangerDetected()` method** — Pre-message handler removed; replaced by post-LLM `handlePostLlmSafetyDetection()`
+- `console.log` from `therapy_assignments.js`
 - `TherapyTaggingService.php` — functionality in `TherapyAlertService`
 - `react-mentions` dependency
 - Individual component CSS files (consolidated into single file)

@@ -17,12 +17,12 @@ export interface AlertBannerProps {
 /** Build a clean display message from alert data */
 function getAlertDisplayMessage(a: Alert): string {
   const meta = (a.metadata ?? {}) as Record<string, unknown>;
-  const keywords = Array.isArray(meta.detected_keywords)
-    ? (meta.detected_keywords as string[]).join(', ')
+  const concerns = Array.isArray(meta.detected_concerns)
+    ? (meta.detected_concerns as string[]).join(', ')
     : null;
   const alertType = a.alert_type ?? '';
-  if (alertType === 'danger_detected' && keywords) {
-    return `Danger keywords detected: ${keywords}`;
+  if (alertType === 'danger_detected' && concerns) {
+    return `Safety concerns detected: ${concerns}`;
   }
   if (alertType === 'tag_received') {
     return meta.reason ? `Tagged: ${meta.reason}` : 'Patient tagged therapist';

@@ -56,7 +56,8 @@ class TherapyChatModel extends StyleModel
         $this->therapyService = new TherapyMessageService($services);
         $this->userId = $_SESSION['id_user'] ?? null;
 
-        // Initialize danger detection if enabled
+        // Initialize danger detection service (used only for conversation blocking,
+        // NOT for keyword scanning — safety detection is context-based via LLM).
         if ($this->isDangerDetectionEnabled()) {
             $this->dangerDetection = new LlmDangerDetectionService($services, $this);
         }
@@ -353,10 +354,14 @@ class TherapyChatModel extends StyleModel
         }
         $conversationId = $conversation['id'];
 
-        // Danger detection — check BEFORE sending the message
-        $dangerResult = $this->checkDangerLayers($conversation, $userId, $message);
-        if ($dangerResult !== null) {
-            return $dangerResult;
+        // Check if conversation is blocked (e.g. from a previous safety detection)
+        if ($this->isConversationBlocked($conversation)) {
+            return array(
+                'blocked' => true,
+                'type' => 'conversation_blocked',
+                'message' => $this->getDangerBlockedMessage(),
+                'conversation_id' => $conversationId
+            );
         }
 
         // Send user message (normal flow)
@@ -424,48 +429,14 @@ class TherapyChatModel extends StyleModel
     }
 
     /**
-     * Run both danger detection layers. Returns a blocked response if danger
-     * is detected, or null if the message is safe.
+     * Check if a conversation is blocked (e.g. due to a prior safety detection).
      *
-     * @param array $conversation
-     * @param int $userId
-     * @param string $message
-     * @return array|null Blocked response or null
+     * @param array $conversation Conversation record from view_therapyConversations
+     * @return bool
      */
-    private function checkDangerLayers($conversation, $userId, $message)
+    private function isConversationBlocked($conversation)
     {
-        $conversationId = $conversation['id'];
-        $llmConversationId = $conversation['id_llmConversations'];
-        $extraDangerEmails = implode(',', $this->getDangerNotificationEmails());
-
-        // Layer 1: LLM plugin danger detection (word-boundary + typo tolerance)
-        if ($this->dangerDetection && $this->dangerDetection->isEnabled()) {
-            $dangerResult = $this->dangerDetection->checkMessage($message, $userId, $llmConversationId);
-            if (!$dangerResult['safe']) {
-                return $this->handleDangerDetected(
-                    $conversationId, $userId, $message,
-                    $dangerResult['detected_keywords'],
-                    '' // LlmDangerDetectionService already sent to extra emails
-                );
-            }
-        }
-
-        // Layer 2: Simple keyword fallback
-        if ($this->isDangerDetectionEnabled()) {
-            $detectedKeywords = $this->scanKeywords($message);
-            if (!empty($detectedKeywords)) {
-                $this->therapyService->blockConversation(
-                    $conversationId,
-                    'Automatic: Danger keywords detected - ' . implode(', ', $detectedKeywords)
-                );
-                return $this->handleDangerDetected(
-                    $conversationId, $userId, $message,
-                    $detectedKeywords, $extraDangerEmails
-                );
-            }
-        }
-
-        return null;
+        return !empty($conversation['blocked']);
     }
 
     /**
@@ -482,83 +453,6 @@ class TherapyChatModel extends StyleModel
             && ($conversation['status'] ?? '') !== THERAPY_STATUS_PAUSED;
     }
 
-    /**
-     * Handle a confirmed danger detection: save message, create alert, disable AI, notify.
-     *
-     * @param int $conversationId therapyConversationMeta.id
-     * @param int $userId Patient ID
-     * @param string $message The dangerous message
-     * @param array $detectedKeywords
-     * @param string $extraEmails Comma-separated extra notification emails
-     * @return array Blocked response for frontend
-     */
-    private function handleDangerDetected($conversationId, $userId, $message, $detectedKeywords, $extraEmails)
-    {
-        // Save the message so therapists can see what was said
-        $this->therapyService->sendTherapyMessage(
-            $conversationId, $userId, $message, TherapyMessageService::SENDER_SUBJECT
-        );
-
-        // Create danger alert (escalates risk to critical + sends urgent email
-        // to all assigned therapists and any extra notification addresses)
-        $this->therapyService->createDangerAlert(
-            $conversationId, $detectedKeywords, $message, $extraEmails
-        );
-
-        // Disable AI on this conversation
-        $this->therapyService->setAIEnabled($conversationId, false);
-
-        // NOTE: We do NOT call notifyTherapistsNewMessage() here because
-        // createDangerAlert already sends an urgent notification to therapists.
-        // Sending both would duplicate emails.
-
-        return array(
-            'blocked' => true,
-            'type' => 'danger_detected',
-            'message' => $this->getDangerBlockedMessage(),
-            'detected_keywords' => $detectedKeywords,
-            'conversation_id' => $conversationId
-        );
-    }
-
-    /**
-     * Scan a message for configured danger keywords (word-boundary regex for single words, substring for phrases).
-     * Fallback when LlmDangerDetectionService is unavailable.
-     *
-     * @param string $message
-     * @return array Detected keywords (empty if none found)
-     */
-    private function scanKeywords($message)
-    {
-        $dangerKeywords = $this->getDangerKeywords();
-        if (empty($dangerKeywords)) {
-            return array();
-        }
-
-        $keywords = array_filter(array_map('trim', preg_split('/[,;\n]+/', $dangerKeywords)));
-        $detected = array();
-        $messageLower = mb_strtolower($message);
-
-        foreach ($keywords as $kw) {
-            $kwLower = mb_strtolower($kw);
-
-            if (mb_strpos($kwLower, ' ') !== false) {
-                // Multi-word phrase: use substring match
-                if (mb_strpos($messageLower, $kwLower) !== false) {
-                    $detected[] = $kw;
-                }
-            } else {
-                // Single word: use word-boundary regex to avoid false positives
-                // e.g. "end" should NOT match "at the end of" but SHOULD match "end it all"
-                $escaped = preg_quote($kwLower, '/');
-                if (preg_match('/\b' . $escaped . '\b/iu', $messageLower)) {
-                    $detected[] = $kw;
-                }
-            }
-        }
-
-        return $detected;
-    }
 
     /**
      * Process AI response for a conversation.
@@ -586,14 +480,16 @@ class TherapyChatModel extends StyleModel
         $contextMessages = $this->therapyService->injectResponseSchema($contextMessages, $dangerConfig);
         $responseService = $this->therapyService->getResponseService();
 
-        // Fallback: if LlmResponseService is not available, inject simple safety text
-        if (!$responseService && $this->dangerDetection && $this->dangerDetection->isEnabled()) {
-            $safetyContext = $this->dangerDetection->getCriticalSafetyContext();
-            if ($safetyContext) {
-                array_splice($contextMessages, 2, 0, [
-                    array('role' => 'system', 'content' => $safetyContext)
-                ]);
-            }
+        // Fallback: if LlmResponseService is not available, inject a minimal
+        // safety instruction so the LLM still returns a structured response.
+        if (!$responseService && $this->isDangerDetectionEnabled()) {
+            $contextMessages[] = array(
+                'role' => 'system',
+                'content' => '[SAFETY] You are a mental health assistant. Assess ALL user messages for '
+                    . 'safety concerns (suicidal ideation, self-harm, harm to others, crisis situations). '
+                    . 'If you detect danger, include a safety warning in your response and recommend '
+                    . 'professional help and crisis resources. Do NOT engage with dangerous content.'
+            );
         }
 
         // Reinforce JSON schema compliance at end of context.
@@ -626,12 +522,14 @@ class TherapyChatModel extends StyleModel
     }
 
     /**
-     * Build danger detection config for LlmResponseService.
+     * Build safety config for LlmResponseService.
      *
-     * Returns the same structure the parent plugin's LlmContextService uses:
-     * ['enabled' => bool, 'keywords' => string[]]
+     * Provides topic hints to the LLM so it knows which safety areas to
+     * monitor. The LLM performs contextual assessment — no keyword matching
+     * is done server-side. Returns the structure expected by
+     * LlmResponseService::buildResponseContext().
      *
-     * @return array
+     * @return array ['enabled' => bool, 'keywords' => string[]]
      */
     private function buildDangerConfig()
     {
@@ -639,18 +537,18 @@ class TherapyChatModel extends StyleModel
             return array('enabled' => false, 'keywords' => array());
         }
 
-        $keywordsStr = $this->getDangerKeywords();
-        if (empty($keywordsStr)) {
+        $topicsStr = $this->getDangerKeywords();
+        if (empty($topicsStr)) {
             return array('enabled' => true, 'keywords' => array());
         }
 
-        $keywords = array_map('trim', preg_split('/[,;\n]+/', $keywordsStr));
-        $keywords = array_filter($keywords);
-        $keywords = array_unique($keywords);
+        $topics = array_map('trim', preg_split('/[,;\n]+/', $topicsStr));
+        $topics = array_filter($topics);
+        $topics = array_unique($topics);
 
         return array(
             'enabled' => true,
-            'keywords' => array_values($keywords)
+            'keywords' => array_values($topics)
         );
     }
 

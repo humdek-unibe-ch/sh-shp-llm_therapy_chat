@@ -30,8 +30,8 @@ Each `therapyChat` style instance can be configured with:
 | `conversation_context` | (built-in) | Custom system prompt for the AI |
 | `therapy_chat_polling_interval` | `3` | Polling interval in **seconds** |
 | `therapy_chat_enable_tagging` | `1` | Allow patients to tag therapists |
-| `danger_keywords` | (comma-separated) | Comma/semicolon/newline-separated danger keywords for keyword-based fallback detection |
-| `danger_notification_emails` | (empty) | Comma-separated email addresses to receive urgent danger notifications in addition to assigned therapists (e.g., clinical supervisors). Used when danger is detected via LLM or keyword matching. Emails are deduplicated if an address appears in both. |
+| `danger_keywords` | (comma-separated) | Safety topic hints for the LLM. Comma/semicolon/newline-separated. These are NOT matched server-side — they are injected into the LLM context so it knows which safety areas to focus on (e.g., suicide, self-harm, violence). The LLM performs contextual assessment and returns a structured safety field. |
+| `danger_notification_emails` | (empty) | Comma-separated email addresses to receive urgent danger notifications in addition to assigned therapists (e.g., clinical supervisors). Triggered when the LLM's safety assessment returns critical or emergency danger level. |
 | `enable_speech_to_text` | `0` | Enable speech input |
 | `therapy_auto_start` | `0` | When enabled, inserts an initial welcome message when a conversation is created |
 | `therapy_auto_start_context` | (empty) | Markdown field for the auto-start welcome message shown when a conversation is created |

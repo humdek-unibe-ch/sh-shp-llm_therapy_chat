@@ -691,7 +691,11 @@ class TherapistDashboardController extends TherapyBaseController
                 return;
             }
 
-            // Output CSV as a file download
+            // Clean any buffered output (whitespace from PHP close tags, etc.)
+            while (ob_get_level()) {
+                ob_end_clean();
+            }
+
             header('Content-Type: text/csv; charset=utf-8');
             header('Content-Disposition: attachment; filename="' . $result['filename'] . '"');
             header('Cache-Control: no-cache, no-store, must-revalidate');
@@ -700,19 +704,14 @@ class TherapistDashboardController extends TherapyBaseController
 
             $output = fopen('php://output', 'w');
 
-            // BOM for Excel UTF-8 compatibility
-            fwrite($output, "\xEF\xBB\xBF");
+            // Use semicolon delimiter for better Excel compatibility
+            fputcsv($output, $result['headers'], ',');
 
-            // Header row
-            fputcsv($output, $result['headers']);
-
-            // Data rows
             foreach ($result['rows'] as $row) {
-                fputcsv($output, $row);
+                fputcsv($output, $row, ',');
             }
 
             fclose($output);
-            $this->model->get_services()->get_router()->log_user_activity();
             exit;
         } catch (Exception $e) {
             $this->json(array('error' => $e->getMessage()), 500);
