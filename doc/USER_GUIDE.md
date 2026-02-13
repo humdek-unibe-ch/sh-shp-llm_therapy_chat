@@ -26,7 +26,10 @@ You use the chat interface and can tag therapists when needed.
 
 Before going live, confirm:
 
+- [ ] **Base dependency plugin is installed:** `sh-shp-llm`  
+      https://github.com/humdek-unibe-ch/sh-shp-llm
 - [ ] The plugin is installed and active.
+- [ ] Both plugins are configured in CMS using their **module configuration pages**.
 - [ ] A **module configuration page** exists (`sh_module_llm_therapy_chat`).
 - [ ] A **patient page** exists with style `therapyChat`.
 - [ ] A **therapist page** exists with style `therapistDashboard`.
@@ -36,6 +39,20 @@ Before going live, confirm:
 ---
 
 ## 3) CMS configuration (module page)
+
+This therapy plugin depends on the base LLM plugin (`sh-shp-llm`).
+
+In practice, admins configure **both plugins** in CMS:
+
+1. **Base LLM plugin module** (`sh-shp-llm`) - main LLM/provider-level setup.
+2. **Therapy Chat module** (`sh-shp-llm_therapy_chat`) - therapy-specific setup (groups, pages, floating behavior, tagging, etc.).
+
+After both module configurations are set, create/use these two pages:
+
+- a **patient page** with style **`therapyChat`**,
+- a **therapist page** with style **`therapistDashboard`**.
+
+Each page must use the correct style, because style settings control how the interface is shown and how it behaves.
 
 Open the module page in CMS and configure these core fields:
 
