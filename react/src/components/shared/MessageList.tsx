@@ -149,7 +149,7 @@ export const MessageList: React.FC<MessageListProps> = ({
 
             {/* Content */}
             <div className="tc-msg__body">
-              {msg.sender_type === 'ai' || msg.role === 'assistant' ? (
+              {msg.sender_type === 'ai' || msg.role === 'assistant' || msg.sender_type === 'system' ? (
                 <MarkdownRenderer content={msg.content} />
               ) : (
                 <span style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{msg.content}</span>

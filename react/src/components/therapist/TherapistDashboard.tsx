@@ -579,15 +579,61 @@ export const TherapistDashboard: React.FC<Props> = ({ config }) => {
         />
       )}
 
-      {/* ============ Group Tabs ============ */}
-      <GroupTabs
-        groups={groups}
-        selectedGroupId={activeGroupId}
-        onSelectGroup={switchGroup}
-        unreadByGroup={unreadCounts.byGroup}
-        totalUnread={unreadCounts.total}
-        labels={{ allGroupsTab: labels.allGroupsTab }}
-      />
+      {/* ============ Group Tabs + Export ============ */}
+      <div className="d-flex justify-content-between align-items-start mb-2">
+        <GroupTabs
+          groups={groups}
+          selectedGroupId={activeGroupId}
+          onSelectGroup={switchGroup}
+          unreadByGroup={unreadCounts.byGroup}
+          totalUnread={unreadCounts.total}
+          labels={{ allGroupsTab: labels.allGroupsTab }}
+        />
+        <div className="dropdown ml-2 flex-shrink-0">
+          <button
+            className="btn btn-outline-secondary btn-sm dropdown-toggle"
+            data-toggle="dropdown"
+            aria-haspopup="true"
+            aria-expanded="false"
+          >
+            <i className="fas fa-download mr-1" />
+            Export CSV
+          </button>
+          <div className="dropdown-menu dropdown-menu-right">
+            {selectedId && chat.conversation && (
+              <a
+                className="dropdown-item"
+                href={api.getExportUrl('patient', selectedId)}
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                <i className="fas fa-user mr-2" />
+                Export current patient
+              </a>
+            )}
+            {activeGroupId != null && (
+              <a
+                className="dropdown-item"
+                href={api.getExportUrl('group', null, activeGroupId)}
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                <i className="fas fa-users mr-2" />
+                Export current group
+              </a>
+            )}
+            <a
+              className="dropdown-item"
+              href={api.getExportUrl('all')}
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              <i className="fas fa-globe mr-2" />
+              Export all conversations
+            </a>
+          </div>
+        </div>
+      </div>
 
       <div className="row tc-row-min-height">
         {/* ============ Patient List Sidebar ============ */}

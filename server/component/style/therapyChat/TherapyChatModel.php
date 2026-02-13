@@ -522,7 +522,7 @@ class TherapyChatModel extends StyleModel
     }
 
     /**
-     * Scan a message for configured danger keywords (simple substring match).
+     * Scan a message for configured danger keywords (word-boundary regex for single words, substring for phrases).
      * Fallback when LlmDangerDetectionService is unavailable.
      *
      * @param string $message
@@ -540,8 +540,20 @@ class TherapyChatModel extends StyleModel
         $messageLower = mb_strtolower($message);
 
         foreach ($keywords as $kw) {
-            if (mb_strpos($messageLower, mb_strtolower($kw)) !== false) {
-                $detected[] = $kw;
+            $kwLower = mb_strtolower($kw);
+
+            if (mb_strpos($kwLower, ' ') !== false) {
+                // Multi-word phrase: use substring match
+                if (mb_strpos($messageLower, $kwLower) !== false) {
+                    $detected[] = $kw;
+                }
+            } else {
+                // Single word: use word-boundary regex to avoid false positives
+                // e.g. "end" should NOT match "at the end of" but SHOULD match "end it all"
+                $escaped = preg_quote($kwLower, '/');
+                if (preg_match('/\b' . $escaped . '\b/iu', $messageLower)) {
+                    $detected[] = $kw;
+                }
             }
         }
 
@@ -583,6 +595,17 @@ class TherapyChatModel extends StyleModel
                 ]);
             }
         }
+
+        // Reinforce JSON schema compliance at end of context.
+        // After long conversations (especially after pause/resume), models may
+        // lose track of the schema instruction at the top of context. Adding a
+        // brief reminder just before the API call significantly improves compliance.
+        $contextMessages[] = array(
+            'role' => 'system',
+            'content' => 'IMPORTANT: You MUST respond with valid JSON matching the required schema. '
+                . 'Your response must be a JSON object with "type", "safety", "content", and "metadata" fields. '
+                . 'Do NOT include any text outside the JSON object.'
+        );
 
         $result = $this->therapyService->processAIResponse(
             $conversationId,

@@ -602,7 +602,11 @@ class TherapyChatService extends LlmService
     /**
      * Toggle AI on/off for a conversation.
      *
-     * @param int $conversationId
+     * When enabling AI, also unblocks the underlying llmConversation
+     * (which may have been blocked by danger detection). This allows
+     * the therapist to review and resume AI after a safety flag.
+     *
+     * @param int $conversationId therapyConversationMeta.id
      * @param bool $enabled
      * @return bool
      */
@@ -617,9 +621,53 @@ class TherapyChatService extends LlmService
         if ($result) {
             $conversation = $this->getTherapyConversation($conversationId);
             $uid = $conversation ? $conversation['id_users'] : 0;
+
+            // When re-enabling AI, unblock the underlying llmConversation
+            // so that the LLM API can process messages again.
+            if ($enabled && $conversation) {
+                $this->unblockConversation($conversationId);
+            }
+
             $this->logTransaction(
                 transactionTypes_update, 'therapyConversationMeta', $conversationId, $uid,
-                'AI ' . ($enabled ? 'enabled' : 'disabled')
+                'AI ' . ($enabled ? 'enabled (conversation unblocked)' : 'disabled')
+            );
+        }
+
+        return $result;
+    }
+
+    /**
+     * Unblock the underlying llmConversation for a therapy conversation.
+     * Clears blocked flag, reason, and timestamp.
+     *
+     * @param int $conversationId therapyConversationMeta.id
+     * @return bool
+     */
+    public function unblockConversation($conversationId)
+    {
+        $conversation = $this->getTherapyConversation($conversationId);
+        if (!$conversation) {
+            return false;
+        }
+
+        $llmConvId = $conversation['id_llmConversations'];
+        $result = $this->db->update_by_ids(
+            'llmConversations',
+            array(
+                'blocked' => 0,
+                'blocked_reason' => null,
+                'blocked_at' => null,
+                'blocked_by' => null
+            ),
+            array('id' => $llmConvId)
+        );
+
+        if ($result) {
+            $this->logTransaction(
+                transactionTypes_update, 'llmConversations', $llmConvId,
+                $conversation['id_users'] ?? 0,
+                'Conversation unblocked by therapist (AI re-enabled)'
             );
         }
 

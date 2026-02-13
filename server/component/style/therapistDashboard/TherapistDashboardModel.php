@@ -258,6 +258,156 @@ class TherapistDashboardModel extends StyleModel
     }
 
     /* =========================================================================
+     * EXPORT (CSV download)
+     * ========================================================================= */
+
+    /**
+     * Export conversations to CSV format.
+     *
+     * Supports three scopes:
+     *  - 'patient'  : single patient's conversation
+     *  - 'group'    : all conversations in a group
+     *  - 'all'      : all conversations the therapist has access to
+     *
+     * Access control is enforced: only conversations the requesting
+     * therapist is assigned to are included.
+     *
+     * @param string $scope 'patient'|'group'|'all'
+     * @param int|null $conversationId Required when scope='patient'
+     * @param int|null $groupId Required when scope='group'
+     * @return array {filename, headers, rows} or {error}
+     */
+    public function exportConversations($scope, $conversationId = null, $groupId = null)
+    {
+        $therapistId = $this->userId;
+        if (!$therapistId) {
+            return array('error' => 'Not authenticated');
+        }
+
+        $conversations = array();
+
+        switch ($scope) {
+            case 'patient':
+                if (!$conversationId) {
+                    return array('error' => 'Conversation ID is required for patient export');
+                }
+                if (!$this->canAccessConversation($therapistId, $conversationId)) {
+                    return array('error' => 'Access denied');
+                }
+                $conv = $this->messageService->getTherapyConversation($conversationId);
+                if ($conv) {
+                    $conversations = array($conv);
+                }
+                break;
+
+            case 'group':
+                if (!$groupId) {
+                    return array('error' => 'Group ID is required for group export');
+                }
+                $filters = array('group_id' => $groupId);
+                $conversations = $this->messageService->getTherapyConversationsByTherapist(
+                    $therapistId, $filters, THERAPY_STATS_LIMIT, 0
+                );
+                break;
+
+            case 'all':
+                $conversations = $this->messageService->getTherapyConversationsByTherapist(
+                    $therapistId, array(), THERAPY_STATS_LIMIT, 0
+                );
+                break;
+
+            default:
+                return array('error' => 'Invalid export scope. Use: patient, group, or all');
+        }
+
+        if (empty($conversations)) {
+            return array('error' => 'No conversations found for export');
+        }
+
+        // Build CSV rows
+        $headers = array(
+            'conversation_id',
+            'patient_name',
+            'patient_code',
+            'group_name',
+            'mode',
+            'ai_enabled',
+            'status',
+            'risk_level',
+            'message_id',
+            'timestamp',
+            'sender_type',
+            'sender_name',
+            'role',
+            'content'
+        );
+
+        $rows = array();
+        foreach ($conversations as $conv) {
+            // Skip patients without conversations
+            if (!empty($conv['no_conversation'])) {
+                continue;
+            }
+
+            $convId = $conv['id'];
+            $messages = $this->messageService->getTherapyMessages($convId, THERAPY_STATS_LIMIT);
+
+            if (empty($messages)) {
+                continue;
+            }
+
+            foreach ($messages as $msg) {
+                if (!empty($msg['is_deleted'])) {
+                    continue;
+                }
+
+                $rows[] = array(
+                    $convId,
+                    $conv['subject_name'] ?? $conv['name'] ?? '',
+                    $conv['subject_code'] ?? $conv['code'] ?? '',
+                    $conv['group_name'] ?? '',
+                    $conv['mode'] ?? '',
+                    $conv['ai_enabled'] ? 'yes' : 'no',
+                    $conv['status'] ?? '',
+                    $conv['risk_level'] ?? '',
+                    $msg['id'],
+                    $msg['timestamp'] ?? '',
+                    $msg['sender_type'] ?? $msg['role'] ?? '',
+                    $msg['label'] ?? $msg['sender_name'] ?? '',
+                    $msg['role'] ?? '',
+                    $msg['content']
+                );
+            }
+        }
+
+        if (empty($rows)) {
+            return array('error' => 'No messages found for export');
+        }
+
+        // Build filename
+        $datePart = date('Y-m-d_His');
+        switch ($scope) {
+            case 'patient':
+                $patientName = preg_replace('/[^a-zA-Z0-9_-]/', '_', $conversations[0]['subject_name'] ?? 'patient');
+                $filename = "therapy_export_{$patientName}_{$datePart}.csv";
+                break;
+            case 'group':
+                $groupName = preg_replace('/[^a-zA-Z0-9_-]/', '_', $conversations[0]['group_name'] ?? 'group');
+                $filename = "therapy_export_group_{$groupName}_{$datePart}.csv";
+                break;
+            default:
+                $filename = "therapy_export_all_{$datePart}.csv";
+                break;
+        }
+
+        return array(
+            'filename' => $filename,
+            'headers' => $headers,
+            'rows' => $rows
+        );
+    }
+
+    /* =========================================================================
      * CONVERSATION CONTROLS (business logic)
      * ========================================================================= */
 

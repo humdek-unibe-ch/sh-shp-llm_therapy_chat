@@ -133,6 +133,10 @@ class TherapistDashboardController extends TherapyBaseController
             case 'get_groups':
                 $this->handleGetGroups();
                 break;
+
+            case 'export_csv':
+                $this->handleExportCsv();
+                break;
         }
     }
 
@@ -661,6 +665,57 @@ class TherapistDashboardController extends TherapyBaseController
             $this->json($result);
         } catch (Exception $e) {
             $this->json(['error' => $e->getMessage()], 500);
+        }
+    }
+
+    /* ---- Export ---- */
+
+    private function handleExportCsv()
+    {
+        $this->validateTherapistOrFail();
+
+        $scope = $_GET['scope'] ?? 'patient';
+        $conversationId = $_GET['conversation_id'] ?? null;
+        $groupId = $_GET['group_id'] ?? null;
+
+        if (!in_array($scope, array('patient', 'group', 'all'))) {
+            $this->json(array('error' => 'Invalid scope'), 400);
+            return;
+        }
+
+        try {
+            $result = $this->model->exportConversations($scope, $conversationId, $groupId);
+
+            if (isset($result['error'])) {
+                $this->json(array('error' => $result['error']), 400);
+                return;
+            }
+
+            // Output CSV as a file download
+            header('Content-Type: text/csv; charset=utf-8');
+            header('Content-Disposition: attachment; filename="' . $result['filename'] . '"');
+            header('Cache-Control: no-cache, no-store, must-revalidate');
+            header('Pragma: no-cache');
+            header('Expires: 0');
+
+            $output = fopen('php://output', 'w');
+
+            // BOM for Excel UTF-8 compatibility
+            fwrite($output, "\xEF\xBB\xBF");
+
+            // Header row
+            fputcsv($output, $result['headers']);
+
+            // Data rows
+            foreach ($result['rows'] as $row) {
+                fputcsv($output, $row);
+            }
+
+            fclose($output);
+            $this->model->get_services()->get_router()->log_user_activity();
+            exit;
+        } catch (Exception $e) {
+            $this->json(array('error' => $e->getMessage()), 500);
         }
     }
 
