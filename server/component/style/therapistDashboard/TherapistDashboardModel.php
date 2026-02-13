@@ -105,7 +105,25 @@ class TherapistDashboardModel extends StyleModel
      */
     public function getMessages($conversationId, $limit = 100, $afterId = null)
     {
-        return $this->messageService->getTherapyMessages($conversationId, $limit, $afterId);
+        return $this->messageService->getTherapyMessages(
+            $conversationId,
+            $limit,
+            $afterId,
+            $this->getMessageLabelOverrides()
+        );
+    }
+
+    /**
+     * Message label overrides sourced from therapist dashboard DB fields.
+     */
+    private function getMessageLabelOverrides()
+    {
+        return array(
+            'ai' => $this->get_db_field('dashboard_ai_label', 'AI Assistant'),
+            'therapist' => $this->get_db_field('dashboard_therapist_label', 'Therapist'),
+            'subject' => $this->get_db_field('dashboard_subject_label', 'Patient'),
+            'system' => 'System',
+        );
     }
 
     /**
@@ -561,7 +579,12 @@ class TherapistDashboardModel extends StyleModel
             return null;
         }
 
-        $messages = $this->messageService->getTherapyMessages($conversationId);
+        $messages = $this->messageService->getTherapyMessages(
+            $conversationId,
+            THERAPY_DEFAULT_MESSAGE_LIMIT,
+            null,
+            $this->getMessageLabelOverrides()
+        );
         $notes = $this->messageService->getNotesForConversation($conversationId);
         $alerts = $this->messageService->getAlertsForTherapist($therapistId, array('unread_only' => false));
 

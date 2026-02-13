@@ -692,6 +692,13 @@ export const TherapistDashboard: React.FC<Props> = ({ config }) => {
                     isLoading={chat.isLoading}
                     isTherapistView={true}
                     emptyText={labels.emptyMessage}
+                    senderLabels={{
+                      ai: labels.aiLabel,
+                      therapist: labels.therapistLabel,
+                      subject: labels.subjectLabel,
+                      system: 'System',
+                      you: 'You',
+                    }}
                   />
                   {chat.isSending && (
                     <div className="px-3 pb-2">

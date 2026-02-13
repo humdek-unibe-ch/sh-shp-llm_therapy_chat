@@ -185,7 +185,7 @@ class TherapyMessageService extends TherapyAlertService
      * @param int|null $afterId For polling - only messages after this ID
      * @return array
      */
-    public function getTherapyMessages($conversationId, $limit = THERAPY_DEFAULT_MESSAGE_LIMIT, $afterId = null)
+    public function getTherapyMessages($conversationId, $limit = THERAPY_DEFAULT_MESSAGE_LIMIT, $afterId = null, $labelOverrides = array())
     {
         $conversation = $this->getTherapyConversation($conversationId);
         if (!$conversation) {
@@ -219,7 +219,12 @@ class TherapyMessageService extends TherapyAlertService
 
         // Add labels and format
         foreach ($messages as &$msg) {
-            $msg['label'] = $this->getSenderLabel($msg['sender_type'], $msg['sender_name']);
+            $msg['label'] = $this->getSenderLabel(
+                $msg['sender_type'] ?? null,
+                $msg['sender_name'] ?? null,
+                $msg['role'] ?? null,
+                $labelOverrides
+            );
             $msg['is_deleted'] = (bool)$msg['deleted'];
             $msg['is_edited'] = !empty($msg['edited_at']);
             // Mask deleted message content
@@ -788,14 +793,27 @@ class TherapyMessageService extends TherapyAlertService
 
     /**
      * Get display label for a sender type.
+     *
+     * Backward compatibility: if sender type is missing (legacy rows),
+     * infer AI/system from the llmMessages role.
      */
-    private function getSenderLabel($senderType, $senderName = null)
+    private function getSenderLabel($senderType, $senderName = null, $role = null, $labels = array())
     {
+        $aiLabel = $labels['ai'] ?? 'AI Assistant';
+        $therapistLabel = $labels['therapist'] ?? 'Therapist';
+        $subjectLabel = $labels['subject'] ?? 'Patient';
+        $systemLabel = $labels['system'] ?? 'System';
+
+        if (empty($senderType)) {
+            if ($role === 'assistant') return $aiLabel;
+            if ($role === 'system') return $systemLabel;
+        }
+
         switch ($senderType) {
-            case self::SENDER_AI: return 'AI Assistant';
-            case self::SENDER_THERAPIST: return $senderName ? "Therapist ($senderName)" : 'Therapist';
-            case self::SENDER_SUBJECT: return $senderName ?? 'Patient';
-            case self::SENDER_SYSTEM: return 'System';
+            case self::SENDER_AI: return $aiLabel;
+            case self::SENDER_THERAPIST: return $senderName ? "$therapistLabel ($senderName)" : $therapistLabel;
+            case self::SENDER_SUBJECT: return $senderName ?? $subjectLabel;
+            case self::SENDER_SYSTEM: return $systemLabel;
             default: return $senderName ?? 'Unknown';
         }
     }

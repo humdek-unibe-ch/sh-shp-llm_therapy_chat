@@ -230,7 +230,12 @@ class TherapyChatController extends TherapyBaseController
                 return;
             }
 
-            $messages = $therapyService->getTherapyMessages($conversation['id']);
+            $messages = $therapyService->getTherapyMessages(
+                $conversation['id'],
+                THERAPY_DEFAULT_MESSAGE_LIMIT,
+                null,
+                $this->model->getMessageLabelOverrides()
+            );
             $therapyService->updateLastSeen($conversation['id'], 'subject');
             $therapyService->markMessagesAsSeen($conversation['id'], $userId);
 
@@ -286,7 +291,12 @@ class TherapyChatController extends TherapyBaseController
 
         try {
             $therapyService = $this->model->getTherapyService();
-            $messages = $therapyService->getTherapyMessages($conversationId, THERAPY_DEFAULT_MESSAGE_LIMIT, $afterId);
+            $messages = $therapyService->getTherapyMessages(
+                $conversationId,
+                THERAPY_DEFAULT_MESSAGE_LIMIT,
+                $afterId,
+                $this->model->getMessageLabelOverrides()
+            );
             $therapyService->updateLastSeen($conversationId, 'subject');
             $therapyService->markMessagesAsSeen($conversationId, $userId);
 

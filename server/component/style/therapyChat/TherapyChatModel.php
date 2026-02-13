@@ -127,7 +127,21 @@ class TherapyChatModel extends StyleModel
         return $this->therapyService->getTherapyMessages(
             $conversation['id'],
             $limit,
-            $afterId
+            $afterId,
+            $this->getMessageLabelOverrides()
+        );
+    }
+
+    /**
+     * Message label overrides sourced from subject style DB fields.
+     */
+    public function getMessageLabelOverrides()
+    {
+        return array(
+            'ai' => $this->get_db_field('therapy_ai_label', 'AI Assistant'),
+            'therapist' => $this->get_db_field('therapy_therapist_label', 'Therapist'),
+            'subject' => 'Patient',
+            'system' => 'System',
         );
     }
 
@@ -393,11 +407,13 @@ class TherapyChatModel extends StyleModel
         if ($aiActive && !$isTag) {
             $aiResponse = $this->processAIResponse($conversationId, $conversation);
             if ($aiResponse && !isset($aiResponse['error'])) {
+                $messageLabels = $this->getMessageLabelOverrides();
                 $response['ai_message'] = array(
                     'id' => $aiResponse['message_id'],
                     'role' => 'assistant',
                     'content' => $aiResponse['content'],
                     'sender_type' => 'ai',
+                    'label' => $messageLabels['ai'] ?? 'AI Assistant',
                     'timestamp' => date('c')
                 );
             }

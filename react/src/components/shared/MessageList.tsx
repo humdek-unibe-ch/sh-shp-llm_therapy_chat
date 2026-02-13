@@ -29,6 +29,13 @@ interface MessageListProps {
   isLoading?: boolean;
   isTherapistView?: boolean;
   emptyText?: string;
+  senderLabels?: {
+    ai?: string;
+    therapist?: string;
+    subject?: string;
+    system?: string;
+    you?: string;
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -46,15 +53,27 @@ function formatTime(ts: string): string {
   }
 }
 
-function senderLabel(msg: Message, isTherapistView: boolean): string {
-  if (msg.label) return msg.label;
+function senderLabel(
+  msg: Message,
+  isTherapistView: boolean,
+  senderLabels?: MessageListProps['senderLabels'],
+): string {
+  const aiLabel = senderLabels?.ai || 'AI Assistant';
+  const systemLabel = senderLabels?.system || 'System';
+  const therapistLabel = senderLabels?.therapist || 'Therapist';
+  const subjectLabel = senderLabels?.subject || 'Patient';
+  const youLabel = senderLabels?.you || 'You';
+
+  if (msg.label && msg.label !== 'Unknown') return msg.label;
   const st = msg.sender_type;
-  if (st === 'ai') return 'AI Assistant';
-  if (st === 'system') return 'System';
-  if (st === 'therapist') return isTherapistView ? 'You' : msg.sender_name || 'Therapist';
-  if (st === 'subject') return isTherapistView ? msg.sender_name || 'Patient' : 'You';
+  if (st === 'ai') return aiLabel;
+  if (st === 'system') return systemLabel;
+  if (st === 'therapist') return isTherapistView ? youLabel : msg.sender_name || therapistLabel;
+  if (st === 'subject') return isTherapistView ? msg.sender_name || subjectLabel : youLabel;
   // Legacy role-based fallback
-  return msg.role === 'assistant' ? 'AI Assistant' : 'You';
+  if (msg.role === 'assistant') return aiLabel;
+  if (msg.role === 'system') return systemLabel;
+  return youLabel;
 }
 
 function isOwnMessage(msg: Message, isTherapistView: boolean): boolean {
@@ -87,6 +106,7 @@ export const MessageList: React.FC<MessageListProps> = ({
   isLoading = false,
   isTherapistView = false,
   emptyText = 'No messages yet. Start the conversation!',
+  senderLabels,
 }) => {
   const endRef = useRef<HTMLDivElement>(null);
 
@@ -143,7 +163,7 @@ export const MessageList: React.FC<MessageListProps> = ({
                   <i className={senderIcon(msg.sender_type)} />
                 </span>
               )}
-              <span className="tc-msg__sender">{senderLabel(msg, isTherapistView)}</span>
+              <span className="tc-msg__sender">{senderLabel(msg, isTherapistView, senderLabels)}</span>
               <span className="tc-msg__time ml-auto">{formatTime(msg.timestamp)}</span>
             </div>
 
