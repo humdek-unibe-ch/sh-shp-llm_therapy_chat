@@ -113,9 +113,15 @@ TherapyMessageService (top-level)
 | `TherapyAlertService` | Alerts (danger, tag, activity), notifications |
 | `TherapyMessageService` | Sending messages, editing, deleting, drafts, recipients |
 
-### Danger Detection
+### Safety Detection and Manual Mode
 
-When the LLM's safety assessment returns `danger_level: critical` or `emergency`, `TherapyAlertService::sendUrgentNotification()` sends emails to assigned therapists and to addresses in the `danger_notification_emails` CMS field (e.g., clinical supervisors). Emails are deduplicated. There is no server-side keyword matching — safety detection is purely context-based via the LLM.
+When the LLM's safety assessment returns `danger_level: critical` or `emergency`:
+1. The conversation is blocked (`llmConversations.blocked = 1`) and AI is disabled (`ai_enabled = 0`)
+2. `TherapyAlertService::sendUrgentNotification()` sends emails to assigned therapists and addresses in `danger_notification_emails`
+3. The conversation switches to **manual mode**: patient messages are still accepted and delivered to therapists, but no AI responses are generated
+4. Therapists can resume AI via the dashboard, which clears both `ai_enabled` and `blocked` flags
+
+There is no server-side keyword matching — safety detection is purely context-based via the LLM.
 
 ## React Frontend Architecture
 

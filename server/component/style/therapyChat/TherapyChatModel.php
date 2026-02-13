@@ -354,15 +354,12 @@ class TherapyChatModel extends StyleModel
         }
         $conversationId = $conversation['id'];
 
-        // Check if conversation is blocked (e.g. from a previous safety detection)
-        if ($this->isConversationBlocked($conversation)) {
-            return array(
-                'blocked' => true,
-                'type' => 'conversation_blocked',
-                'message' => $this->getDangerBlockedMessage(),
-                'conversation_id' => $conversationId
-            );
-        }
+        // NOTE: When a conversation is blocked (danger detection), the patient
+        // can still send messages. These go to therapists only (manual mode)
+        // because ai_enabled is set to false by handlePostLlmSafetyDetection().
+        // The isConversationAIActive() check below ensures no AI response is
+        // generated, and notifyTherapistsNewMessage() delivers the message to
+        // the assigned therapists.
 
         // Send user message (normal flow)
         $result = $this->therapyService->sendTherapyMessage(
@@ -426,17 +423,6 @@ class TherapyChatModel extends StyleModel
             $conversation = $this->getOrCreateConversation();
         }
         return $conversation;
-    }
-
-    /**
-     * Check if a conversation is blocked (e.g. due to a prior safety detection).
-     *
-     * @param array $conversation Conversation record from view_therapyConversations
-     * @return bool
-     */
-    private function isConversationBlocked($conversation)
-    {
-        return !empty($conversation['blocked']);
     }
 
     /**

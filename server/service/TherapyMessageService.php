@@ -341,11 +341,12 @@ class TherapyMessageService extends TherapyAlertService
 
             $llmConversationId = $conversation['id_llmConversations'];
 
-            // Build sent_context: therapy metadata + snapshot of context sent to LLM
-            $sentContext = array(
-                'therapy_sender_type' => self::SENDER_AI,
-                'context_message_count' => count($contextMessages)
-            );
+            // Build sent_context: full context messages sent to the LLM.
+            // This matches the parent sh-shp-llm plugin's behavior where
+            // LlmContextService::getContextForTracking() returns the full
+            // context array. Stored as JSON in llmMessages.sent_context
+            // for debugging and audit purposes.
+            $sentContext = $contextMessages;
 
             $messageId = $this->addMessage(
                 $llmConversationId,

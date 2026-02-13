@@ -118,17 +118,24 @@ Safety detection is **purely context-based** via the LLM's structured response. 
 
 ### How It Works
 
-1. **Patient sends a message** → `TherapyChatModel::sendPatientMessage()` saves the message and triggers AI response processing.
-2. **Blocked check**: Before processing, the method checks if the conversation is already blocked (from a prior safety detection). If blocked, returns `{ blocked: true, type: 'conversation_blocked' }`.
-3. **Schema injection**: `TherapyChatModel::processAIResponse()` injects the structured JSON response schema via `LlmResponseService::buildResponseContext()`. The schema includes safety categories (suicide, self-harm, harm to others, etc.) and danger level definitions. The `danger_keywords` CMS field provides **topic hints** to the LLM (not matched server-side).
-4. **LLM responds** with structured JSON containing a `safety` field: `{ is_safe, danger_level, detected_concerns, requires_intervention, safety_message }`.
-5. **Post-LLM evaluation**: `handlePostLlmSafetyDetection()` parses the structured response and evaluates the safety assessment via `LlmResponseService::assessSafety()`.
-6. **If `danger_level` is `critical` or `emergency`**:
+1. **Patient sends a message** → `TherapyChatModel::sendPatientMessage()` saves the message via `sendTherapyMessage()`. The message is always saved regardless of blocked/AI state.
+2. **AI decision**: `isConversationAIActive()` checks whether AI should respond. Returns `false` when `ai_enabled = 0` (therapist toggle, or set by safety detection).
+3. **Manual mode** (AI off or blocked): When AI is not active, `notifyTherapistsNewMessage()` delivers the message to assigned therapists. No AI response is generated. The patient can keep writing — messages are delivered to therapists only.
+4. **AI mode**: When AI is active and the patient did not @mention a therapist, `processAIResponse()` is called.
+5. **Schema injection**: `TherapyChatModel::processAIResponse()` injects the structured JSON response schema via `LlmResponseService::buildResponseContext()`. The schema includes safety categories (suicide, self-harm, harm to others, etc.) and danger level definitions. The `danger_keywords` CMS field provides **topic hints** to the LLM (not matched server-side).
+6. **LLM responds** with structured JSON containing a `safety` field: `{ is_safe, danger_level, detected_concerns, requires_intervention, safety_message }`.
+7. **Post-LLM evaluation**: `handlePostLlmSafetyDetection()` parses the structured response and evaluates the safety assessment via `LlmResponseService::assessSafety()`.
+8. **If `danger_level` is `critical` or `emergency`**:
    - Conversation is blocked via `LlmDangerDetectionService::blockConversation()` or `TherapyChatService::blockConversation()`
+   - AI is disabled: `setAIEnabled(false)` → conversation switches to manual mode
    - A danger alert is created (risk escalated to critical)
-   - AI is disabled on the conversation (`setAIEnabled(false)`)
    - Email notifications sent to therapists and configured extra addresses (`danger_notification_emails`)
    - Transaction logged for audit
+   - **Patient can still send messages** — they are delivered to therapists (manual mode)
+
+### Important: Blocked ≠ Silent
+
+When danger is detected, the conversation enters manual mode. The patient is NOT prevented from sending messages. The AI simply stops responding. All subsequent patient messages go to therapists via `notifyTherapistsNewMessage()`. This ensures the patient is never silenced during a crisis — they can always reach a human therapist.
 
 ### Important ID Distinction
 
@@ -141,10 +148,14 @@ Safety detection is **purely context-based** via the LLM's structured response. 
 ### Pause/Resume AI and Conversation Blocking
 
 Two independent states control conversation access:
-- **`therapyConversationMeta.ai_enabled`**: Controls whether AI generates responses (therapist toggle)
-- **`llmConversations.blocked`**: Hard block set by safety detection (prevents all LLM interaction)
+- **`therapyConversationMeta.ai_enabled`**: Controls whether AI generates responses. Set to `0` by safety detection or by therapist toggle. When `0`, patient messages are delivered to therapists only (manual mode).
+- **`llmConversations.blocked`**: Hard block set by safety detection at the parent LLM plugin level. Prevents LLM API calls for this conversation. Acts as a safety net at the parent plugin level.
 
-When a therapist resumes AI (`setAIEnabled(true)`), the system also calls `unblockConversation()` to clear the `llmConversations.blocked` flag, allowing messages to flow again.
+When a therapist resumes AI (`setAIEnabled(true)`), the system also calls `unblockConversation()` to clear the `llmConversations.blocked` flag, allowing AI responses to flow again.
+
+### `sent_context` for AI Messages
+
+AI response messages (`llmMessages` with `role = 'assistant'`) store the full context messages array in `sent_context`. This matches the parent `sh-shp-llm` plugin's behavior where `LlmContextService::getContextForTracking()` returns all system instructions, schema, language/safety hints, and conversation history metadata. The "Context Sent to AI" popup in the admin panel displays this data for debugging and audit.
 
 ### CSS Architecture
 
