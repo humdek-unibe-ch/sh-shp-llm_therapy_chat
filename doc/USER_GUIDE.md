@@ -1,147 +1,271 @@
-# User Guide
+# LLM Therapy Chat - Practical User Guide
 
-## For Patients (Subjects)
+This guide is written for **non-technical users**.
 
-### Accessing the Chat
-
-If you are enrolled in the therapy program, you will see a floating chat button
-(usually in the bottom-right corner) on every page. Click it to open the chat.
-
-### Chatting
-
-- **Type your message** in the text box and press **Enter** or click **Send**
-- **AI Assistant** may respond automatically (if enabled by your therapist)
-- **Your therapist** can also send messages directly — these appear with a green highlight
-- **Timestamps** are shown in 24-hour format (e.g., 14:30)
-
-### Reaching Your Therapist
-
-Type **@** in your message to see a dropdown of available therapists you can tag.
-You can tag a **specific therapist** by name (e.g., `@Dr. Smith`) to notify only them,
-or type **@therapist** to tag all assigned therapists at once. Select from the dropdown
-or type the name to filter.
-
-**Tagged messages skip AI**: When you tag a therapist (`@therapist` or `@SpecificName`),
-your message is sent only to therapists — no AI response is generated. This keeps
-therapist-directed messages focused on human attention.
-
-Type **#** to see a dropdown of predefined topics/reasons (e.g., `#overwhelmed`,
-`#need_talk`). Select one to include it in your message.
-
-Use the **arrow keys** to navigate the dropdown, **Enter** or **Tab** to select,
-and **Escape** to dismiss.
-
-A help text below the message input explains these options.
-
-> **Note**: If your conversation is paused by your therapist, you will see a notice
-> and will not be able to send messages until it is resumed.
-
-### Safety Detection
-
-If you send a message that contains concerning content (e.g., references to self-harm),
-the system will:
-- Show you a safety message with helpful resources
-- Notify your therapist immediately via email
-- Block AI responses until your therapist reviews the conversation
-
-### Voice Input
-
-If enabled, click the **microphone button** to dictate your message.
-Click again to stop recording.
+It explains, in plain language, how to:
+- set up the plugin in CMS,
+- assign therapists to the right patient groups,
+- and use the therapist dashboard in daily work.
 
 ---
 
-## For Therapists
+## 1) Who this guide is for
 
-### Dashboard Overview
+### Admin / Coordinator
+You configure pages and settings in CMS, manage groups, and assign therapists.
 
-The therapist dashboard has three main areas:
+### Therapist
+You use the dashboard to monitor patients, respond, create notes, and manage risk/status.
 
-1. **Patient List** (left sidebar): All patients you are assigned to monitor, including those who have not started a conversation yet
-2. **Conversation View** (center): Full message history with the selected patient
-3. **Notes & Controls** (right sidebar): Clinical notes, risk controls
+### Patient
+You use the chat interface and can tag therapists when needed.
 
-### Group Tabs
+---
 
-If you monitor patients in multiple groups, you'll see **tabs** at the top.
-Click a tab to filter the patient list by group. The "All Groups" tab shows everyone.
+## 2) Quick setup checklist (admin)
 
-### Starting Conversations
+Before going live, confirm:
 
-If a patient does not have an active conversation yet, you will see a "Start Conversation" button next to their name.
-Clicking it initializes a new conversation for that patient, allowing you to begin communication proactively.
+- [ ] The plugin is installed and active.
+- [ ] A **module configuration page** exists (`sh_module_llm_therapy_chat`).
+- [ ] A **patient page** exists with style `therapyChat`.
+- [ ] A **therapist page** exists with style `therapistDashboard`.
+- [ ] Users are added to correct groups (patients and therapists).
+- [ ] Therapists are assigned to monitor patient groups.
 
-### Unread Tracking
+---
 
-- **Blue badge** on patient name = unread messages from that patient
-- **Red badge** = unread alerts
-- **Group tab badge** = total unread messages from patients in that group
-- Total unread count shown in the stats header
+## 3) CMS configuration (module page)
 
-> **Note:** Unread counts include only **patient and therapist messages** — AI-generated
-> messages are excluded, so you see how many human messages need your attention.
+Open the module page in CMS and configure these core fields:
 
-### Reading a Conversation
+1. **Subject Group**  
+   Group containing patients.
 
-Click any patient in the list to load their conversation. Messages are color-coded:
+2. **Therapist Group**  
+   Group containing therapists.
 
-| Color | Sender |
-|-------|--------|
-| **Blue (right)** | Your messages |
-| **Light blue (left)** | Patient messages |
-| **White with border** | AI responses |
-| **Green with left border** | Other therapist messages |
-| **Yellow centered** | System messages |
+3. **Subject Page**  
+   Page where patients open chat.
 
-**Edited messages** show a small "edited" indicator.
-**Deleted messages** show "This message was removed."
-**Timestamps** are displayed in 24-hour format (e.g., 14:30).
+4. **Therapist Page**  
+   Page where therapists open dashboard.
 
-### Sending Messages
+5. **Floating Icon / Label / Position**  
+   Controls how the floating button looks and where it appears.
 
-Type in the input area and press Enter or click Send. Your message goes
-directly to the patient.
+6. **Default Mode** (`AI Hybrid` or `Human Only`)  
+   Sets how new conversations start.
 
-### AI Draft Generation
+7. **Polling Interval**  
+   How often the UI checks for new updates.
 
-1. Click **"Generate AI Draft"** below the message area
-2. A **modal dialog** opens while the AI generates a suggested response
-3. The AI draft is displayed as **formatted text** (headings, lists, bold, etc.) in an editable area
-4. **Review and edit** the draft using the rich text toolbar (bold, italic, underline, lists)
-5. Click **"Send to Patient"** to send the message and close the modal, or **"Discard"** to cancel
+8. **Enable Tagging**  
+   Allows patients to use `@therapist` and `#topic`.
 
-**Regenerate & Undo:**
-- Click the **"Regenerate"** button (🔄) to generate a new AI draft. Your current text is saved automatically.
-- Click the **"Undo"** button (↩) to restore the previous draft text from before the last regeneration.
-- You can regenerate multiple times — each previous version is saved in the undo stack.
+9. **Tag Reasons**  
+   Predefined topic list that appears when patient types `#`.
 
-### Conversation Summarization
+---
 
-1. Click **"Summarize"** next to the Generate AI Draft button
-2. A **modal dialog** opens while the AI generates a clinical summary
-3. The summary is displayed with **full markdown formatting** — headings, tables, lists, bold text, etc.
-4. Review the summary — it includes key topics, emotional state, therapeutic interventions, progress, and risk flags
-5. Click **"Save as Clinical Note"** to store the summary as a note, or **"Close"** to dismiss
-6. Saved summaries appear in the Clinical Notes panel with their markdown formatting preserved
+## 4) Configure the Patient Chat page (`therapyChat`)
 
-### Managing Conversations
+On the patient chat section, review these key options:
 
-- **AI Toggle**: Pause or resume AI responses for a conversation
-- **Status**: Set conversation to Active, Paused, or Closed (patients cannot send messages when paused)
-- **Risk Level**: Rate the patient's risk (Low / Medium / High / Critical)
+- **Enable AI** - turns AI replies on/off.
 
-Risk and status changes are reflected **immediately** in the UI without a full page reload.
+If **Enable AI** is turned **off**, the plugin works as a normal human chat system:
 
-### Clinical Notes
+- patients can chat only with therapist(s),
+- patients do **not** get AI replies,
+- patients do **not** have access to AI.
 
-Add private notes about the conversation that are only visible to therapists.
-These are never shown to the patient or AI.
+This is useful when you want a fully therapist-led communication flow.
+- **LLM Model / Temperature / Max Tokens** - AI behavior and response length.
+- **Conversation Context** - extra instruction for AI tone and scope.
+- **Help Text** - message under input to explain `@` and `#`.
+- **Danger Settings** - safety topic hints + safety message + optional alert emails.
+- **Enable Floating Chat** - opens chat in modal from floating button.
+- **Auto Start + Auto Start Context** - optional first welcome/system message.
+- **Speech-to-Text** - microphone input if enabled.
+- **Therapist email notification fields** - email templates for patient-to-therapist messages/tags.
 
-- **Edit** a note by clicking the pencil icon
-- **Delete** a note by clicking the trash icon (soft-delete, can be recovered)
-- All note changes are logged in the audit trail with the editor's name
+---
 
-### Alerts
+## 5) Configure Therapist Dashboard page (`therapistDashboard`)
 
-Critical alerts appear as a red banner at the top of the dashboard.
-Click **"Dismiss"** to mark as read.
+On the dashboard section, set:
+
+- **Dashboard labels/texts** (titles, button labels, empty states).
+- **Dashboard visibility controls** (alerts panel, notes panel, stats header, etc.).
+- **LLM Model / Temperature / Max Tokens** for draft and summary tools.
+- **Draft Context** - extra instruction for AI draft responses.
+- **Summary Context** - extra instruction for AI conversation summaries.
+- **Conversation controls** permissions (AI toggle, risk, status, notes).
+- **Email notification templates** for therapist-to-patient and patient-to-therapist notifications.
+- **Speech-to-Text** options.
+- **Start Conversation labels** for patients without an active conversation.
+
+---
+
+## 6) Group and assignment model (important)
+
+There are **two layers**:
+
+1. **Role access layer**
+   - Patient group = can access patient chat
+   - Therapist group = can access therapist dashboard
+
+2. **Monitoring scope layer**
+   - Therapists are assigned to specific **patient groups**
+   - This decides which patients they can actually monitor
+
+So a therapist can have dashboard access but still see no patients until monitoring assignments are added.
+
+---
+
+## 7) Assign therapists to patient groups
+
+1. Go to **Admin -> Users**.
+2. Open a therapist user profile.
+3. Find card: **"Therapy Chat - Patient Group Monitoring"**.
+4. Select one or more patient groups.
+5. Click **Save Assignments**.
+
+Result: that therapist can now see and respond to patients in those selected groups.
+
+---
+
+## 8) Add patients to groups
+
+1. Open each patient profile.
+2. Add patient to the appropriate patient group(s).
+3. Save user changes.
+
+If therapist assignment and patient group overlap, that patient appears in therapist dashboard.
+
+---
+
+## 9) Therapist dashboard - daily workflow
+
+### A. Start of day
+1. Open dashboard.
+2. Check stats (patients, active, critical, alerts).
+3. Check alert banner.
+4. Select a group tab (or "All Groups").
+
+### B. Working patient by patient
+1. Click a patient in left list.
+2. If patient has no conversation, click **Start Conversation**.
+3. Read latest messages.
+4. Reply directly OR use **Generate AI Draft**.
+5. If needed, use **Summarize** and save as note.
+
+### C. Clinical controls
+- **AI Toggle**: pause/resume AI
+- **Status**: Active / Paused / Closed
+- **Risk**: Low / Medium / High / Critical
+- **Notes**: add, edit, delete (therapist-only)
+
+### D. Inbox hygiene
+- Use unread badges to prioritize.
+- Mark messages as read.
+- Dismiss resolved alerts.
+
+---
+
+## 10) What patients experience
+
+- They see a floating chat button (if in patient group).
+- They can type messages and receive AI and/or therapist responses (depending on mode/settings).
+- Typing `@` lets them notify therapist(s).
+- Typing `#` lets them add a predefined topic.
+- If therapist pauses conversation status, patient cannot send until resumed.
+
+---
+
+## 11) Safety behavior (simple overview)
+
+If content is flagged as concerning:
+
+- therapists are alerted,
+- AI can be paused/blocked for safety,
+- patient still gets guidance text,
+- therapist reviews and decides next action.
+
+The system is designed so therapists can continue care and supervision quickly.
+
+---
+
+## 12) Email notifications
+
+The plugin can send:
+
+- therapist -> patient message notifications,
+- patient -> therapist message notifications,
+- special notifications when patient tags therapist.
+
+Admin can customize:
+
+- subject lines,
+- message templates,
+- sender name/email.
+
+---
+
+## 13) Common issues and simple fixes
+
+### Therapist sees no patients
+Check both:
+1. Therapist is in therapist group, and
+2. Therapist has monitoring assignments to patient groups.
+
+### Patient does not see chat button
+Check:
+1. Patient is in configured subject group.
+2. Subject page is selected in module settings.
+3. Floating button settings are configured.
+
+### AI is not responding
+Check:
+1. **Enable AI** is on for the style.
+2. Conversation is not paused/closed.
+3. LLM model is configured.
+
+### Tagging does not work
+Check:
+1. Tagging is enabled.
+2. Therapist assignments exist.
+3. Tag reasons are valid JSON list.
+
+---
+
+## 14) Go-live checklist (recommended)
+
+- [ ] Test with one demo patient and one demo therapist.
+- [ ] Verify therapist can see only assigned patients.
+- [ ] Verify `@therapist` creates alert/notification.
+- [ ] Verify AI draft + summary works.
+- [ ] Verify risk/status changes are saved.
+- [ ] Verify clinical notes are therapist-only.
+- [ ] Verify email templates and sender address.
+
+---
+
+## 15) Quick reference: who does what
+
+### Admin
+- Configures module fields and pages
+- Manages groups
+- Assigns therapist monitoring groups
+
+### Therapist
+- Monitors assigned patients
+- Sends messages / uses AI draft
+- Sets risk/status
+- Adds notes and handles alerts
+
+### Patient
+- Uses chat
+- Tags therapist when needed
+- Receives support based on configured mode
