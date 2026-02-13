@@ -211,4 +211,38 @@ define('THERAPY_URGENCY_EMERGENCY', 'emergency');
 
 /** Valid tag urgencies (for metadata validation) */
 define('THERAPY_VALID_URGENCIES', [THERAPY_URGENCY_NORMAL, THERAPY_URGENCY_URGENT, THERAPY_URGENCY_EMERGENCY]);
+
+// =====================================================
+// CONFIGURATION DEFAULTS
+// =====================================================
+
+/** Default conversation list limit */
+define('THERAPY_DEFAULT_LIST_LIMIT', 50);
+
+/** Maximum conversations for stats queries (no pagination) */
+define('THERAPY_STATS_LIMIT', 10000);
+
+/** Default message history limit for AI context */
+define('THERAPY_AI_CONTEXT_HISTORY_LIMIT', 50);
+
+/** Default message display limit */
+define('THERAPY_DEFAULT_MESSAGE_LIMIT', 100);
+
+/** Default summary message limit */
+define('THERAPY_SUMMARY_MESSAGE_LIMIT', 200);
+
+/** Maximum audio file size in bytes (25 MB) */
+define('THERAPY_MAX_AUDIO_SIZE', 25 * 1024 * 1024);
+
+/** Default polling interval in seconds */
+define('THERAPY_DEFAULT_POLLING_INTERVAL', 3);
+
+/** Default message preview length for email notifications */
+define('THERAPY_EMAIL_PREVIEW_LENGTH', 200);
+
+/** Default LLM max tokens */
+define('THERAPY_DEFAULT_MAX_TOKENS', 2048);
+
+/** Default LLM temperature */
+define('THERAPY_DEFAULT_TEMPERATURE', 0.7);
 ?>

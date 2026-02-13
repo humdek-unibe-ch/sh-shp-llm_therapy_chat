@@ -12,9 +12,9 @@
 ?>
 <!-- Therapy Chat React App Container -->
 <div class="therapy-chat-root"
-     data-user-id="<?php echo $user_id; ?>"
-     data-section-id="<?php echo $section_id; ?>"
-     data-conversation-id="<?php echo $conversation_id ?? ''; ?>"
+     data-user-id="<?php echo htmlspecialchars($user_id, ENT_QUOTES, 'UTF-8'); ?>"
+     data-section-id="<?php echo htmlspecialchars($section_id, ENT_QUOTES, 'UTF-8'); ?>"
+     data-conversation-id="<?php echo htmlspecialchars($conversation_id ?? '', ENT_QUOTES, 'UTF-8'); ?>"
      data-config="<?php echo htmlspecialchars($this->getReactConfig()); ?>">
      <!-- React app will be mounted here -->
 </div>

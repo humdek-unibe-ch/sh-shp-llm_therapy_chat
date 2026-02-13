@@ -23,24 +23,11 @@ import { TaggingPanel } from '../shared/TaggingPanel';
 import { useChatState } from '../../hooks/useChatState';
 import { usePolling } from '../../hooks/usePolling';
 import { createSubjectApi } from '../../utils/api';
+import { updateFloatingBadge } from '../../utils/floatingBadge';
 import type { SubjectChatConfig } from '../../types';
 
 interface SubjectChatProps {
   config: SubjectChatConfig;
-}
-
-/**
- * Update (or hide) the server-rendered floating chat badge in the DOM.
- */
-function updateFloatingBadge(count: number): void {
-  const badge = document.querySelector('.therapy-chat-badge');
-  if (!badge) return;
-  if (count <= 0) {
-    (badge as HTMLElement).style.display = 'none';
-  } else {
-    (badge as HTMLElement).textContent = String(count);
-    (badge as HTMLElement).style.display = '';
-  }
 }
 
 /**

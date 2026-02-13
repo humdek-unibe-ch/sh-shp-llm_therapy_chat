@@ -34,8 +34,7 @@ abstract class TherapyBaseController extends BaseController
         'video/webm',
     ];
 
-    /** Max audio upload size (25 MB) */
-    private const MAX_AUDIO_SIZE = 25 * 1024 * 1024;
+    /** Max audio upload size (25 MB) - uses THERAPY_MAX_AUDIO_SIZE from TherapyLookups */
 
     /* =========================================================================
      * SECTION ROUTING
@@ -147,7 +146,7 @@ abstract class TherapyBaseController extends BaseController
         }
 
         $audioFile = $_FILES['audio'];
-        if ($audioFile['size'] > self::MAX_AUDIO_SIZE) {
+        if ($audioFile['size'] > THERAPY_MAX_AUDIO_SIZE) {
             $this->json(['error' => 'Audio file too large (max 25MB)'], 400);
         }
 

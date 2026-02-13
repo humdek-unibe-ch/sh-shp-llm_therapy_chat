@@ -91,33 +91,13 @@ class TherapyChatService extends LlmService
             return null;
         }
 
-        // Get lookup IDs
-        $modeId = $this->db->get_lookup_id_by_code(THERAPY_LOOKUP_CHAT_MODES, $mode);
-        $statusId = $this->db->get_lookup_id_by_code(THERAPY_LOOKUP_CONVERSATION_STATUS, THERAPY_STATUS_ACTIVE);
-        $riskId = $this->db->get_lookup_id_by_code(THERAPY_LOOKUP_RISK_LEVELS, THERAPY_RISK_LOW);
-
-        // Add therapy metadata - NO id_groups, NO id_therapist
-        $therapyData = array(
-            'id_llmConversations' => $conversationId,
-            'id_chatModes' => $modeId,
-            'ai_enabled' => $aiEnabled ? 1 : 0,
-            'id_conversationStatus' => $statusId,
-            'id_riskLevels' => $riskId
+        $therapyMetaId = $this->createTherapyMetadata(
+            $conversationId, $mode, $aiEnabled, $userId, 'Therapy conversation created'
         );
-
-        $therapyMetaId = $this->db->insert('therapyConversationMeta', $therapyData);
 
         if (!$therapyMetaId) {
             return null;
         }
-
-        $this->logTransaction(
-            transactionTypes_insert,
-            'therapyConversationMeta',
-            $therapyMetaId,
-            $userId,
-            'Therapy conversation created'
-        );
 
         $conversation = $this->getTherapyConversation($therapyMetaId);
 
@@ -314,33 +294,14 @@ class TherapyChatService extends LlmService
             return null;
         }
 
-        // Get lookup IDs
-        $modeId = $this->db->get_lookup_id_by_code(THERAPY_LOOKUP_CHAT_MODES, $mode);
-        $statusId = $this->db->get_lookup_id_by_code(THERAPY_LOOKUP_CONVERSATION_STATUS, THERAPY_STATUS_ACTIVE);
-        $riskId = $this->db->get_lookup_id_by_code(THERAPY_LOOKUP_RISK_LEVELS, THERAPY_RISK_LOW);
-
-        // Add therapy metadata
-        $therapyData = array(
-            'id_llmConversations' => $conversationId,
-            'id_chatModes' => $modeId,
-            'ai_enabled' => $aiEnabled ? 1 : 0,
-            'id_conversationStatus' => $statusId,
-            'id_riskLevels' => $riskId
+        $therapyMetaId = $this->createTherapyMetadata(
+            $conversationId, $mode, $aiEnabled, $therapistId,
+            'Therapy conversation initialized by therapist for patient #' . $patientId
         );
-
-        $therapyMetaId = $this->db->insert('therapyConversationMeta', $therapyData);
 
         if (!$therapyMetaId) {
             return null;
         }
-
-        $this->logTransaction(
-            transactionTypes_insert,
-            'therapyConversationMeta',
-            $therapyMetaId,
-            $therapistId,
-            'Therapy conversation initialized by therapist for patient #' . $patientId
-        );
 
         $conversation = $this->getTherapyConversation($therapyMetaId);
 
@@ -380,6 +341,47 @@ class TherapyChatService extends LlmService
         } catch (Exception $e) {
             error_log("TherapyChat: Failed to send auto-start message: " . $e->getMessage());
         }
+    }
+
+    /**
+     * Create therapy metadata record for a new conversation.
+     *
+     * @param int $conversationId llmConversations.id
+     * @param string $mode Chat mode code
+     * @param bool $aiEnabled
+     * @param int $logUserId User ID for transaction logging
+     * @param string $logMessage Transaction log description
+     * @return int|null therapyConversationMeta.id or null on failure
+     */
+    private function createTherapyMetadata($conversationId, $mode, $aiEnabled, $logUserId, $logMessage)
+    {
+        $modeId = $this->db->get_lookup_id_by_code(THERAPY_LOOKUP_CHAT_MODES, $mode);
+        $statusId = $this->db->get_lookup_id_by_code(THERAPY_LOOKUP_CONVERSATION_STATUS, THERAPY_STATUS_ACTIVE);
+        $riskId = $this->db->get_lookup_id_by_code(THERAPY_LOOKUP_RISK_LEVELS, THERAPY_RISK_LOW);
+
+        $therapyData = array(
+            'id_llmConversations' => $conversationId,
+            'id_chatModes' => $modeId,
+            'ai_enabled' => $aiEnabled ? 1 : 0,
+            'id_conversationStatus' => $statusId,
+            'id_riskLevels' => $riskId
+        );
+
+        $therapyMetaId = $this->db->insert('therapyConversationMeta', $therapyData);
+
+        if (!$therapyMetaId) {
+            return null;
+        }
+
+        $this->logTransaction(
+            transactionTypes_insert,
+            'therapyConversationMeta',
+            $therapyMetaId,
+            $logUserId,
+            $logMessage
+        );
+
+        return $therapyMetaId;
     }
 
     /* =========================================================================
@@ -808,7 +810,7 @@ class TherapyChatService extends LlmService
      */
     public function updateNote($noteId, $therapistId, $newContent)
     {
-        $this->db->update_by_ids(
+        $result = $this->db->update_by_ids(
             'therapyNotes',
             array(
                 'content' => $newContent,
@@ -817,13 +819,14 @@ class TherapyChatService extends LlmService
             array('id' => $noteId)
         );
 
-        // Transaction logging
-        $this->logTransaction(
-            transactionTypes_update, 'therapyNotes', $noteId, $therapistId,
-            'Note edited by therapist'
-        );
+        if ($result) {
+            $this->logTransaction(
+                transactionTypes_update, 'therapyNotes', $noteId, $therapistId,
+                'Note edited by therapist'
+            );
+        }
 
-        return true;
+        return $result;
     }
 
     /**
@@ -837,7 +840,7 @@ class TherapyChatService extends LlmService
     {
         $deletedStatusId = $this->db->get_lookup_id_by_code(THERAPY_LOOKUP_NOTE_STATUS, THERAPY_NOTE_STATUS_DELETED);
 
-        $this->db->update_by_ids(
+        $result = $this->db->update_by_ids(
             'therapyNotes',
             array(
                 'id_noteStatus' => $deletedStatusId,
@@ -846,12 +849,14 @@ class TherapyChatService extends LlmService
             array('id' => $noteId)
         );
 
-        $this->logTransaction(
-            transactionTypes_delete, 'therapyNotes', $noteId, $therapistId,
-            'Note soft-deleted by therapist'
-        );
+        if ($result) {
+            $this->logTransaction(
+                transactionTypes_delete, 'therapyNotes', $noteId, $therapistId,
+                'Note soft-deleted by therapist'
+            );
+        }
 
-        return true;
+        return $result;
     }
 
     /* =========================================================================
@@ -866,7 +871,7 @@ class TherapyChatService extends LlmService
      */
     public function getTherapistStats($therapistId)
     {
-        $conversations = $this->getTherapyConversationsByTherapist($therapistId, array(), 1000, 0);
+        $conversations = $this->getTherapyConversationsByTherapist($therapistId, array(), THERAPY_STATS_LIMIT, 0);
 
         $stats = array(
             'total' => count($conversations),

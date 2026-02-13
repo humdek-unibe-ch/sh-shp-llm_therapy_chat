@@ -25,6 +25,15 @@ import { LoadingIndicator } from '../shared/LoadingIndicator';
 import { useChatState } from '../../hooks/useChatState';
 import { usePolling } from '../../hooks/usePolling';
 import { createTherapistApi } from '../../utils/api';
+import { updateFloatingBadge } from '../../utils/floatingBadge';
+import { StatsHeader } from './StatsHeader';
+import { AlertBanner } from './AlertBanner';
+import { GroupTabs } from './GroupTabs';
+import { PatientList } from './PatientList';
+import type { FilterType } from './PatientList';
+import { ConversationHeader } from './ConversationHeader';
+import { NotesPanel } from './NotesPanel';
+import { DraftEditorModal } from './DraftEditor';
 import type {
   TherapistDashboardConfig,
   Conversation,
@@ -40,8 +49,6 @@ import type {
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
-
-type FilterType = 'all' | 'active' | 'critical' | 'unread';
 
 interface Props {
   config: TherapistDashboardConfig;
@@ -175,15 +182,7 @@ export const TherapistDashboard: React.FC<Props> = ({ config }) => {
         byGroup: uc?.byGroup ?? {},
       });
       // Sync the floating icon badge (server-rendered) with live data
-      const badge = document.querySelector('.therapy-chat-badge') as HTMLElement | null;
-      if (badge) {
-        if (total <= 0) {
-          badge.style.display = 'none';
-        } else {
-          badge.textContent = String(total);
-          badge.style.display = '';
-        }
-      }
+      updateFloatingBadge(total);
     } catch (err) {
       console.error('Unread counts error:', err);
     }
@@ -534,27 +533,17 @@ export const TherapistDashboard: React.FC<Props> = ({ config }) => {
     }
   }, [api, chat.conversation?.id, summaryText, loadNotes]);
 
-  // ---- Badge helpers ----
-
-  const riskBadge = (r?: RiskLevel) => {
-    if (!r) return null;
-    const v: Record<RiskLevel, string> = { low: 'badge-success', medium: 'badge-warning', high: 'badge-danger', critical: 'badge-danger' };
-    return (
-      <span className={`badge ${v[r]}`}>
-        {r === 'critical' && <i className="fas fa-exclamation-triangle mr-1" />}
-        {labels[`risk${r.charAt(0).toUpperCase() + r.slice(1)}` as keyof typeof labels] || r}
-      </span>
-    );
-  };
-
-  const statusBadge = (s?: ConversationStatus) => {
-    if (!s) return null;
-    const v: Record<ConversationStatus, string> = { active: 'badge-success', paused: 'badge-warning', closed: 'badge-secondary' };
-    return <span className={`badge ${v[s]}`}>{labels[`status${s.charAt(0).toUpperCase() + s.slice(1)}` as keyof typeof labels] || s}</span>;
-  };
-
   // ---- Filtered critical alerts ----
   const criticalAlerts = alerts.filter((a) => a.severity === 'critical' || a.severity === 'emergency');
+
+  // ---- Unread count for selected conversation ----
+  const selectedUnreadCount = (() => {
+    if (!chat.conversation?.id_users) return 0;
+    const bySubject = unreadCounts?.bySubject ?? {};
+    const uid = chat.conversation.id_users;
+    const uc = bySubject[uid] ?? bySubject[String(uid)] ?? null;
+    return (uc as { unreadCount?: number } | undefined)?.unreadCount ?? 0;
+  })();
 
   // ---- Render ----
 
@@ -562,247 +551,61 @@ export const TherapistDashboard: React.FC<Props> = ({ config }) => {
     <div className="tc-dashboard container-fluid py-3">
       {/* ============ Stats Header ============ */}
       {features.showStatsHeader && (
-        <div className="card border-0 shadow-sm mb-3">
-          <div className="card-body d-flex justify-content-between align-items-center flex-wrap py-2">
-            <h5 className="mb-0">
-              <i className="fas fa-stethoscope text-primary mr-2" />
-              {labels.title}
-            </h5>
-            <div className="d-flex flex-wrap" style={{ gap: '1.5rem' }}>
-              <StatItem value={config.stats.total} label="Patients" />
-              <StatItem value={config.stats.active} label={labels.statusActive} className="text-success" />
-              <StatItem value={unreadCounts.total} label="Unread" className={unreadCounts.total > 0 ? 'text-primary font-weight-bold' : ''} />
-              <StatItem value={config.stats.risk_critical} label={labels.riskCritical} className="text-danger" />
-              <StatItem value={unreadCounts.totalAlerts} label="Alerts" className={unreadCounts.totalAlerts > 0 ? 'text-warning font-weight-bold' : 'text-warning'} />
-            </div>
-          </div>
-        </div>
+        <StatsHeader
+          title={labels.title}
+          stats={config.stats}
+          unreadCounts={unreadCounts}
+          labels={{
+            title: labels.title,
+            statusActive: labels.statusActive,
+            riskCritical: labels.riskCritical,
+          }}
+        />
       )}
 
       {/* ============ Alert Banner ============ */}
       {features.showAlertsPanel && criticalAlerts.length > 0 && (
-        <div className="mb-3">
-          {criticalAlerts.map((a) => {
-            // Build a clean display message from alert data
-            const meta = (a.metadata ?? {}) as Record<string, unknown>;
-            const keywords = Array.isArray(meta.detected_keywords) ? (meta.detected_keywords as string[]).join(', ') : null;
-            const alertType = a.alert_type ?? '';
-            let displayMsg = '';
-            if (alertType === 'danger_detected' && keywords) {
-              displayMsg = `Danger keywords detected: ${keywords}`;
-            } else if (alertType === 'tag_received') {
-              displayMsg = meta.reason ? `Tagged: ${meta.reason}` : 'Patient tagged therapist';
-            } else {
-              // Fallback: show message but strip any JSON blobs
-              const raw = a.message ?? '';
-              const jsonIdx = raw.indexOf('{');
-              displayMsg = jsonIdx > 0 ? raw.substring(0, jsonIdx).trim().replace(/["\n]+$/, '') : raw;
-            }
-
-            return (
-              <div key={a.id} className="alert alert-danger d-flex justify-content-between align-items-center mb-2">
-                <div className="text-truncate mr-2">
-                  <i className="fas fa-exclamation-triangle mr-2" />
-                  <strong>{a.subject_name}:</strong> {displayMsg}
-                </div>
-                <button className="btn btn-outline-light btn-sm flex-shrink-0" onClick={() => handleMarkAlertRead(a.id)}>
-                  <i className="fas fa-check mr-1" />
-                  {labels.dismiss}
-                </button>
-              </div>
-            );
-          })}
-          {criticalAlerts.length > 1 && (
-            <button
-              className="btn btn-sm btn-outline-danger"
-              onClick={async () => {
-                try {
-                  await api.markAllAlertsRead();
-                  loadAlerts();
-                  loadUnreadCounts();
-                } catch { /* ignore */ }
-              }}
-            >
-              <i className="fas fa-check-double mr-1" />
-              Dismiss all alerts
-            </button>
-          )}
-        </div>
+        <AlertBanner
+          alerts={criticalAlerts}
+          onAcknowledge={handleMarkAlertRead}
+          onDismissAll={async () => {
+            try {
+              await api.markAllAlertsRead();
+              loadAlerts();
+              loadUnreadCounts();
+            } catch { /* ignore */ }
+          }}
+          labels={{ dismiss: labels.dismiss }}
+        />
       )}
 
       {/* ============ Group Tabs ============ */}
-      {groups.length > 0 && (
-        <ul className="nav nav-tabs mb-3">
-          <li className="nav-item">
-            <button
-              className={`nav-link ${activeGroupId === null ? 'active' : ''}`}
-              onClick={() => switchGroup(null)}
-            >
-              {labels.allGroupsTab}
-              {unreadCounts.total > 0 && (
-                <span className="badge badge-primary ml-1">{unreadCounts.total}</span>
-              )}
-            </button>
-          </li>
-          {groups.map((g) => {
-            const groupUnread = unreadCounts?.byGroup?.[g.id_groups] ?? unreadCounts?.byGroup?.[String(g.id_groups)] ?? 0;
-            return (
-              <li key={g.id_groups} className="nav-item">
-                <button
-                  className={`nav-link ${activeGroupId == g.id_groups ? 'active' : ''}`}
-                  onClick={() => switchGroup(g.id_groups)}
-                >
-                  {g.group_name}
-                  {g.patient_count != null && (
-                    <span className="badge badge-light ml-1">{g.patient_count}</span>
-                  )}
-                  {groupUnread > 0 && (
-                    <span className="badge badge-primary ml-1">{groupUnread}</span>
-                  )}
-                </button>
-              </li>
-            );
-          })}
-        </ul>
-      )}
+      <GroupTabs
+        groups={groups}
+        selectedGroupId={activeGroupId}
+        onSelectGroup={switchGroup}
+        unreadByGroup={unreadCounts.byGroup}
+        totalUnread={unreadCounts.total}
+        labels={{ allGroupsTab: labels.allGroupsTab }}
+      />
 
-      <div className="row" style={{ minHeight: 500 }}>
+      <div className="row tc-row-min-height">
         {/* ============ Patient List Sidebar ============ */}
         <div className="col-md-4 col-lg-3 mb-3 mb-md-0">
-          <div className="card border-0 shadow-sm h-100">
-            <div className="card-header bg-light py-2">
-              <div className="d-flex justify-content-between align-items-center mb-2">
-                <h6 className="mb-0">
-                  <i className="fas fa-users mr-2" />
-                  {labels.conversationsHeading}
-                </h6>
-              </div>
-              {/* Filter buttons */}
-              <div className="btn-group btn-group-sm w-100">
-                {(['all', 'active', 'critical', 'unread'] as FilterType[]).map((f) => (
-                  <button
-                    key={f}
-                    className={`btn ${activeFilter === f ? (f === 'critical' ? 'btn-danger' : 'btn-primary') : 'btn-outline-secondary'}`}
-                    onClick={() => switchFilter(f)}
-                  >
-                    {labels[`filter${f.charAt(0).toUpperCase() + f.slice(1)}` as keyof typeof labels] || f}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            <div className="list-group list-group-flush tc-patient-list">
-              {listLoading ? (
-                <div className="p-3 text-center text-muted">
-                  <div className="spinner-border spinner-border-sm" role="status" />
-                </div>
-              ) : listError ? (
-                <div className="p-3 text-center text-danger">{listError}</div>
-              ) : conversations.length === 0 ? (
-                <div className="p-3 text-center text-muted">{labels.noConversations}</div>
-              ) : (
-                conversations.map((conv) => {
-                  const hasConversation = !conv.no_conversation || Number(conv.no_conversation) === 0;
-                  // Safely access bySubject – guard against undefined/null and
-                  // handle both numeric and zero-padded string user IDs
-                  const bySubject = unreadCounts?.bySubject ?? {};
-                  const uid = conv.id_users ?? 0;
-                  const uc = bySubject[uid] ?? bySubject[String(uid)] ?? null;
-                  const unread = hasConversation ? (uc?.unreadCount ?? 0) : 0;
-                  const isActive = hasConversation && selectedId != null && String(selectedId) === String(conv.id);
-                  const isInitializing = initializingPatientId === uid;
-
-                  // Patient without a conversation
-                  if (!hasConversation) {
-                    return (
-                      <div
-                        key={`patient-${uid}`}
-                        className="list-group-item tc-patient-list__no-conv"
-                      >
-                        <div className="d-flex justify-content-between align-items-center mb-1">
-                          <div className="d-flex align-items-center" style={{ minWidth: 0 }}>
-                            <strong className="text-truncate text-muted">
-                              {conv.subject_name || 'Unknown'}
-                            </strong>
-                          </div>
-                          <span className="badge badge-light text-muted" style={{ fontSize: '0.65rem' }}>
-                            <i className="fas fa-comment-slash mr-1" />
-                            {labels.noConversationYet}
-                          </span>
-                        </div>
-                        <div className="d-flex justify-content-between align-items-center">
-                          <small className="text-muted">
-                            {conv.subject_code}
-                          </small>
-                          <button
-                            className="btn btn-outline-primary btn-sm py-0 px-2"
-                            style={{ fontSize: '0.75rem' }}
-                            disabled={isInitializing}
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleInitializeConversation(uid, conv.subject_name);
-                            }}
-                          >
-                            {isInitializing ? (
-                              <>
-                                <span className="spinner-border spinner-border-sm mr-1" style={{ width: '0.7rem', height: '0.7rem' }} role="status" />
-                                {labels.initializingConversation}
-                              </>
-                            ) : (
-                              <>
-                                <i className="fas fa-plus mr-1" />
-                                {labels.startConversation}
-                              </>
-                            )}
-                          </button>
-                        </div>
-                      </div>
-                    );
-                  }
-
-                  // Patient with an existing conversation
-                  return (
-                    <button
-                      key={conv.id}
-                      type="button"
-                      className={`list-group-item list-group-item-action ${isActive ? 'active' : ''} ${unread > 0 && !isActive ? 'tc-patient-list__unread' : ''}`}
-                      onClick={() => selectConversation(conv.id)}
-                    >
-                      <div className="d-flex justify-content-between align-items-center mb-1">
-                        <div className="d-flex align-items-center" style={{ minWidth: 0 }}>
-                          <strong className={`text-truncate ${unread > 0 ? 'font-weight-bold' : ''}`}>
-                            {conv.subject_name || 'Unknown'}
-                          </strong>
-                        </div>
-                        <div className="d-flex flex-shrink-0 ml-2" style={{ gap: '0.25rem' }}>
-                          {unread > 0 && (
-                            <span className="badge badge-primary">{unread} new</span>
-                          )}
-                          {features.showRiskColumn && riskBadge(conv.risk_level)}
-                          {features.showStatusColumn && statusBadge(conv.status)}
-                          {(conv.unread_alerts ?? 0) > 0 && (
-                            <span className="badge badge-danger">
-                              <i className="fas fa-bell" /> {conv.unread_alerts}
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                      <div className="d-flex justify-content-between align-items-center">
-                        <small className={isActive ? '' : unread > 0 ? 'text-dark' : 'text-muted'}>
-                          {conv.subject_code}
-                          {!conv.ai_enabled && <span className="ml-1">&middot; Human only</span>}
-                        </small>
-                        <small className={isActive ? '' : 'text-muted'}>
-                          <i className="fas fa-comment-dots mr-1" style={{ fontSize: '0.65rem' }} />
-                          {conv.message_count ?? 0}
-                        </small>
-                      </div>
-                    </button>
-                  );
-                })
-              )}
-            </div>
-          </div>
+          <PatientList
+            patients={conversations}
+            selectedPatientId={selectedId}
+            onSelectPatient={selectConversation}
+            onInitializeConversation={handleInitializeConversation}
+            unreadCounts={unreadCounts}
+            filter={activeFilter}
+            onFilterChange={switchFilter}
+            listLoading={listLoading}
+            listError={listError}
+            initializingPatientId={initializingPatientId}
+            labels={labels}
+            features={features}
+          />
         </div>
 
         {/* ============ Conversation Area ============ */}
@@ -811,78 +614,20 @@ export const TherapistDashboard: React.FC<Props> = ({ config }) => {
             {selectedId && chat.conversation ? (
               <>
                 {/* Header */}
-                <div className="card-header bg-white d-flex justify-content-between align-items-center py-2">
-                  <div>
-                    <h5 className="mb-0">{chat.conversation.subject_name || labels.subjectLabel}</h5>
-                    <small className="text-muted">
-                      {chat.conversation.subject_code}
-                      {chat.conversation.ai_enabled ? (
-                        <span className="ml-2 text-success">
-                          <i className="fas fa-robot mr-1" />
-                          {labels.aiModeIndicator}
-                        </span>
-                      ) : (
-                        <span className="ml-2 text-warning">
-                          <i className="fas fa-user-md mr-1" />
-                          {labels.humanModeIndicator}
-                        </span>
-                      )}
-                    </small>
-                  </div>
-                  <div className="d-flex align-items-center" style={{ gap: '0.5rem' }}>
-                    {/* Mark conversation as read */}
-                    {(() => {
-                      const bySubject = unreadCounts?.bySubject ?? {};
-                      const uid = chat.conversation.id_users ?? 0;
-                      const uc = bySubject[uid] ?? bySubject[String(uid)] ?? null;
-                      const unread = (uc as any)?.unreadCount ?? 0;
-                      return unread > 0 ? (
-                        <button
-                          className="btn btn-sm btn-outline-primary"
-                          title="Mark all messages as read"
-                          onClick={async () => {
-                            try {
-                              await api.markMessagesRead(selectedId!);
-                              loadUnreadCounts();
-                            } catch { /* ignore */ }
-                          }}
-                        >
-                          <i className="fas fa-check-double mr-1" />
-                          Mark read
-                        </button>
-                      ) : null;
-                    })()}
-                    {features.showRiskColumn && riskBadge(chat.conversation.risk_level)}
-                    {features.showStatusColumn && statusBadge(chat.conversation.status)}
-                    {features.enableAiToggle && (
-                      <button
-                        className={`btn btn-sm ${chat.conversation.ai_enabled ? 'btn-outline-warning' : 'btn-outline-success'}`}
-                        onClick={handleToggleAI}
-                      >
-                        <i className="fas fa-robot mr-1" />
-                        {chat.conversation.ai_enabled ? labels.disableAI : labels.enableAI}
-                      </button>
-                    )}
-                    {features.enableStatusControl && (
-                      <div className="dropdown">
-                        <button className="btn btn-outline-secondary btn-sm dropdown-toggle" data-toggle="dropdown">
-                          <i className="fas fa-flag" />
-                        </button>
-                        <div className="dropdown-menu dropdown-menu-right">
-                          <button className="dropdown-item" onClick={() => handleSetStatus('active')}>
-                            <span className="badge badge-success mr-2">&bull;</span> {labels.statusActive}
-                          </button>
-                          <button className="dropdown-item" onClick={() => handleSetStatus('paused')}>
-                            <span className="badge badge-warning mr-2">&bull;</span> {labels.statusPaused}
-                          </button>
-                          <button className="dropdown-item" onClick={() => handleSetStatus('closed')}>
-                            <span className="badge badge-secondary mr-2">&bull;</span> {labels.statusClosed}
-                          </button>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                </div>
+                <ConversationHeader
+                  conversation={chat.conversation}
+                  unreadCount={selectedUnreadCount}
+                  onMarkRead={async () => {
+                    try {
+                      await api.markMessagesRead(selectedId!);
+                      loadUnreadCounts();
+                    } catch { /* ignore */ }
+                  }}
+                  onToggleAI={handleToggleAI}
+                  onSetStatus={handleSetStatus}
+                  labels={labels}
+                  features={features}
+                />
 
                 {/* Error */}
                 {chat.error && (
@@ -911,7 +656,7 @@ export const TherapistDashboard: React.FC<Props> = ({ config }) => {
 
                 {/* Input */}
                 <div className="card-footer bg-white py-2">
-                  <div className="d-flex mb-2" style={{ gap: '0.5rem' }}>
+                  <div className="d-flex mb-2 tc-flex-gap-sm">
                     <button className="btn btn-outline-info btn-sm" onClick={handleCreateDraft} disabled={draftModalOpen}>
                       <i className="fas fa-magic mr-1" />
                       Generate AI Draft
@@ -934,7 +679,7 @@ export const TherapistDashboard: React.FC<Props> = ({ config }) => {
             ) : (
               <div className="card-body d-flex align-items-center justify-content-center text-muted">
                 <div className="text-center">
-                  <i className="fas fa-hand-pointer fa-3x mb-3" style={{ opacity: 0.3 }} />
+                  <i className="fas fa-hand-pointer fa-3x mb-3 tc-opacity-muted" />
                   <p>{labels.selectConversation}</p>
                 </div>
               </div>
@@ -955,7 +700,7 @@ export const TherapistDashboard: React.FC<Props> = ({ config }) => {
                       {labels.riskHeading}
                     </h6>
                   </div>
-                  <div className="card-body p-2 d-flex flex-wrap" style={{ gap: '0.25rem' }}>
+                  <div className="card-body p-2 d-flex flex-wrap tc-flex-gap-xs">
                     {(['low', 'medium', 'high', 'critical'] as RiskLevel[]).map((r) => {
                       const active = chat.conversation!.risk_level === r;
                       const colors: Record<RiskLevel, string> = {
@@ -976,91 +721,23 @@ export const TherapistDashboard: React.FC<Props> = ({ config }) => {
 
               {/* Notes */}
               {features.enableNotes && features.showNotesPanel && (
-                <div className="card border-0 shadow-sm">
-                  <div className="card-header bg-light py-2">
-                    <h6 className="mb-0">
-                      <i className="fas fa-sticky-note mr-2" />
-                      {labels.notesHeading}
-                    </h6>
-                  </div>
-                  <div className="card-body p-2 tc-notes-list">
-                    {notes.length === 0 ? (
-                      <p className="text-muted text-center mb-0 small">No notes yet.</p>
-                    ) : (
-                      notes.map((n) => (
-                        <div key={n.id} className="tc-note-item mb-2 p-2 rounded">
-                          <div className="d-flex justify-content-between text-muted mb-1">
-                            <small className="font-weight-bold">{n.author_name}</small>
-                            <div className="d-flex align-items-center" style={{ gap: '0.5rem' }}>
-                              <small>{new Date(n.created_at).toLocaleDateString()}</small>
-                              <button
-                                className="btn btn-link btn-sm p-0 text-muted"
-                                title="Edit note"
-                                onClick={() => { setEditingNoteId(n.id); setEditingNoteText(n.content); }}
-                              >
-                                <i className="fas fa-pencil-alt" style={{ fontSize: '0.7rem' }} />
-                              </button>
-                              <button
-                                className="btn btn-link btn-sm p-0 text-danger"
-                                title="Delete note"
-                                onClick={() => handleDeleteNote(n.id)}
-                              >
-                                <i className="fas fa-trash-alt" style={{ fontSize: '0.7rem' }} />
-                              </button>
-                            </div>
-                          </div>
-                          {editingNoteId === n.id ? (
-                            <div>
-                              <textarea
-                                className="form-control form-control-sm mb-1"
-                                rows={2}
-                                value={editingNoteText}
-                                onChange={(e) => setEditingNoteText(e.target.value)}
-                              />
-                              <div className="d-flex" style={{ gap: '0.25rem' }}>
-                                <button className="btn btn-primary btn-sm py-0 px-2" onClick={handleEditNote} disabled={!editingNoteText.trim()}>
-                                  Save
-                                </button>
-                                <button className="btn btn-outline-secondary btn-sm py-0 px-2" onClick={() => setEditingNoteId(null)}>
-                                  Cancel
-                                </button>
-                              </div>
-                            </div>
-                          ) : (
-                            <>
-                              <div className="mb-0 small tc-markdown tc-note-content">
-                                <MarkdownRenderer content={n.content} />
-                              </div>
-                              {n.last_edited_by_name && (
-                                <small className="text-muted" style={{ fontSize: '0.65rem' }}>
-                                  <i className="fas fa-edit mr-1" />
-                                  Last edited by {n.last_edited_by_name}
-                                </small>
-                              )}
-                            </>
-                          )}
-                        </div>
-                      ))
-                    )}
-                  </div>
-                  <div className="card-footer bg-white p-2">
-                    <textarea
-                      className="form-control form-control-sm mb-2"
-                      rows={2}
-                      value={newNote}
-                      onChange={(e) => setNewNote(e.target.value)}
-                      placeholder={labels.addNotePlaceholder}
-                    />
-                    <button
-                      className="btn btn-outline-primary btn-sm"
-                      onClick={handleAddNote}
-                      disabled={!newNote.trim()}
-                    >
-                      <i className="fas fa-plus mr-1" />
-                      {labels.addNoteButton}
-                    </button>
-                  </div>
-                </div>
+                <NotesPanel
+                  notes={notes}
+                  newNote={newNote}
+                  onNewNoteChange={setNewNote}
+                  onAddNote={handleAddNote}
+                  editingNoteId={editingNoteId}
+                  editingNoteText={editingNoteText}
+                  onEditStart={(noteId, text) => {
+                    setEditingNoteId(noteId);
+                    setEditingNoteText(text);
+                  }}
+                  onEditCancel={() => setEditingNoteId(null)}
+                  onEditTextChange={setEditingNoteText}
+                  onEditSave={handleEditNote}
+                  onDeleteNote={handleDeleteNote}
+                  labels={labels}
+                />
               )}
             </>
           )}
@@ -1068,149 +745,28 @@ export const TherapistDashboard: React.FC<Props> = ({ config }) => {
       </div>
 
       {/* ============ AI Draft Modal ============ */}
-      {/* NOTE: We use tc-modal-overlay instead of Bootstrap's .modal class
-          because Bootstrap 4.6 jQuery plugin auto-hides elements with .modal,
-          which causes the React-managed modal to close immediately. */}
-      {draftModalOpen && (
-        <div className="tc-modal-overlay" tabIndex={-1}>
-          <div className="tc-modal-box">
-            <div className="tc-modal-header bg-info text-white">
-              <h5 className="mb-0">
-                <i className="fas fa-robot mr-2" />
-                AI Draft Response
-                {chat.conversation?.subject_name && (
-                  <small className="ml-2 font-weight-normal">
-                    for {chat.conversation.subject_name}
-                  </small>
-                )}
-              </h5>
-              <button
-                type="button"
-                className="close text-white"
-                onClick={() => {
-                  if (activeDraft) handleDiscardDraft();
-                  else { setDraftModalOpen(false); setDraftError(null); }
-                }}
-              >
-                <span>&times;</span>
-              </button>
-            </div>
-            <div className="tc-modal-body">
-              {draftGenerating ? (
-                <div className="text-center py-5 d-flex flex-column align-items-center justify-content-center" style={{ flex: 1 }}>
-                  <div className="spinner-border text-info mb-3" style={{ width: '3rem', height: '3rem' }} role="status" />
-                  <p className="text-muted mb-0">Generating AI draft response...</p>
-                  <small className="text-muted mt-1">This may take a moment.</small>
-                </div>
-              ) : draftError ? (
-                <div className="d-flex flex-column align-items-center justify-content-center" style={{ flex: 1 }}>
-                  <div className="alert alert-danger mb-3" style={{ maxWidth: '500px' }}>
-                    <i className="fas fa-exclamation-triangle mr-2" />
-                    {draftError}
-                  </div>
-                  <button
-                    className="btn btn-info"
-                    onClick={() => { setDraftError(null); handleCreateDraft(); }}
-                  >
-                    <i className="fas fa-redo mr-1" />
-                    Retry
-                  </button>
-                </div>
-              ) : (
-                <>
-                  <p className="text-muted small mb-2 flex-shrink-0">
-                    <i className="fas fa-info-circle mr-1" />
-                    Review and edit the AI-generated response before sending it to the patient.
-                  </p>
-                  {/* Toolbar: rich text + regenerate/undo */}
-                  <div className="d-flex justify-content-between mb-2 flex-shrink-0 flex-wrap" style={{ gap: '0.5rem' }}>
-                    <div className="btn-toolbar" role="toolbar">
-                      <div className="btn-group btn-group-sm mr-2">
-                        <button type="button" className="btn btn-outline-secondary" title="Bold"
-                          onMouseDown={(e) => { e.preventDefault(); document.execCommand('bold'); }}>
-                          <i className="fas fa-bold" />
-                        </button>
-                        <button type="button" className="btn btn-outline-secondary" title="Italic"
-                          onMouseDown={(e) => { e.preventDefault(); document.execCommand('italic'); }}>
-                          <i className="fas fa-italic" />
-                        </button>
-                        <button type="button" className="btn btn-outline-secondary" title="Underline"
-                          onMouseDown={(e) => { e.preventDefault(); document.execCommand('underline'); }}>
-                          <i className="fas fa-underline" />
-                        </button>
-                      </div>
-                      <div className="btn-group btn-group-sm mr-2">
-                        <button type="button" className="btn btn-outline-secondary" title="Bulleted list"
-                          onMouseDown={(e) => { e.preventDefault(); document.execCommand('insertUnorderedList'); }}>
-                          <i className="fas fa-list-ul" />
-                        </button>
-                        <button type="button" className="btn btn-outline-secondary" title="Numbered list"
-                          onMouseDown={(e) => { e.preventDefault(); document.execCommand('insertOrderedList'); }}>
-                          <i className="fas fa-list-ol" />
-                        </button>
-                      </div>
-                      <div className="btn-group btn-group-sm">
-                        <button type="button" className="btn btn-outline-secondary" title="Remove formatting"
-                          onMouseDown={(e) => { e.preventDefault(); document.execCommand('removeFormat'); }}>
-                          <i className="fas fa-eraser" />
-                        </button>
-                      </div>
-                    </div>
-                    <div className="d-flex" style={{ gap: '0.25rem' }}>
-                      {draftUndoStack.length > 0 && (
-                        <button
-                          type="button"
-                          className="btn btn-outline-warning btn-sm"
-                          title="Undo: restore the previous draft before last regeneration"
-                          onClick={handleUndoDraft}
-                        >
-                          <i className="fas fa-undo mr-1" />
-                          Undo
-                        </button>
-                      )}
-                      <button
-                        type="button"
-                        className="btn btn-outline-info btn-sm"
-                        title="Regenerate a new AI draft (current text will be saved for undo)"
-                        onClick={handleRegenerateDraft}
-                      >
-                        <i className="fas fa-sync-alt mr-1" />
-                        Regenerate
-                      </button>
-                    </div>
-                  </div>
-                  {/* Editable content area */}
-                  <DraftEditor value={draftText} onChange={setDraftText} />
-                  <div className="d-flex justify-content-between mt-2 flex-shrink-0">
-                    <small className="text-muted">{draftText.length} characters</small>
-                  </div>
-                </>
-              )}
-            </div>
-            <div className="tc-modal-footer">
-              <button
-                className="btn btn-outline-secondary"
-                onClick={() => {
-                  if (activeDraft) handleDiscardDraft();
-                  else { setDraftModalOpen(false); setDraftError(null); }
-                }}
-                disabled={draftGenerating}
-              >
-                <i className="fas fa-times mr-1" />
-                Discard
-              </button>
-              <button
-                className="btn btn-primary"
-                onClick={handleSendDraft}
-                disabled={draftGenerating || !draftText.trim() || !!draftError}
-              >
-                <i className="fas fa-paper-plane mr-1" />
-                Send to Patient
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <DraftEditorModal
+        open={draftModalOpen}
+        draftText={draftText}
+        onDraftTextChange={setDraftText}
+        draftGenerating={draftGenerating}
+        draftError={draftError}
+        draftUndoStack={draftUndoStack}
+        hasActiveDraft={!!activeDraft}
+        subjectName={chat.conversation?.subject_name}
+        onRegenerate={handleRegenerateDraft}
+        onUndo={handleUndoDraft}
+        onSend={handleSendDraft}
+        onDiscard={handleDiscardDraft}
+        onClose={() => {
+          setDraftModalOpen(false);
+          setDraftError(null);
+        }}
+        onRetry={() => {
+          setDraftError(null);
+          handleCreateDraft();
+        }}
+      />
 
       {/* ============ Summary Modal ============ */}
       {summaryModalOpen && (
@@ -1236,14 +792,14 @@ export const TherapistDashboard: React.FC<Props> = ({ config }) => {
             </div>
             <div className="tc-modal-body">
               {summaryGenerating ? (
-                <div className="text-center py-5 d-flex flex-column align-items-center justify-content-center" style={{ flex: 1 }}>
-                  <div className="spinner-border text-secondary mb-3" style={{ width: '3rem', height: '3rem' }} role="status" />
+                <div className="text-center py-5 d-flex flex-column align-items-center justify-content-center tc-flex-1">
+                  <div className="spinner-border text-secondary mb-3 tc-spinner-lg" role="status" />
                   <p className="text-muted mb-0">Generating conversation summary...</p>
                   <small className="text-muted mt-1">This may take a moment.</small>
                 </div>
               ) : summaryError ? (
-                <div className="d-flex flex-column align-items-center justify-content-center" style={{ flex: 1 }}>
-                  <div className="alert alert-danger mb-3" style={{ maxWidth: '500px' }}>
+                <div className="d-flex flex-column align-items-center justify-content-center tc-flex-1">
+                  <div className="alert alert-danger mb-3 tc-alert-max-width">
                     <i className="fas fa-exclamation-triangle mr-2" />
                     {summaryError}
                   </div>
@@ -1261,15 +817,7 @@ export const TherapistDashboard: React.FC<Props> = ({ config }) => {
                     <i className="fas fa-info-circle mr-1" />
                     AI-generated clinical summary. You can save it as a note.
                   </p>
-                  <div
-                    className="border rounded p-3 bg-light tc-draft-editor tc-markdown"
-                    style={{
-                      flex: 1,
-                      overflowY: 'auto',
-                      fontSize: '0.95rem',
-                      lineHeight: '1.6',
-                    }}
-                  >
+                  <div className="border rounded p-3 bg-light tc-draft-editor tc-markdown tc-summary-content">
                     <MarkdownRenderer content={summaryText} />
                   </div>
                 </>
@@ -1297,95 +845,5 @@ export const TherapistDashboard: React.FC<Props> = ({ config }) => {
     </div>
   );
 };
-
-// ---------------------------------------------------------------------------
-// DraftEditor — contentEditable wrapper that avoids React re-render loops.
-// Uses a ref so React never re-writes the DOM while the user is typing.
-//
-// The AI returns markdown. We render it into the contentEditable div using
-// a simple markdown→HTML conversion so the therapist sees formatted text.
-// On change, we track the plain text (innerText) for sending.
-// ---------------------------------------------------------------------------
-
-/** Simple markdown → HTML for the draft editor initial render */
-function markdownToHtml(md: string): string {
-  if (!md) return '';
-  let html = md
-    // Escape HTML entities first
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    // Headers (### before ## before #)
-    .replace(/^### (.+)$/gm, '<h5>$1</h5>')
-    .replace(/^## (.+)$/gm, '<h4>$1</h4>')
-    .replace(/^# (.+)$/gm, '<h3>$1</h3>')
-    // Horizontal rules
-    .replace(/^---+$/gm, '<hr/>')
-    // Bold + italic
-    .replace(/\*\*\*(.+?)\*\*\*/g, '<strong><em>$1</em></strong>')
-    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-    .replace(/\*(.+?)\*/g, '<em>$1</em>')
-    // Inline code
-    .replace(/`([^`]+)`/g, '<code>$1</code>')
-    // Line breaks: double newline → paragraph break, single → <br>
-    .replace(/\n\n/g, '</p><p>')
-    .replace(/\n/g, '<br/>');
-
-  html = '<p>' + html + '</p>';
-  // Clean up empty paragraphs
-  html = html.replace(/<p><\/p>/g, '').replace(/<p>(<h[3-5]>)/g, '$1').replace(/(<\/h[3-5]>)<\/p>/g, '$1');
-  return html;
-}
-
-const DraftEditor: React.FC<{ value: string; onChange: (v: string) => void }> = ({ value, onChange }) => {
-  const elRef = useRef<HTMLDivElement>(null);
-  // Initialize internalRef to a sentinel so the first useEffect always fires
-  const internalRef = useRef<string | null>(null);
-
-  // Sync external value → DOM when the value changes externally
-  // (e.g. when AI draft is first loaded or after regeneration/undo).
-  // Because internalRef starts as null, this fires on first mount too.
-  useEffect(() => {
-    if (elRef.current && value !== internalRef.current) {
-      internalRef.current = value;
-      // Render markdown as HTML so the therapist sees formatted content
-      elRef.current.innerHTML = markdownToHtml(value);
-    }
-  }, [value]);
-
-  return (
-    <div
-      ref={elRef}
-      className="form-control tc-draft-editor tc-markdown"
-      contentEditable
-      suppressContentEditableWarning
-      style={{
-        flex: 1,
-        overflowY: 'auto',
-        minHeight: '200px',
-        fontSize: '0.95rem',
-        lineHeight: '1.6',
-      }}
-      onInput={() => {
-        if (elRef.current) {
-          const text = elRef.current.innerText;
-          internalRef.current = text;
-          onChange(text);
-        }
-      }}
-    />
-  );
-};
-
-// ---------------------------------------------------------------------------
-// Small stat display helper
-// ---------------------------------------------------------------------------
-
-const StatItem: React.FC<{ value: number; label: string; className?: string }> = ({ value, label, className = '' }) => (
-  <div className="text-center">
-    <div className={`h5 mb-0 ${className}`}>{value}</div>
-    <small className="text-muted">{label}</small>
-  </div>
-);
 
 export default TherapistDashboard;

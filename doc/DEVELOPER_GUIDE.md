@@ -103,7 +103,8 @@ The `MessageInput` component supports inline autocomplete for @mentions and #top
 
 ### Backend Endpoints
 - `GET ?action=get_therapists&section_id=X` → Returns `{ therapists: [{ id, display, name, email }] }`
-- `GET ?action=get_tag_reasons&section_id=X` → Returns `{ tag_reasons: [{ code, label, urgency }] }`
+
+Tag reasons come from `get_config` → `config.tagReasons`, not a separate endpoint.
 
 ### Props on `MessageInput`
 - `onFetchMentions?: () => Promise<MentionItem[]>` — Async callback to fetch @mention suggestions
@@ -233,9 +234,10 @@ The plugin uses these hooks:
 
 | Hook | Class | Method | Purpose |
 |------|-------|--------|---------|
-| `outputTherapyChatIcon` | `PageView` | `output_content` | Floating chat/dashboard button |
-| `outputTherapistGroupAssignments` | `UserUpdate` | `output_content` | Admin user page: group assignment UI |
-| `saveTherapistGroupAssignments` | `UserUpdate` | `save_data` | Save assignments on user save |
+| `outputTherapyChatIcon` | `NavView` | `output_profile` | Floating chat/dashboard button |
+| `outputTherapistGroupAssignments` | `UserSelectView` | `output_user_manipulation` | Admin user page: group assignment UI |
+
+Assignments are saved via AJAX endpoint `/request/AjaxTherapyChat/saveTherapistAssignments`, not via a hook on user save.
 
 ## Removed Code
 

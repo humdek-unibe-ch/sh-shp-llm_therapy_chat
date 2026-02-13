@@ -6,6 +6,7 @@
 <?php
 
 require_once __DIR__ . "/../../../service/TherapyMessageService.php";
+require_once __DIR__ . "/../../../service/TherapyEmailHelper.php";
 require_once __DIR__ . "/../../../constants/TherapyLookups.php";
 
 // Include LLM plugin services - only if LLM plugin is available
@@ -346,57 +347,16 @@ class TherapyChatModel extends StyleModel
      */
     public function sendPatientMessage($userId, $message, $conversationId = null)
     {
-        // Get or create conversation FIRST so we always have a valid conversation ID
-        // (needed for danger alerts, message saving, etc.)
-        $conversation = null;
-        if ($conversationId) {
-            $conversation = $this->therapyService->getTherapyConversation($conversationId);
-        }
+        $conversation = $this->resolveConversation($userId, $conversationId);
         if (!$conversation) {
-            $conversation = $this->getOrCreateConversation();
-            if (!$conversation) {
-                return array('error' => 'Could not create conversation');
-            }
+            return array('error' => 'Could not create conversation');
         }
         $conversationId = $conversation['id'];
 
         // Danger detection — check BEFORE sending the message
-        // IMPORTANT: LlmDangerDetectionService operates on llmConversations.id,
-        // while TherapyAlertService/TherapyMessageService use therapyConversationMeta.id.
-        $llmConversationId = $conversation['id_llmConversations'];
-        $extraDangerEmails = implode(',', $this->getDangerNotificationEmails());
-
-        // --- Layer 1: LLM plugin danger detection (word-boundary + typo tolerance) ---
-        // LlmDangerDetectionService::checkMessage already blocks the llmConversation,
-        // logs the transaction, and sends email to getDangerNotificationEmails().
-        // We still create a therapyAlerts record + escalate risk + disable AI here,
-        // but skip the extra email param to avoid duplicate notifications.
-        if ($this->dangerDetection && $this->dangerDetection->isEnabled()) {
-            $dangerResult = $this->dangerDetection->checkMessage($message, $userId, $llmConversationId);
-            if (!$dangerResult['safe']) {
-                return $this->handleDangerDetected(
-                    $conversationId, $userId, $message,
-                    $dangerResult['detected_keywords'],
-                    '' // LlmDangerDetectionService already sent to extra emails
-                );
-            }
-        }
-
-        // --- Layer 2: Simple keyword fallback (when LLM plugin unavailable or missed) ---
-        if ($this->isDangerDetectionEnabled()) {
-            $detectedKeywords = $this->scanKeywords($message);
-            if (!empty($detectedKeywords)) {
-                // Block the llmConversation (Layer 1 does this inside checkMessage,
-                // but Layer 2 must do it explicitly)
-                $this->therapyService->blockConversation(
-                    $conversationId,
-                    'Automatic: Danger keywords detected - ' . implode(', ', $detectedKeywords)
-                );
-                return $this->handleDangerDetected(
-                    $conversationId, $userId, $message,
-                    $detectedKeywords, $extraDangerEmails
-                );
-            }
+        $dangerResult = $this->checkDangerLayers($conversation, $userId, $message);
+        if ($dangerResult !== null) {
+            return $dangerResult;
         }
 
         // Send user message (normal flow)
@@ -414,41 +374,20 @@ class TherapyChatModel extends StyleModel
             'conversation_id' => $conversationId
         );
 
-        // Determine if therapist should be emailed:
-        //  - when the patient tags @therapist or @SpecificName
-        //  - when AI is disabled (all messages go to therapist)
-        $isTagAll = (bool)preg_match('/@(?:therapist|Therapist)\b/', $message);
-        $isTagSpecific = false;
+        // Detect @mentions once (used for notifications and AI decision)
+        $mentionResult = $this->therapyService->detectMentionedTherapists($message, $userId);
+        $isTag = $mentionResult['isTagAll'] || $mentionResult['isTagSpecific'];
 
-        // Check for specific therapist @mentions (e.g. @Dr. Smith)
-        if (!$isTagAll) {
-            $patientTherapists = $this->therapyService->getTherapistsForPatient($userId);
-            if (!empty($patientTherapists)) {
-                foreach ($patientTherapists as $t) {
-                    $tName = $t['name'] ?? '';
-                    if (!empty($tName)) {
-                        $escaped = preg_quote($tName, '/');
-                        if (preg_match('/@' . $escaped . '\b/i', $message)) {
-                            $isTagSpecific = true;
-                            break;
-                        }
-                    }
-                }
-            }
-        }
-
-        $isTag = $isTagAll || $isTagSpecific;
+        // Refresh conversation state for AI check
         $conversation = $this->therapyService->getTherapyConversation($conversationId);
-        $aiActive = $conversation && $conversation['ai_enabled']
-            && $conversation['mode'] === THERAPY_MODE_AI_HYBRID
-            && ($conversation['status'] ?? '') !== THERAPY_STATUS_PAUSED;
+        $aiActive = $this->isConversationAIActive($conversation);
 
+        // Notify therapists when tagged or when AI is off
         if ($isTag || !$aiActive) {
             $this->notifyTherapistsNewMessage($conversationId, $userId, $message, $isTag);
         }
 
-        // Process AI response ONLY if AI is active AND the message is NOT tagged
-        // Tagged messages go exclusively to therapists — no AI response needed
+        // Process AI response only if active and no tag
         if ($aiActive && !$isTag) {
             $aiResponse = $this->processAIResponse($conversationId, $conversation);
             if ($aiResponse && !isset($aiResponse['error'])) {
@@ -463,6 +402,84 @@ class TherapyChatModel extends StyleModel
         }
 
         return $response;
+    }
+
+    /**
+     * Resolve or create the conversation for a patient message.
+     *
+     * @param int $userId
+     * @param int|null $conversationId
+     * @return array|null
+     */
+    private function resolveConversation($userId, $conversationId)
+    {
+        $conversation = null;
+        if ($conversationId) {
+            $conversation = $this->therapyService->getTherapyConversation($conversationId);
+        }
+        if (!$conversation) {
+            $conversation = $this->getOrCreateConversation();
+        }
+        return $conversation;
+    }
+
+    /**
+     * Run both danger detection layers. Returns a blocked response if danger
+     * is detected, or null if the message is safe.
+     *
+     * @param array $conversation
+     * @param int $userId
+     * @param string $message
+     * @return array|null Blocked response or null
+     */
+    private function checkDangerLayers($conversation, $userId, $message)
+    {
+        $conversationId = $conversation['id'];
+        $llmConversationId = $conversation['id_llmConversations'];
+        $extraDangerEmails = implode(',', $this->getDangerNotificationEmails());
+
+        // Layer 1: LLM plugin danger detection (word-boundary + typo tolerance)
+        if ($this->dangerDetection && $this->dangerDetection->isEnabled()) {
+            $dangerResult = $this->dangerDetection->checkMessage($message, $userId, $llmConversationId);
+            if (!$dangerResult['safe']) {
+                return $this->handleDangerDetected(
+                    $conversationId, $userId, $message,
+                    $dangerResult['detected_keywords'],
+                    '' // LlmDangerDetectionService already sent to extra emails
+                );
+            }
+        }
+
+        // Layer 2: Simple keyword fallback
+        if ($this->isDangerDetectionEnabled()) {
+            $detectedKeywords = $this->scanKeywords($message);
+            if (!empty($detectedKeywords)) {
+                $this->therapyService->blockConversation(
+                    $conversationId,
+                    'Automatic: Danger keywords detected - ' . implode(', ', $detectedKeywords)
+                );
+                return $this->handleDangerDetected(
+                    $conversationId, $userId, $message,
+                    $detectedKeywords, $extraDangerEmails
+                );
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Check if a conversation has AI actively processing messages.
+     *
+     * @param array|null $conversation
+     * @return bool
+     */
+    private function isConversationAIActive($conversation)
+    {
+        return $conversation
+            && $conversation['ai_enabled']
+            && $conversation['mode'] === THERAPY_MODE_AI_HYBRID
+            && ($conversation['status'] ?? '') !== THERAPY_STATUS_PAUSED;
     }
 
     /**
@@ -709,25 +726,10 @@ class TherapyChatModel extends StyleModel
      */
     private function parseStructuredResponse($content)
     {
-        $content = trim($content);
-
-        // Fast check: must start with { or [
-        if (empty($content) || ($content[0] !== '{' && $content[0] !== '[')) {
-            // Try to extract JSON from markdown code blocks
-            if (preg_match('/```(?:json)?\s*(\{[\s\S]*?\})\s*```/', $content, $matches)) {
-                $content = $matches[1];
-            } else {
-                return null;
-            }
-        }
-
-        $decoded = json_decode($content, true);
-        if (!is_array($decoded)) {
-            return null;
-        }
+        $decoded = TherapyMessageService::parseLlmJson($content);
 
         // Must have at least a safety field to be a structured response
-        if (!isset($decoded['safety'])) {
+        if ($decoded === null || !isset($decoded['safety'])) {
             return null;
         }
 
@@ -866,27 +868,17 @@ class TherapyChatModel extends StyleModel
                 $bodyTemplate
             );
 
-            $mail = array(
-                "id_jobTypes" => $db->get_lookup_id_by_value(jobTypes, jobTypes_email),
-                "id_jobStatus" => $db->get_lookup_id_by_value(scheduledJobsStatus, scheduledJobsStatus_queued),
-                "date_to_be_executed" => date('Y-m-d H:i:s'),
-                "from_email" => $fromEmail,
-                "from_name" => $fromName,
-                "reply_to" => $fromEmail,
-                "recipient_emails" => $therapist['email'],
-                "subject" => $subject,
-                "body" => $body,
-                "description" => ($isTag ? "Therapy Chat: tag" : "Therapy Chat: message") . " notification to therapist #" . $therapist['id'],
-                "is_html" => 1,
-                "id_users" => array($therapist['id']),
-                "attachments" => array()
+            TherapyEmailHelper::scheduleEmail(
+                $db,
+                $jobScheduler,
+                $therapist['email'],
+                $subject,
+                $body,
+                $fromEmail,
+                $fromName,
+                ($isTag ? "Therapy Chat: tag" : "Therapy Chat: message") . " notification to therapist #" . $therapist['id'],
+                array($therapist['id'])
             );
-
-            try {
-                $jobScheduler->schedule_job($mail, transactionBy_by_system);
-            } catch (Exception $e) {
-                error_log("TherapyChat: Failed to schedule therapist notification: " . $e->getMessage());
-            }
         }
     }
 

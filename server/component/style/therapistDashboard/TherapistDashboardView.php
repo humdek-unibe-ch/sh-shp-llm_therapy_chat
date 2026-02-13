@@ -5,6 +5,7 @@
 ?>
 <?php
 require_once __DIR__ . "/../../../../../../component/style/StyleView.php";
+require_once __DIR__ . "/../TherapyViewHelper.php";
 
 /**
  * Therapist Dashboard View
@@ -65,15 +66,7 @@ class TherapistDashboardView extends StyleView
     public function get_css_includes($local = array())
     {
         if (empty($local)) {
-            $css_file = __DIR__ . "/../../../../css/ext/therapy-chat.css";
-            if (file_exists($css_file)) {
-                if (defined('DEBUG') && DEBUG) {
-                    $version = filemtime($css_file) ?: time();
-                    $local = array($css_file . "?v=" . $version);
-                } else {
-                    $local = array($css_file . "?v=" . rtrim(shell_exec("git describe --tags") ?? '1.0.0'));
-                }
-            }
+            $local = TherapyViewHelper::getCssPath(__DIR__);
         }
         return parent::get_css_includes($local);
     }
@@ -84,15 +77,7 @@ class TherapistDashboardView extends StyleView
     public function get_js_includes($local = array())
     {
         if (empty($local)) {
-            $js_file = __DIR__ . "/../../../../js/ext/therapy-chat.umd.js";
-            if (file_exists($js_file)) {
-                if (defined('DEBUG') && DEBUG) {
-                    $version = filemtime($js_file) ?: time();
-                    $local = array($js_file . "?v=" . $version);
-                } else {
-                    $local = array($js_file . "?v=" . rtrim(shell_exec("git describe --tags") ?? '1.0.0'));
-                }
-            }
+            $local = TherapyViewHelper::getJsPath(__DIR__);
         }
         return parent::get_js_includes($local);
     }

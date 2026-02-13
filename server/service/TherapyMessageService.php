@@ -185,7 +185,7 @@ class TherapyMessageService extends TherapyAlertService
      * @param int|null $afterId For polling - only messages after this ID
      * @return array
      */
-    public function getTherapyMessages($conversationId, $limit = 100, $afterId = null)
+    public function getTherapyMessages($conversationId, $limit = THERAPY_DEFAULT_MESSAGE_LIMIT, $afterId = null)
     {
         $conversation = $this->getTherapyConversation($conversationId);
         if (!$conversation) {
@@ -388,20 +388,9 @@ class TherapyMessageService extends TherapyAlertService
      */
     public function extractDisplayContent($content)
     {
-        $trimmed = trim($content);
+        $decoded = self::parseLlmJson($content);
 
-        // Fast check: not JSON
-        if (empty($trimmed) || ($trimmed[0] !== '{' && $trimmed[0] !== '[')) {
-            // Try markdown code block extraction
-            if (preg_match('/```(?:json)?\s*(\{[\s\S]*?\})\s*```/', $trimmed, $matches)) {
-                $trimmed = $matches[1];
-            } else {
-                return $content;
-            }
-        }
-
-        $decoded = json_decode($trimmed, true);
-        if (!is_array($decoded)) {
+        if ($decoded === null) {
             return $content;
         }
 
@@ -447,6 +436,38 @@ class TherapyMessageService extends TherapyAlertService
     }
 
     /**
+     * Parse JSON from an LLM response string.
+     *
+     * Handles raw JSON, JSON wrapped in markdown code blocks, and
+     * plain text (returns null). Used by both extractDisplayContent
+     * and TherapyChatModel::parseStructuredResponse.
+     *
+     * @param string $content Raw LLM response
+     * @return array|null Decoded JSON array or null if not JSON
+     */
+    public static function parseLlmJson($content)
+    {
+        $trimmed = trim($content);
+
+        if (empty($trimmed)) {
+            return null;
+        }
+
+        // Fast check: not JSON
+        if ($trimmed[0] !== '{' && $trimmed[0] !== '[') {
+            // Try markdown code block extraction
+            if (preg_match('/```(?:json)?\s*(\{[\s\S]*?\})\s*```/', $trimmed, $matches)) {
+                $trimmed = $matches[1];
+            } else {
+                return null;
+            }
+        }
+
+        $decoded = json_decode($trimmed, true);
+        return is_array($decoded) ? $decoded : null;
+    }
+
+    /**
      * Build AI context messages with therapist messages marked as important.
      *
      * @param int $conversationId
@@ -454,7 +475,7 @@ class TherapyMessageService extends TherapyAlertService
      * @param int $historyLimit
      * @return array Messages array for LLM API
      */
-    public function buildAIContext($conversationId, $systemContext = '', $historyLimit = 50)
+    public function buildAIContext($conversationId, $systemContext = '', $historyLimit = THERAPY_AI_CONTEXT_HISTORY_LIMIT)
     {
         $contextMessages = array();
 
@@ -834,6 +855,48 @@ class TherapyMessageService extends TherapyAlertService
             $sql = "INSERT IGNORE INTO therapyMessageRecipients (id_llmMessages, id_users, is_new) VALUES (?, ?, 1)";
             $this->db->query_db($sql, $r);
         }
+    }
+
+    /**
+     * Detect @mentioned therapists in a message (pure detection, no side effects).
+     *
+     * Checks for:
+     *   - @therapist / @Therapist → returns ALL therapists for the patient
+     *   - @TherapistName           → returns that specific therapist
+     *
+     * @param string $content Message text
+     * @param int $patientId The patient user ID
+     * @return array {isTagAll: bool, isTagSpecific: bool, taggedIds: int[]}
+     */
+    public function detectMentionedTherapists($content, $patientId)
+    {
+        $result = array('isTagAll' => false, 'isTagSpecific' => false, 'taggedIds' => array());
+
+        // Check for @therapist (tag all)
+        if (preg_match('/@(?:therapist|Therapist)\b/', $content)) {
+            $result['isTagAll'] = true;
+            $therapists = $this->getTherapistsForPatient($patientId);
+            foreach ($therapists as $t) {
+                $result['taggedIds'][] = (int)$t['id'];
+            }
+            return $result;
+        }
+
+        // Check for @SpecificTherapistName mentions
+        $therapists = $this->getTherapistsForPatient($patientId);
+        if (!empty($therapists)) {
+            foreach ($therapists as $t) {
+                $name = $t['name'] ?? '';
+                if (empty($name)) continue;
+                $escaped = preg_quote($name, '/');
+                if (preg_match('/@' . $escaped . '\b/i', $content)) {
+                    $result['isTagSpecific'] = true;
+                    $result['taggedIds'][] = (int)$t['id'];
+                }
+            }
+        }
+
+        return $result;
     }
 
     /**

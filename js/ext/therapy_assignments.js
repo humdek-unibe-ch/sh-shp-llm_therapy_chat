@@ -1,6 +1,5 @@
 $(document).ready(function() {
     $('#save-therapy-assignments').on('click', function() {
-        console.log('save-therapy-assignments clicked');
         const basePath = $(this).data('basePath');
         const targetUserId = $(this).data('targetUserId');
         const selectedGroups = $('#therapy_assigned_groups_select').val() || [];

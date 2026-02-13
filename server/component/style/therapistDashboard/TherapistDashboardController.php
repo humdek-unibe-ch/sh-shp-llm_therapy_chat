@@ -46,25 +46,48 @@ class TherapistDashboardController extends TherapyBaseController
 
     private function handlePostRequest($action)
     {
+        $data = $_POST;
+
         switch ($action) {
-            case 'send_message':              $this->handleSendMessage(); break;
-            case 'edit_message':              $this->handleEditMessage(); break;
-            case 'delete_message':            $this->handleDeleteMessage(); break;
-            case 'toggle_ai':                 $this->handleToggleAI(); break;
-            case 'set_risk':                  $this->handleSetRisk(); break;
-            case 'set_status':                $this->handleSetStatus(); break;
-            case 'add_note':                  $this->handleAddNote(); break;
-            case 'edit_note':                 $this->handleEditNote(); break;
-            case 'delete_note':               $this->handleDeleteNote(); break;
-            case 'mark_alert_read':           $this->handleMarkAlertRead(); break;
-            case 'mark_all_read':             $this->handleMarkAllRead(); break;
-            case 'mark_messages_read':        $this->handleMarkMessagesRead(); break;
-            case 'create_draft':              $this->handleCreateDraft(); break;
-            case 'update_draft':              $this->handleUpdateDraft(); break;
-            case 'send_draft':                $this->handleSendDraft(); break;
-            case 'discard_draft':             $this->handleDiscardDraft(); break;
-            case 'generate_summary':          $this->handleGenerateSummary(); break;
-            case 'initialize_conversation':   $this->handleInitializeConversation(); break;
+            case 'initialize_conversation':
+                $this->handleConversationAction($action, $data);
+                break;
+
+            case 'send_message':
+            case 'edit_message':
+            case 'delete_message':
+            case 'mark_messages_read':
+                $this->handleMessageAction($action, $data);
+                break;
+
+            case 'add_note':
+            case 'edit_note':
+            case 'delete_note':
+                $this->handleNoteAction($action, $data);
+                break;
+
+            case 'mark_alert_read':
+            case 'mark_all_read':
+                $this->handleAlertAction($action, $data);
+                break;
+
+            case 'create_draft':
+            case 'update_draft':
+            case 'send_draft':
+            case 'discard_draft':
+                $this->handleDraftAction($action, $data);
+                break;
+
+            case 'toggle_ai':
+            case 'set_risk':
+            case 'set_status':
+                $this->handleControlAction($action, $data);
+                break;
+
+            case 'generate_summary':
+                $this->handleGenerateSummary();
+                break;
+
             case 'speech_transcribe':
                 $this->validateTherapistOrFail();
                 $this->processSpeechTranscription();
@@ -74,17 +97,154 @@ class TherapistDashboardController extends TherapyBaseController
 
     private function handleGetRequest($action)
     {
+        $data = $_GET;
+
         switch ($action) {
-            case 'get_config':        $this->handleGetConfig(); break;
-            case 'get_conversations': $this->handleGetConversations(); break;
-            case 'get_conversation':  $this->handleGetConversation(); break;
-            case 'get_messages':      $this->handleGetMessages(); break;
-            case 'get_alerts':        $this->handleGetAlerts(); break;
-            case 'get_stats':         $this->handleGetStats(); break;
-            case 'get_notes':         $this->handleGetNotes(); break;
-            case 'get_unread_counts': $this->handleGetUnreadCounts(); break;
-            case 'get_groups':        $this->handleGetGroups(); break;
-            case 'check_updates':     $this->handleCheckUpdates(); break;
+            case 'get_config':
+                $this->handleGetConfig();
+                break;
+
+            case 'get_conversations':
+            case 'get_conversation':
+                $this->handleConversationAction($action, $data);
+                break;
+
+            case 'get_messages':
+                $this->handleGetMessages();
+                break;
+
+            case 'get_alerts':
+                $this->handleAlertAction($action, $data);
+                break;
+
+            case 'get_stats':
+                $this->handleGetStats();
+                break;
+
+            case 'get_notes':
+                $this->handleGetNotes();
+                break;
+
+            case 'get_unread_counts':
+            case 'check_updates':
+                $this->handlePollingAction($action, $data);
+                break;
+
+            case 'get_groups':
+                $this->handleGetGroups();
+                break;
+        }
+    }
+
+    /* =========================================================================
+     * ACTION GROUP HANDLERS
+     * ========================================================================= */
+
+    private function handleConversationAction($action, $data)
+    {
+        switch ($action) {
+            case 'get_conversations':
+                $this->handleGetConversations();
+                break;
+            case 'get_conversation':
+                $this->handleGetConversation();
+                break;
+            case 'initialize_conversation':
+                $this->handleInitializeConversation();
+                break;
+        }
+    }
+
+    private function handleMessageAction($action, $data)
+    {
+        switch ($action) {
+            case 'send_message':
+                $this->handleSendMessage();
+                break;
+            case 'edit_message':
+                $this->handleEditMessage();
+                break;
+            case 'delete_message':
+                $this->handleDeleteMessage();
+                break;
+            case 'mark_messages_read':
+                $this->handleMarkMessagesRead();
+                break;
+        }
+    }
+
+    private function handleNoteAction($action, $data)
+    {
+        switch ($action) {
+            case 'add_note':
+                $this->handleAddNote();
+                break;
+            case 'edit_note':
+                $this->handleEditNote();
+                break;
+            case 'delete_note':
+                $this->handleDeleteNote();
+                break;
+        }
+    }
+
+    private function handleAlertAction($action, $data)
+    {
+        switch ($action) {
+            case 'get_alerts':
+                $this->handleGetAlerts();
+                break;
+            case 'mark_alert_read':
+                $this->handleMarkAlertRead();
+                break;
+            case 'mark_all_read':
+                $this->handleMarkAllRead();
+                break;
+        }
+    }
+
+    private function handleDraftAction($action, $data)
+    {
+        switch ($action) {
+            case 'create_draft':
+                $this->handleCreateDraft();
+                break;
+            case 'update_draft':
+                $this->handleUpdateDraft();
+                break;
+            case 'send_draft':
+                $this->handleSendDraft();
+                break;
+            case 'discard_draft':
+                $this->handleDiscardDraft();
+                break;
+        }
+    }
+
+    private function handlePollingAction($action, $data)
+    {
+        switch ($action) {
+            case 'check_updates':
+                $this->handleCheckUpdates();
+                break;
+            case 'get_unread_counts':
+                $this->handleGetUnreadCounts();
+                break;
+        }
+    }
+
+    private function handleControlAction($action, $data)
+    {
+        switch ($action) {
+            case 'toggle_ai':
+                $this->handleToggleAI();
+                break;
+            case 'set_risk':
+                $this->handleSetRisk();
+                break;
+            case 'set_status':
+                $this->handleSetStatus();
+                break;
         }
     }
 

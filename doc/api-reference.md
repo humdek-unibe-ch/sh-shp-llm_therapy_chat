@@ -8,7 +8,7 @@ and `action` field in FormData for POST requests.
 ### GET `get_config`
 Returns the chat configuration for the current user.
 
-**Response**: `SubjectChatConfig` JSON
+**Response**: `{ config: SubjectChatConfig }`
 
 ### GET `get_conversation`
 | Param | Type | Required | Description |
@@ -17,13 +17,25 @@ Returns the chat configuration for the current user.
 
 **Response**: `{ conversation, messages }`
 
+### GET `get_therapists`
+Returns therapists available for @mention (patient view).
+
+**Response**: `{ therapists: [{ id, display, name, email }] }`
+
 ### GET `get_messages`
 | Param | Type | Required | Description |
 |-------|------|----------|-------------|
 | `conversation_id` | int | No | Conversation to poll |
 | `after_id` | int | No | Only messages after this ID |
 
-**Response**: `{ messages: Message[] }`
+**Response**: `{ messages: Message[], conversation_id }`
+
+### POST `mark_messages_read`
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `conversation_id` | int | No | Scope to conversation; if omitted, uses current conversation |
+
+**Response**: `{ success, unread_count }`
 
 ### POST `send_message`
 | Field | Type | Required | Description |
@@ -64,7 +76,7 @@ count so the frontend can decide whether a full fetch is needed.
 ### GET `get_config`
 Returns dashboard configuration including stats, groups, features, labels.
 
-**Response**: `TherapistDashboardConfig` JSON
+**Response**: `{ config: TherapistDashboardConfig }`
 
 ### GET `get_conversations`
 | Param | Type | Required | Description |
@@ -87,12 +99,13 @@ Returns dashboard configuration including stats, groups, features, labels.
 | `conversation_id` | int | Yes | Conversation |
 | `after_id` | int | No | Messages after this ID |
 
-**Response**: `{ messages: Message[] }`
+**Response**: `{ messages: Message[], conversation_id }`
 
 ### GET `get_alerts`
 | Param | Type | Required | Description |
 |-------|------|----------|-------------|
 | `unread_only` | 0/1 | No | Only unread alerts |
+| `alert_type` | string | No | Filter by alert type |
 
 **Response**: `{ alerts: Alert[] }`
 
@@ -123,7 +136,7 @@ Returns therapist's assigned groups with patient counts.
 | `conversation_id` | int | Yes | Target conversation |
 | `message` | string | Yes | Message content |
 
-**Response**: `{ message_id, conversation_id }`
+**Response**: `{ success: true, message_id }`
 
 ### POST `edit_message`
 | Field | Type | Required | Description |
@@ -171,6 +184,7 @@ Soft-deletes a message (sets `deleted` flag).
 |-------|------|----------|-------------|
 | `conversation_id` | int | Yes | Conversation |
 | `content` | string | Yes | Note text |
+| `note_type` | string | No | Note type (default: `THERAPY_NOTE_MANUAL`; e.g. `manual`, `ai_summary`) |
 
 **Response**: `{ success, note_id }`
 
@@ -210,7 +224,14 @@ Soft-deletes a note (sets `id_noteStatus` to lookup `deleted` via `therapyNoteSt
 |-------|------|----------|-------------|
 | `conversation_id` | int | Yes | Conversation |
 
-**Response**: `{ success }`
+**Response**: `{ success, unread_count }`
+
+### POST `initialize_conversation`
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `patient_id` | int | Yes | Patient ID to initialize conversation for |
+
+**Response**: `{ success, conversation, already_exists }`
 
 ### POST `create_draft`
 Generates an AI draft for the therapist to edit. Opens a modal dialog in the UI.
@@ -275,6 +296,6 @@ Same as subject endpoint — transcribes audio to text.
 ### Removed Methods
 - `TherapyChatModel::getConversation()`
 - `TherapistDashboardModel::notifyTherapistNewMessage()`
-- `TherapyChatService::getTherapyConversationByLlmId()`, `getTherapistsForGroup()`, `setTherapyMode()`, `getLookupValues()`
+- `TherapyChatService::getTherapyConversationByLlmId()`, `getTherapistsForGroup()`, `setTherapyMode()`, `getLookupValues()`, `removeTherapistFromGroup()`
 - `api.ts::setApiBaseUrl()`
 - `types/index.ts`: `DEFAULT_SUBJECT_LABELS`, `DEFAULT_THERAPIST_LABELS`

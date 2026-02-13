@@ -6,6 +6,7 @@
 <?php
 
 require_once __DIR__ . '/TherapyChatService.php';
+require_once __DIR__ . '/TherapyEmailHelper.php';
 
 /**
  * Therapy Alert Service
@@ -168,7 +169,7 @@ class TherapyAlertService extends TherapyChatService
      */
     public function getAlertsForTherapist($therapistId, $filters = array(), $limit = 50)
     {
-        $conversations = $this->getTherapyConversationsByTherapist($therapistId);
+        $conversations = $this->getTherapyConversationsByTherapist($therapistId, array(), THERAPY_STATS_LIMIT, 0);
         if (empty($conversations)) {
             return array();
         }
@@ -207,7 +208,7 @@ class TherapyAlertService extends TherapyChatService
      */
     public function getUnreadAlertCount($therapistId)
     {
-        $conversations = $this->getTherapyConversationsByTherapist($therapistId);
+        $conversations = $this->getTherapyConversationsByTherapist($therapistId, array(), THERAPY_STATS_LIMIT, 0);
         if (empty($conversations)) {
             return 0;
         }
@@ -269,7 +270,7 @@ class TherapyAlertService extends TherapyChatService
             $this->db->query_db($sql, array($conversation['id_llmConversations'], $therapistId));
         } else {
             // Mark ALL unread alerts for this therapist across all conversations
-            $conversations = $this->getTherapyConversationsByTherapist($therapistId);
+            $conversations = $this->getTherapyConversationsByTherapist($therapistId, array(), THERAPY_STATS_LIMIT, 0);
             if (empty($conversations)) {
                 return true;
             }
@@ -288,10 +289,6 @@ class TherapyAlertService extends TherapyChatService
      * PRIVATE HELPERS
      * ========================================================================= */
 
-    /**
-     * Send urgent email notification for critical/emergency alerts.
-     * Uses the SelfHelp JobScheduler to queue and send emails.
-     */
     /**
      * Send urgent email notification for critical/emergency alerts.
      * Emails are sent to:
@@ -361,27 +358,17 @@ class TherapyAlertService extends TherapyChatService
 
             // Send to all recipients
             foreach ($recipientEmails as $recipient) {
-                $mailData = array(
-                    "id_jobTypes" => $this->db->get_lookup_id_by_value(jobTypes, jobTypes_email),
-                    "id_jobStatus" => $this->db->get_lookup_id_by_value(scheduledJobsStatus, scheduledJobsStatus_queued),
-                    "date_to_be_executed" => date('Y-m-d H:i:s'),
-                    "from_email" => "noreply@selfhelp.local",
-                    "from_name" => "Therapy Chat",
-                    "reply_to" => "noreply@selfhelp.local",
-                    "recipient_emails" => $recipient['email'],
-                    "subject" => $subject,
-                    "body" => $body,
-                    "is_html" => 1,
-                    "description" => $recipient['description'],
-                    "id_users" => $recipient['id_users'],
-                    "attachments" => array()
+                TherapyEmailHelper::scheduleEmail(
+                    $this->db,
+                    $this->job_scheduler,
+                    $recipient['email'],
+                    $subject,
+                    $body,
+                    'noreply@selfhelp.local',
+                    'Therapy Chat',
+                    $recipient['description'],
+                    $recipient['id_users']
                 );
-
-                try {
-                    $this->job_scheduler->schedule_job($mailData, transactionBy_by_system);
-                } catch (Exception $mailEx) {
-                    error_log("TherapyAlertService: Failed to schedule urgent email to " . $recipient['email'] . ": " . $mailEx->getMessage());
-                }
             }
         } catch (Exception $e) {
             error_log("TherapyAlertService: Failed to send urgent notification - " . $e->getMessage());

@@ -286,7 +286,7 @@ class TherapyChatController extends TherapyBaseController
 
         try {
             $therapyService = $this->model->getTherapyService();
-            $messages = $therapyService->getTherapyMessages($conversationId, 100, $afterId);
+            $messages = $therapyService->getTherapyMessages($conversationId, THERAPY_DEFAULT_MESSAGE_LIMIT, $afterId);
             $therapyService->updateLastSeen($conversationId, 'subject');
             $therapyService->markMessagesAsSeen($conversationId, $userId);
 

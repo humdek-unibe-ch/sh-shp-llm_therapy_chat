@@ -10,7 +10,8 @@ The plugin registers a page type `sh_module_llm_therapy_chat` with these fields:
 | `therapy_chat_therapist_group` | select-group | Group containing therapists (for floating button visibility) |
 | `therapy_chat_subject_page` | select-page | Page ID for the patient chat interface |
 | `therapy_chat_therapist_page` | select-page | Page ID for the therapist dashboard |
-| `therapy_chat_danger_words` | textarea | Comma-separated danger keywords |
+| `therapy_chat_floating_icon` | text | Font Awesome icon class for the floating button (e.g. `fa-comments`) |
+| `therapy_chat_floating_label` | text | Optional text label for the floating button |
 | `therapy_chat_floating_position` | select | Position of the floating chat button |
 
 When the floating chat is enabled, the panel loads `therapy-chat.css` explicitly via a `<link>` tag so styles work on any page (not just the chat page).
@@ -23,14 +24,17 @@ Each `therapyChat` style instance can be configured with:
 |-------|---------|-------------|
 | `therapy_enable_ai` | `1` (enabled) | When disabled, AI is off — pure human-to-human chat |
 | `therapy_chat_default_mode` | `ai_hybrid` | Default mode: `ai_hybrid` or `human_only` |
-| `therapy_chat_default_model` | `gpt-4o-mini` | LLM model for AI responses |
-| `therapy_chat_max_tokens` | `2048` | Max tokens for AI response |
-| `therapy_chat_temperature` | `0.7` | AI temperature (creativity) |
-| `therapy_chat_system_prompt` | (built-in) | Custom system prompt for the AI |
-| `therapy_chat_polling_interval` | `10000` | Polling interval in ms |
-| `therapy_chat_tagging_enabled` | `1` | Allow patients to tag therapists |
+| `llm_model` | (empty, defaults to `gpt-4o-mini`) | LLM model for AI responses |
+| `llm_max_tokens` | `2048` | Max tokens for AI response |
+| `llm_temperature` | `0.7` | AI temperature (creativity) |
+| `conversation_context` | (built-in) | Custom system prompt for the AI |
+| `therapy_chat_polling_interval` | `3` | Polling interval in **seconds** |
+| `therapy_chat_enable_tagging` | `1` | Allow patients to tag therapists |
+| `danger_keywords` | (comma-separated) | Comma/semicolon/newline-separated danger keywords for keyword-based fallback detection |
 | `danger_notification_emails` | (empty) | Comma-separated email addresses to receive urgent danger notifications in addition to assigned therapists (e.g., clinical supervisors). Used when danger is detected via LLM or keyword matching. Emails are deduplicated if an address appears in both. |
-| `therapy_chat_speech_to_text_enabled` | `0` | Enable speech input |
+| `enable_speech_to_text` | `0` | Enable speech input |
+| `therapy_auto_start` | `0` | When enabled, inserts an initial welcome message when a conversation is created |
+| `therapy_auto_start_context` | (empty) | Markdown field for the auto-start welcome message shown when a conversation is created |
 | `therapy_chat_help_text` | `Use @therapist to request your therapist, or #topic to tag a predefined topic.` | Help text shown below chat input explaining @mention and #hashtag usage. Supports multilingual content via field translations. |
 | `css` | (empty) | Additional CSS class |
 
