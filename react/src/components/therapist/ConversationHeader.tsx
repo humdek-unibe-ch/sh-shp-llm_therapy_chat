@@ -3,9 +3,9 @@
  */
 
 import React from 'react';
-import type { Conversation, RiskLevel, ConversationStatus } from '../../types';
-import type { TherapistDashboardLabels } from '../../types';
-import type { TherapistFeatures } from '../../types';
+import { RiskBadge, StatusBadge } from '../../utils/badgeHelpers';
+import type { Conversation, ConversationStatus } from '../../types';
+import type { TherapistDashboardLabels, TherapistFeatures } from '../../types';
 
 export interface ConversationHeaderProps {
   conversation: Conversation;
@@ -15,36 +15,6 @@ export interface ConversationHeaderProps {
   onSetStatus?: (status: ConversationStatus) => void | Promise<void>;
   labels: TherapistDashboardLabels;
   features: TherapistFeatures;
-}
-
-function riskBadge(r: RiskLevel | undefined, labels: TherapistDashboardLabels): React.ReactNode {
-  if (!r) return null;
-  const v: Record<RiskLevel, string> = {
-    low: 'badge-success',
-    medium: 'badge-warning',
-    high: 'badge-danger',
-    critical: 'badge-danger',
-  };
-  const labelKey = `risk${r.charAt(0).toUpperCase() + r.slice(1)}` as keyof TherapistDashboardLabels;
-  const label = labels[labelKey];
-  return (
-    <span className={`badge ${v[r]}`}>
-      {r === 'critical' && <i className="fas fa-exclamation-triangle mr-1" />}
-      {typeof label === 'string' ? label : r}
-    </span>
-  );
-}
-
-function statusBadge(s: ConversationStatus | undefined, labels: TherapistDashboardLabels): React.ReactNode {
-  if (!s) return null;
-  const v: Record<ConversationStatus, string> = {
-    active: 'badge-success',
-    paused: 'badge-warning',
-    closed: 'badge-secondary',
-  };
-  const labelKey = `status${s.charAt(0).toUpperCase() + s.slice(1)}` as keyof TherapistDashboardLabels;
-  const label = labels[labelKey];
-  return <span className={`badge ${v[s]}`}>{typeof label === 'string' ? label : s}</span>;
 }
 
 export const ConversationHeader: React.FC<ConversationHeaderProps> = ({
@@ -85,8 +55,8 @@ export const ConversationHeader: React.FC<ConversationHeaderProps> = ({
           Mark read
         </button>
       )}
-      {features.showRiskColumn && riskBadge(conversation.risk_level, labels)}
-      {features.showStatusColumn && statusBadge(conversation.status, labels)}
+      {features.showRiskColumn && <RiskBadge risk={conversation.risk_level} labels={labels} />}
+      {features.showStatusColumn && <StatusBadge status={conversation.status} labels={labels} />}
       {features.enableAiToggle && onToggleAI && (
         <button
           className={`btn btn-sm ${

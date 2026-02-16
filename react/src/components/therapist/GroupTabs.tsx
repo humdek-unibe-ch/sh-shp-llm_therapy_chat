@@ -40,10 +40,12 @@ export const GroupTabs: React.FC<GroupTabsProps> = ({
       {groups.map((g) => {
         const groupUnread =
           unreadByGroup?.[g.id_groups] ?? unreadByGroup?.[String(g.id_groups)] ?? 0;
+        const isActive = String(selectedGroupId) === String(g.id_groups);
+        
         return (
           <li key={g.id_groups} className="nav-item">
             <button
-              className={`nav-link ${selectedGroupId === g.id_groups ? 'active' : ''}`}
+              className={`nav-link ${isActive ? 'active' : ''}`}
               onClick={() => onSelectGroup(g.id_groups)}
             >
               {g.group_name}

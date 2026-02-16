@@ -2,6 +2,9 @@
  * NotesPanel – Clinical notes sidebar with list, add, edit, delete
  */
 
+/* global $ -- jQuery + jquery-confirm loaded by SelfHelp host page */
+declare const $: any;
+
 import React from 'react';
 import { MarkdownRenderer } from '../shared/MarkdownRenderer';
 import type { Note } from '../../types';
@@ -63,7 +66,21 @@ export const NotesPanel: React.FC<NotesPanelProps> = ({
                 <button
                   className="btn btn-link btn-sm p-0 text-danger"
                   title="Delete note"
-                  onClick={() => onDeleteNote(n.id)}
+                  onClick={() => {
+                    ($ as any).confirm({
+                      title: 'Delete Note',
+                      content: 'Are you sure you want to delete this note?',
+                      type: 'red',
+                      buttons: {
+                        confirm: {
+                          text: 'Delete',
+                          btnClass: 'btn-danger',
+                          action: () => onDeleteNote(n.id),
+                        },
+                        cancel: { text: 'Cancel' },
+                      },
+                    });
+                  }}
                 >
                   <i className="fas fa-trash-alt tc-font-sm" />
                 </button>
