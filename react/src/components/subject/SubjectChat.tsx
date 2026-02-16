@@ -11,7 +11,7 @@
  *   - Speech-to-text input
  *   - Polling for new messages
  *   - Auto-clears the floating chat badge on load
- *   - Blocks sending when conversation is paused
+ *   - AI mode indicator (ai_enabled = true → AI responds, false → human-only)
  */
 
 import React, { useEffect, useCallback, useMemo, useRef, useState } from 'react';
@@ -85,9 +85,6 @@ export const SubjectChat: React.FC<SubjectChatProps> = ({ config }) => {
     pollFn: (convId, afterId) => api.getMessages(convId, afterId),
     senderType: 'subject',
   });
-
-  // Is the conversation paused by the therapist?
-  const isPaused = conversation?.status === 'paused';
 
   // Load conversation ONCE on mount — only mark-as-read when NOT in floating mode
   // (floating mode defers marking until the panel is actually opened/visible)
@@ -204,15 +201,9 @@ export const SubjectChat: React.FC<SubjectChatProps> = ({ config }) => {
           </div>
           {conversation && (
             <div className="d-flex align-items-center" style={{ gap: '0.5rem' }}>
-              {isPaused && (
-                <span className="badge badge-warning">
-                  <i className="fas fa-pause-circle mr-1" />
-                  Paused
-                </span>
-              )}
-              <span className={`badge ${conversation.ai_enabled && !isPaused ? 'badge-light' : 'badge-warning'}`}>
-                <i className={`fas ${conversation.ai_enabled && !isPaused ? 'fa-robot' : 'fa-user-md'} mr-1`} />
-                {conversation.ai_enabled && !isPaused ? labels.mode_ai : labels.mode_human}
+              <span className={`badge ${conversation.ai_enabled ? 'badge-light' : 'badge-warning'}`}>
+                <i className={`fas ${conversation.ai_enabled ? 'fa-robot' : 'fa-user-md'} mr-1`} />
+                {conversation.ai_enabled ? labels.mode_ai : labels.mode_human}
               </span>
             </div>
           )}
@@ -234,31 +225,22 @@ export const SubjectChat: React.FC<SubjectChatProps> = ({ config }) => {
           )}
         </div>
 
-        {/* Input area */}
+        {/* Input area – patient can always send messages */}
         <div className="card-footer bg-white border-top">
-          {isPaused ? (
-            <div className="text-center text-muted py-2">
-              <i className="fas fa-pause-circle mr-1" />
-              This conversation is currently paused by your therapist. You will be notified when it resumes.
-            </div>
-          ) : (
-            <>
-              <TaggingPanel
-                enabled={config.taggingEnabled}
-                helpText={labels.chat_help_text}
-              />
-              <MessageInput
-                onSend={sendMessage}
-                disabled={isSending || isLoading}
-                placeholder={labels.placeholder}
-                buttonLabel={labels.send_button}
-                speechToTextEnabled={config.speechToTextEnabled}
-                sectionId={config.sectionId}
-                onFetchMentions={config.taggingEnabled ? fetchMentions : undefined}
-                topicSuggestions={config.taggingEnabled ? topicSuggestions : undefined}
-              />
-            </>
-          )}
+          <TaggingPanel
+            enabled={config.taggingEnabled}
+            helpText={labels.chat_help_text}
+          />
+          <MessageInput
+            onSend={sendMessage}
+            disabled={isSending || isLoading}
+            placeholder={labels.placeholder}
+            buttonLabel={labels.send_button}
+            speechToTextEnabled={config.speechToTextEnabled}
+            sectionId={config.sectionId}
+            onFetchMentions={config.taggingEnabled ? fetchMentions : undefined}
+            topicSuggestions={config.taggingEnabled ? topicSuggestions : undefined}
+          />
         </div>
       </div>
     </div>

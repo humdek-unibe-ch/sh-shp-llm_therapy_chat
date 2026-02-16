@@ -8,7 +8,8 @@ export interface StatsHeaderProps {
   title: string;
   stats: {
     total: number;
-    active: number;
+    ai_enabled: number;
+    ai_blocked: number;
     risk_critical: number;
   };
   unreadCounts: {
@@ -17,7 +18,6 @@ export interface StatsHeaderProps {
   };
   labels: {
     title: string;
-    statusActive: string;
     riskCritical: string;
   };
 }
@@ -47,7 +47,8 @@ export const StatsHeader: React.FC<StatsHeaderProps> = ({
       </h5>
       <div className="d-flex flex-wrap tc-flex-gap-md">
         <StatItem value={stats.total} label="Patients" />
-        <StatItem value={stats.active} label={labels.statusActive} className="text-success" />
+        <StatItem value={stats.ai_enabled} label="AI Enabled" className="text-success" />
+        <StatItem value={stats.ai_blocked} label="AI Blocked" className="text-warning" />
         <StatItem
           value={unreadCounts.total}
           label="Unread"

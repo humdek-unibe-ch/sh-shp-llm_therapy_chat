@@ -157,7 +157,7 @@ const TherapistDashboardInner: React.FC<{ config: TherapistDashboardConfig }> = 
                   title={labels.title}
                   stats={stats}
                   unreadCounts={unreadCounts}
-                  labels={{ title: labels.title, statusActive: labels.statusActive, riskCritical: labels.riskCritical }}
+                  labels={{ title: labels.title, riskCritical: labels.riskCritical }}
                 />
               )
             }
@@ -226,12 +226,10 @@ const TherapistDashboardInner: React.FC<{ config: TherapistDashboardConfig }> = 
               {features.enableRiskControl && (
                 <RiskStatusControls
                   riskLevel={chat.conversation.risk_level || 'low'}
-                  status={chat.conversation.status || 'active'}
                   aiEnabled={chat.conversation.ai_enabled || false}
                   labels={labels}
                   features={features}
                   onSetRisk={convActions.setRisk}
-                  onSetStatus={convActions.setStatus}
                   onToggleAI={convActions.toggleAI}
                 />
               )}

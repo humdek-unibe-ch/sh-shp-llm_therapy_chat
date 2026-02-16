@@ -935,16 +935,19 @@ class TherapyChatService extends LlmService
 
         $stats = array(
             'total' => count($conversations),
-            'active' => 0,
-            'paused' => 0,
+            'ai_enabled' => 0,
+            'ai_blocked' => 0,
             'risk_critical' => 0,
             'risk_high' => 0,
             'unread_alerts' => 0
         );
 
         foreach ($conversations as $conv) {
-            if ($conv['status'] === THERAPY_STATUS_ACTIVE) $stats['active']++;
-            if ($conv['status'] === THERAPY_STATUS_PAUSED) $stats['paused']++;
+            if ($conv['ai_enabled']) {
+                $stats['ai_enabled']++;
+            } else {
+                $stats['ai_blocked']++;
+            }
             if ($conv['risk_level'] === THERAPY_RISK_CRITICAL) $stats['risk_critical']++;
             if ($conv['risk_level'] === THERAPY_RISK_HIGH) $stats['risk_high']++;
             $stats['unread_alerts'] += intval($conv['unread_alerts'] ?? 0);

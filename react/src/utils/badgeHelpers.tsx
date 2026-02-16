@@ -2,24 +2,21 @@
  * Badge Helper Components
  * ========================
  *
- * Shared risk-level and status badge rendering used by
+ * Shared risk-level and AI-mode badge rendering used by
  * PatientList, ConversationHeader, and other therapist components.
+ *
+ * NOTE: StatusBadge was removed — the "status" concept (active/paused)
+ * is now unified under the `ai_enabled` flag. Use AiModeBadge instead.
  */
 
 import React from 'react';
-import type { RiskLevel, ConversationStatus, TherapistDashboardLabels } from '../types';
+import type { RiskLevel, TherapistDashboardLabels } from '../types';
 
 const RISK_CLASSES: Record<RiskLevel, string> = {
   low: 'badge-success',
   medium: 'badge-warning',
   high: 'badge-danger',
   critical: 'badge-danger',
-};
-
-const STATUS_CLASSES: Record<ConversationStatus, string> = {
-  active: 'badge-success',
-  paused: 'badge-warning',
-  closed: 'badge-secondary',
 };
 
 function labelFor(labels: TherapistDashboardLabels, prefix: string, key: string): string {
@@ -38,11 +35,16 @@ export function RiskBadge({ risk, labels }: { risk: RiskLevel | undefined; label
   );
 }
 
-export function StatusBadge({ status, labels }: { status: ConversationStatus | undefined; labels: TherapistDashboardLabels }): React.ReactElement | null {
-  if (!status) return null;
-  return (
-    <span className={`badge ${STATUS_CLASSES[status]}`}>
-      {labelFor(labels, 'status', status)}
+export function AiModeBadge({ aiEnabled, labels }: { aiEnabled: boolean; labels: TherapistDashboardLabels }): React.ReactElement {
+  return aiEnabled ? (
+    <span className="badge badge-light">
+      <i className="fas fa-robot mr-1" />
+      {labels.aiModeIndicator || 'AI'}
+    </span>
+  ) : (
+    <span className="badge badge-warning">
+      <i className="fas fa-user-md mr-1" />
+      {labels.humanModeIndicator || 'Human'}
     </span>
   );
 }

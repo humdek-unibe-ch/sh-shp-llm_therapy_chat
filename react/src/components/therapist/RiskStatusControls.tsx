@@ -1,9 +1,12 @@
 /**
- * Risk & Status Controls Component
- * ===============================
+ * Risk & AI Controls Component
+ * ============================
  *
- * Controls for managing conversation risk level and status.
- * Provides buttons for risk assessment and conversation state management.
+ * Controls for managing conversation risk level and AI mode.
+ * The AI toggle (`ai_enabled`) is the single source of truth for
+ * whether the AI responds. When danger is detected the system sets
+ * `ai_enabled = false` and blocks the conversation; the therapist
+ * can re-enable AI here, which also unblocks the conversation.
  */
 
 import React from 'react';
@@ -12,8 +15,6 @@ import type { RiskLevel, TherapistDashboardLabels, TherapistFeatures } from '../
 export interface RiskStatusControlsProps {
   /** Current conversation risk level */
   riskLevel: RiskLevel;
-  /** Current conversation status */
-  status: string;
   /** Whether AI is enabled for this conversation */
   aiEnabled: boolean;
   /** Dashboard labels */
@@ -22,8 +23,6 @@ export interface RiskStatusControlsProps {
   features: TherapistFeatures;
   /** Called when risk level is changed */
   onSetRisk: (risk: RiskLevel) => void;
-  /** Called when status is changed */
-  onSetStatus: (status: string) => void;
   /** Called when AI is toggled */
   onToggleAI: () => void;
   /** Additional CSS classes */
@@ -31,16 +30,14 @@ export interface RiskStatusControlsProps {
 }
 
 /**
- * Risk and status controls for conversation management
+ * Risk and AI controls for conversation management
  */
 export const RiskStatusControls: React.FC<RiskStatusControlsProps> = ({
   riskLevel,
-  status,
   aiEnabled,
   labels,
   features,
   onSetRisk,
-  onSetStatus,
   onToggleAI,
   className = '',
 }) => {
@@ -51,18 +48,7 @@ export const RiskStatusControls: React.FC<RiskStatusControlsProps> = ({
       high: { active: 'btn-danger', inactive: 'btn-outline-danger' },
       critical: { active: 'btn-danger', inactive: 'btn-outline-danger' },
     };
-    
     return isActive ? colors[risk].active : colors[risk].inactive;
-  };
-
-  const getStatusButtonColor = (currentStatus: string, buttonStatus: string): string => {
-    const colors: Record<string, { active: string; inactive: string }> = {
-      active: { active: 'btn-success', inactive: 'btn-outline-success' },
-      paused: { active: 'btn-warning', inactive: 'btn-outline-warning' },
-    };
-    
-    const isActive = currentStatus === buttonStatus;
-    return isActive ? colors[buttonStatus]?.active || 'btn-outline-primary' : colors[buttonStatus]?.inactive || 'btn-outline-primary';
   };
 
   return (
@@ -97,37 +83,7 @@ export const RiskStatusControls: React.FC<RiskStatusControlsProps> = ({
         </div>
       )}
 
-      {/* Status Control – "active" = AI + therapist, "paused" = therapist-only (AI paused) */}
-      {features.enableStatusControl && (
-        <div className="card border-0 shadow-sm mb-3">
-          <div className="card-header bg-light py-2">
-            <h6 className="mb-0">
-              <i className="fas fa-toggle-on mr-2" />
-              Status
-            </h6>
-          </div>
-          <div className="card-body p-2 d-flex flex-wrap tc-flex-gap-xs">
-            {['active', 'paused'].map((statusOption) => {
-              const isActive = status === statusOption;
-              const buttonClass = getStatusButtonColor(status, statusOption);
-              const labelKey = `status${statusOption.charAt(0).toUpperCase() + statusOption.slice(1)}` as keyof typeof labels;
-              
-              return (
-                <button
-                  key={statusOption}
-                  className={`btn btn-sm ${buttonClass}`}
-                  onClick={() => onSetStatus(statusOption)}
-                  aria-pressed={isActive}
-                >
-                  {labels[labelKey] || statusOption}
-                </button>
-              );
-            })}
-          </div>
-        </div>
-      )}
-
-      {/* AI Toggle */}
+      {/* AI Toggle – single source of truth for AI on/off */}
       {features.enableAiToggle && (
         <div className="card border-0 shadow-sm mb-3">
           <div className="card-header bg-light py-2">
@@ -138,7 +94,7 @@ export const RiskStatusControls: React.FC<RiskStatusControlsProps> = ({
           </div>
           <div className="card-body p-2">
             <button
-              className={`btn btn-sm ${aiEnabled ? 'btn-primary' : 'btn-outline-secondary'}`}
+              className={`btn btn-sm btn-block ${aiEnabled ? 'btn-success' : 'btn-outline-warning'}`}
               onClick={onToggleAI}
               aria-pressed={aiEnabled}
             >

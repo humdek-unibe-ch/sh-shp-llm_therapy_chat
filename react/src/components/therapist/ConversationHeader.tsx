@@ -7,7 +7,7 @@
  */
 
 import React from 'react';
-import { RiskBadge, StatusBadge } from '../../utils/badgeHelpers';
+import { RiskBadge } from '../../utils/badgeHelpers';
 import type { Conversation } from '../../types';
 import type { TherapistDashboardLabels, TherapistFeatures } from '../../types';
 
@@ -56,7 +56,6 @@ export const ConversationHeader: React.FC<ConversationHeaderProps> = ({
         </button>
       )}
       {features.showRiskColumn && <RiskBadge risk={conversation.risk_level} labels={labels} />}
-      {features.showStatusColumn && <StatusBadge status={conversation.status} labels={labels} />}
     </div>
   </div>
 );

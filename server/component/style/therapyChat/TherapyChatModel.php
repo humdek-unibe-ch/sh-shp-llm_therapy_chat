@@ -451,8 +451,7 @@ class TherapyChatModel extends StyleModel
     {
         return $conversation
             && $conversation['ai_enabled']
-            && $conversation['mode'] === THERAPY_MODE_AI_HYBRID
-            && ($conversation['status'] ?? '') !== THERAPY_STATUS_PAUSED;
+            && $conversation['mode'] === THERAPY_MODE_AI_HYBRID;
     }
 
 

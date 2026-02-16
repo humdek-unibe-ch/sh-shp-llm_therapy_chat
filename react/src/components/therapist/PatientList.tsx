@@ -3,7 +3,7 @@
  */
 
 import React from 'react';
-import { RiskBadge, StatusBadge } from '../../utils/badgeHelpers';
+import { RiskBadge, AiModeBadge } from '../../utils/badgeHelpers';
 import type { Conversation, UnreadCounts } from '../../types';
 import type { TherapistDashboardLabels, TherapistFeatures } from '../../types';
 
@@ -143,7 +143,7 @@ export const PatientList: React.FC<PatientListProps> = ({
                 <div className="d-flex flex-shrink-0 ml-2 tc-flex-gap-xs">
                   {unread > 0 && <span className="badge badge-primary">{unread} new</span>}
                   {features.showRiskColumn && <RiskBadge risk={conv.risk_level} labels={labels} />}
-                  {features.showStatusColumn && <StatusBadge status={conv.status} labels={labels} />}
+                  <AiModeBadge aiEnabled={conv.ai_enabled} labels={labels} />
                   {(conv.unread_alerts ?? 0) > 0 && (
                     <span className="badge badge-danger">
                       <i className="fas fa-bell" /> {conv.unread_alerts}
@@ -154,7 +154,6 @@ export const PatientList: React.FC<PatientListProps> = ({
               <div className="d-flex justify-content-between align-items-center">
                 <small className={isActive ? '' : unread > 0 ? 'text-dark' : 'text-muted'}>
                   {conv.subject_code}
-                  {!conv.ai_enabled && <span className="ml-1">&middot; Human only</span>}
                 </small>
                 <small className={isActive ? '' : 'text-muted'}>
                   <i className="fas fa-comment-dots mr-1 tc-icon-xs" />

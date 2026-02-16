@@ -12,12 +12,11 @@
  */
 
 import { useState, useCallback } from 'react';
-import type { RiskLevel, ConversationStatus, Conversation } from '../types';
+import type { RiskLevel, Conversation } from '../types';
 
 interface ConversationApi {
   markMessagesRead: (conversationId: number | string) => Promise<any>;
   toggleAI: (conversationId: number | string, enabled: boolean) => Promise<{ ai_enabled: boolean }>;
-  setStatus: (conversationId: number | string, status: string) => Promise<any>;
   setRiskLevel: (conversationId: number | string, risk: string) => Promise<any>;
   initializeConversation: (patientId: number) => Promise<{ conversation: Conversation; already_exists: boolean }>;
 }
@@ -75,22 +74,6 @@ export function useConversationActions({
     }
   }, [api, getConversation, updateConversation, reloadChat]);
 
-  const setStatus = useCallback(async (status: string) => {
-    const conv = getConversation();
-    if (!conv) return;
-    try {
-      await api.setStatus(conv.id, status);
-      updateConversation(conv.id, { status: status as ConversationStatus });
-      await Promise.all([
-        reloadChat(conv.id),
-        refreshConversations(activeGroupId, activeFilter, true),
-        refreshStats(),
-      ]);
-    } catch (err) {
-      console.error('Failed to set status:', err);
-    }
-  }, [api, getConversation, updateConversation, reloadChat, refreshConversations, refreshStats, activeGroupId, activeFilter]);
-
   const setRisk = useCallback(async (risk: RiskLevel) => {
     const conv = getConversation();
     if (!conv) return;
@@ -126,7 +109,6 @@ export function useConversationActions({
   return {
     markRead,
     toggleAI,
-    setStatus,
     setRisk,
     initializeConversation,
     initializingPatientId,

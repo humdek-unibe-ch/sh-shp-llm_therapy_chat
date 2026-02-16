@@ -761,13 +761,11 @@ class TherapistDashboardModel extends StyleModel
             // Feature toggles
             'features' => [
                 'showRiskColumn' => $getBoolField('dashboard_show_risk_column', true),
-                'showStatusColumn' => $getBoolField('dashboard_show_status_column', true),
                 'showAlertsPanel' => $getBoolField('dashboard_show_alerts_panel', true),
                 'showNotesPanel' => $getBoolField('dashboard_show_notes_panel', true),
                 'showStatsHeader' => $getBoolField('dashboard_show_stats_header', true),
                 'enableAiToggle' => $getBoolField('dashboard_enable_ai_toggle', true),
                 'enableRiskControl' => $getBoolField('dashboard_enable_risk_control', true),
-                'enableStatusControl' => $getBoolField('dashboard_enable_status_control', true),
                 'enableNotes' => $getBoolField('dashboard_enable_notes', true),
                 'enableInvisibleMode' => $getBoolField('dashboard_enable_invisible_mode', true),
             ],
@@ -807,10 +805,6 @@ class TherapistDashboardModel extends StyleModel
                 'riskHigh' => $getField('dashboard_risk_high', 'High'),
                 'riskCritical' => $getField('dashboard_risk_critical', 'Critical'),
 
-                'statusActive' => $getField('dashboard_status_active', 'Active'),
-                'statusPaused' => $getField('dashboard_status_paused', 'Paused'),
-                'statusClosed' => $getField('dashboard_status_closed', 'Closed'),
-
                 'disableAI' => $getField('dashboard_disable_ai', 'Pause AI'),
                 'enableAI' => $getField('dashboard_enable_ai', 'Resume AI'),
                 'aiModeIndicator' => $getField('dashboard_ai_mode_indicator', 'AI-assisted mode'),
@@ -823,7 +817,8 @@ class TherapistDashboardModel extends StyleModel
                 'leaveConversation' => $getField('dashboard_leave_conversation', 'Leave Conversation'),
 
                 'statPatients' => $getField('dashboard_stat_patients', 'Patients'),
-                'statActive' => $getField('dashboard_stat_active', 'Active'),
+                'statAiEnabled' => $getField('dashboard_stat_ai_enabled', 'AI Enabled'),
+                'statAiBlocked' => $getField('dashboard_stat_ai_blocked', 'AI Blocked'),
                 'statCritical' => $getField('dashboard_stat_critical', 'Critical'),
                 'statAlerts' => $getField('dashboard_stat_alerts', 'Alerts'),
                 'statTags' => $getField('dashboard_stat_tags', 'Tags'),

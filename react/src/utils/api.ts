@@ -259,13 +259,6 @@ export function createTherapistApi(sectionId?: number) {
       return apiPost(fd);
     },
 
-    async setStatus(conversationId: number | string, status: string): Promise<ApiOk> {
-      const fd = postData('set_status', sectionId);
-      fd.append('conversation_id', String(conversationId));
-      fd.append('status', status);
-      return apiPost(fd);
-    },
-
     // ---- Notes ----
 
     async addNote(conversationId: number | string, content: string, noteType?: string): Promise<{ success: boolean; note_id: number }> {

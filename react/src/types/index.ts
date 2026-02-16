@@ -20,9 +20,6 @@ export type RiskLevel = 'low' | 'medium' | 'high' | 'critical';
 /** Conversation modes (therapyChatModes lookup) */
 export type ConversationMode = 'ai_hybrid' | 'human_only';
 
-/** Conversation status (therapyConversationStatus lookup) */
-export type ConversationStatus = 'active' | 'paused' | 'closed';
-
 /** Alert types (therapyAlertTypes lookup) */
 export type AlertType =
   | 'danger_detected'
@@ -73,7 +70,6 @@ export interface Conversation {
   title?: string;
   mode?: ConversationMode;
   ai_enabled: boolean;
-  status?: ConversationStatus;
   risk_level?: RiskLevel;
   model?: string;
   created_at: string;
@@ -178,9 +174,8 @@ export interface UnreadCounts {
 
 export interface DashboardStats {
   total: number;
-  active: number;
-  paused: number;
-  closed: number;
+  ai_enabled: number;
+  ai_blocked: number;
   risk_low: number;
   risk_medium: number;
   risk_high: number;
@@ -231,9 +226,6 @@ export interface TherapistDashboardLabels {
   riskMedium: string;
   riskHigh: string;
   riskCritical: string;
-  statusActive: string;
-  statusPaused: string;
-  statusClosed: string;
   disableAI: string;
   enableAI: string;
   aiModeIndicator: string;
@@ -260,13 +252,11 @@ export interface TherapistDashboardLabels {
 
 export interface TherapistFeatures {
   showRiskColumn: boolean;
-  showStatusColumn: boolean;
   showAlertsPanel: boolean;
   showNotesPanel: boolean;
   showStatsHeader: boolean;
   enableAiToggle: boolean;
   enableRiskControl: boolean;
-  enableStatusControl: boolean;
   enableNotes: boolean;
 }
 
