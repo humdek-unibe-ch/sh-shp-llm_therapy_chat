@@ -395,9 +395,16 @@ export const DashboardDataProvider: React.FC<DashboardDataProviderProps> = ({
     dispatch({ type: 'UPDATE_CONVERSATION', payload: { id, conversation } });
   }, []);
 
-  const markAlertRead = useCallback((alertId: number) => {
+  const markAlertRead = useCallback(async (alertId: number) => {
+    // Optimistic local update
     dispatch({ type: 'MARK_ALERT_READ', payload: alertId });
-  }, []);
+    // Persist to backend
+    try {
+      await api.markAlertRead(alertId);
+    } catch (err) {
+      console.error('Failed to mark alert as read:', err);
+    }
+  }, [api]);
 
   // ---------------------------------------------------------------------------
   // Utility actions

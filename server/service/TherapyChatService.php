@@ -171,9 +171,10 @@ class TherapyChatService extends LlmService
         // Find all patients in these groups
         $groupPlaceholders = implode(',', array_fill(0, count($groupIds), '?'));
 
-        // LEFT JOIN to view_therapyConversations so patients without conversations
-        // are still included. We use users_groups as the base to find all patients,
-        // then optionally join their therapy conversation data.
+        // Use a subquery to find the latest (most recently created) non-deleted
+        // conversation per user. This prevents the GROUP BY ambiguity when a
+        // patient has multiple conversations (e.g. after a "closed" conversation
+        // caused a new one to be created).
         $sql = "SELECT
                     u.id as id_users,
                     u.name as subject_name,
@@ -206,7 +207,18 @@ class TherapyChatService extends LlmService
                     CASE WHEN vtc.id IS NULL THEN 1 ELSE 0 END as no_conversation
                 FROM users u
                 INNER JOIN users_groups ug ON ug.id_users = u.id
-                LEFT JOIN view_therapyConversations vtc ON vtc.id_users = u.id AND (vtc.deleted = 0 OR vtc.deleted IS NULL)
+                LEFT JOIN (
+                    SELECT vtc_inner.*
+                    FROM view_therapyConversations vtc_inner
+                    INNER JOIN (
+                        SELECT id_users, MAX(created_at) as max_created
+                        FROM view_therapyConversations
+                        WHERE (deleted = 0 OR deleted IS NULL)
+                        GROUP BY id_users
+                    ) latest ON vtc_inner.id_users = latest.id_users
+                              AND vtc_inner.created_at = latest.max_created
+                    WHERE (vtc_inner.deleted = 0 OR vtc_inner.deleted IS NULL)
+                ) vtc ON vtc.id_users = u.id
                 LEFT JOIN validation_codes vc ON vc.id_users = u.id AND vc.consumed IS NULL
                 WHERE ug.id_groups IN ($groupPlaceholders)";
 

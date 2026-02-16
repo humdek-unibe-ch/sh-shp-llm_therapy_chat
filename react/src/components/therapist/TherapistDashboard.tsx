@@ -161,11 +161,12 @@ const TherapistDashboardInner: React.FC<{ config: TherapistDashboardConfig }> = 
                 />
               )
             }
-            alertBanner={
-              alerts.length > 0 && (
-                <AlertBanner alerts={alerts} onAcknowledge={actions.markAlertRead} labels={labels} />
-              )
-            }
+            alertBanner={(() => {
+              const unreadAlerts = alerts.filter(a => !a.is_read);
+              return unreadAlerts.length > 0 && (
+                <AlertBanner alerts={unreadAlerts} onAcknowledge={actions.markAlertRead} labels={labels} />
+              );
+            })()}
             groupTabs={
               groups.length > 1 && (
                 <GroupTabs

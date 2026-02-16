@@ -59,7 +59,6 @@ export const RiskStatusControls: React.FC<RiskStatusControlsProps> = ({
     const colors: Record<string, { active: string; inactive: string }> = {
       active: { active: 'btn-success', inactive: 'btn-outline-success' },
       paused: { active: 'btn-warning', inactive: 'btn-outline-warning' },
-      closed: { active: 'btn-secondary', inactive: 'btn-outline-secondary' },
     };
     
     const isActive = currentStatus === buttonStatus;
@@ -98,7 +97,7 @@ export const RiskStatusControls: React.FC<RiskStatusControlsProps> = ({
         </div>
       )}
 
-      {/* Status Control */}
+      {/* Status Control – "active" = AI + therapist, "paused" = therapist-only (AI paused) */}
       {features.enableStatusControl && (
         <div className="card border-0 shadow-sm mb-3">
           <div className="card-header bg-light py-2">
@@ -108,7 +107,7 @@ export const RiskStatusControls: React.FC<RiskStatusControlsProps> = ({
             </h6>
           </div>
           <div className="card-body p-2 d-flex flex-wrap tc-flex-gap-xs">
-            {['active', 'paused', 'closed'].map((statusOption) => {
+            {['active', 'paused'].map((statusOption) => {
               const isActive = status === statusOption;
               const buttonClass = getStatusButtonColor(status, statusOption);
               const labelKey = `status${statusOption.charAt(0).toUpperCase() + statusOption.slice(1)}` as keyof typeof labels;
