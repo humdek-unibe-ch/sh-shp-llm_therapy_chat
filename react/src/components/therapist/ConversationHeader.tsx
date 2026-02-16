@@ -1,18 +1,20 @@
 /**
- * ConversationHeader – Conversation header bar with patient info and controls
+ * ConversationHeader – Conversation header bar with patient info and status badges
+ *
+ * Action buttons (AI toggle, status control, flag dropdown) are intentionally
+ * NOT here – they live exclusively in the right-sidebar RiskStatusControls
+ * to avoid confusing duplicate controls.
  */
 
 import React from 'react';
 import { RiskBadge, StatusBadge } from '../../utils/badgeHelpers';
-import type { Conversation, ConversationStatus } from '../../types';
+import type { Conversation } from '../../types';
 import type { TherapistDashboardLabels, TherapistFeatures } from '../../types';
 
 export interface ConversationHeaderProps {
   conversation: Conversation;
   unreadCount: number;
   onMarkRead?: () => void | Promise<void>;
-  onToggleAI?: () => void | Promise<void>;
-  onSetStatus?: (status: ConversationStatus) => void | Promise<void>;
   labels: TherapistDashboardLabels;
   features: TherapistFeatures;
 }
@@ -21,8 +23,6 @@ export const ConversationHeader: React.FC<ConversationHeaderProps> = ({
   conversation,
   unreadCount,
   onMarkRead,
-  onToggleAI,
-  onSetStatus,
   labels,
   features,
 }) => (
@@ -57,35 +57,6 @@ export const ConversationHeader: React.FC<ConversationHeaderProps> = ({
       )}
       {features.showRiskColumn && <RiskBadge risk={conversation.risk_level} labels={labels} />}
       {features.showStatusColumn && <StatusBadge status={conversation.status} labels={labels} />}
-      {features.enableAiToggle && onToggleAI && (
-        <button
-          className={`btn btn-sm ${
-            conversation.ai_enabled ? 'btn-outline-warning' : 'btn-outline-success'
-          }`}
-          onClick={onToggleAI}
-        >
-          <i className="fas fa-robot mr-1" />
-          {conversation.ai_enabled ? labels.disableAI : labels.enableAI}
-        </button>
-      )}
-      {features.enableStatusControl && onSetStatus && (
-        <div className="dropdown">
-          <button className="btn btn-outline-secondary btn-sm dropdown-toggle" data-toggle="dropdown">
-            <i className="fas fa-flag" />
-          </button>
-          <div className="dropdown-menu dropdown-menu-right">
-            <button className="dropdown-item" onClick={() => onSetStatus('active')}>
-              <span className="badge badge-success mr-2">&bull;</span> {labels.statusActive}
-            </button>
-            <button className="dropdown-item" onClick={() => onSetStatus('paused')}>
-              <span className="badge badge-warning mr-2">&bull;</span> {labels.statusPaused}
-            </button>
-            <button className="dropdown-item" onClick={() => onSetStatus('closed')}>
-              <span className="badge badge-secondary mr-2">&bull;</span> {labels.statusClosed}
-            </button>
-          </div>
-        </div>
-      )}
     </div>
   </div>
 );

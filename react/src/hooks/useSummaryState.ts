@@ -25,15 +25,15 @@ export function useSummaryState({ generateSummary, addNote, getConversationId, o
     const convId = getConversationId();
     if (!convId) return;
 
+    // Open modal immediately so the user sees loading state
+    setOpen(true);
     setGenerating(true);
     setError(null);
     try {
       const response = await generateSummary(convId);
       setText(response.summary);
-      setOpen(true);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to generate summary');
-      setOpen(true);
     } finally {
       setGenerating(false);
     }

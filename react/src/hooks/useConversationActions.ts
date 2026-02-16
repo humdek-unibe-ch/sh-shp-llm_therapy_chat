@@ -27,10 +27,10 @@ interface UseConversationActionsOptions {
   getConversation: () => Conversation | null;
   updateConversation: (id: number | string, update: Partial<Conversation>) => void;
   refreshUnreadCounts: () => Promise<void>;
-  refreshConversations: (groupId?: number | null, filter?: string, silent?: boolean) => Promise<void>;
+  refreshConversations: (groupId?: number | string | null, filter?: string, silent?: boolean) => Promise<void>;
   refreshStats: () => Promise<void>;
   selectConversation: (id: number | string | null) => void;
-  activeGroupId: number | null;
+  activeGroupId: number | string | null;
   activeFilter: string;
   /** Re-load the chat state for the currently selected conversation */
   reloadChat: (convId?: number | string) => Promise<void>;
@@ -55,9 +55,12 @@ export function useConversationActions({
     if (!conv) return;
     try {
       await api.markMessagesRead(conv.id);
-      await refreshUnreadCounts();
+      await Promise.all([
+        refreshUnreadCounts(),
+        refreshConversations(activeGroupId, activeFilter, true),
+      ]);
     } catch { /* ignore */ }
-  }, [api, getConversation, refreshUnreadCounts]);
+  }, [api, getConversation, refreshUnreadCounts, refreshConversations, activeGroupId, activeFilter]);
 
   const toggleAI = useCallback(async () => {
     const conv = getConversation();

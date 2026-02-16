@@ -100,9 +100,14 @@ const TherapistDashboardInner: React.FC<{ config: TherapistDashboardConfig }> = 
     onNoteDeleted: actions.deleteNote,
   });
 
-  // ---- Polling ----
+  // ---- Polling (refreshes dashboard data AND chat messages) ----
   usePolling({
-    callback: () => actions.refresh(),
+    callback: async () => {
+      await Promise.all([
+        actions.refresh(),
+        chat.pollMessages(),
+      ]);
+    },
     interval: config.pollingInterval || 5000,
   });
 
@@ -125,7 +130,7 @@ const TherapistDashboardInner: React.FC<{ config: TherapistDashboardConfig }> = 
     writeUrlState({ uid: convId ?? undefined, gid: activeGroupId ?? undefined });
   }, [actions, activeGroupId]);
 
-  const switchGroup = useCallback((groupId: number | null) => {
+  const switchGroup = useCallback((groupId: number | string | null) => {
     actions.setActiveGroup(groupId);
     writeUrlState({ uid: selectedConversationId ?? undefined, gid: groupId ?? undefined });
   }, [actions, selectedConversationId]);
@@ -173,28 +178,6 @@ const TherapistDashboardInner: React.FC<{ config: TherapistDashboardConfig }> = 
                 />
               )
             }
-            exportControls={
-              <div className="dropdown">
-                <button className="btn btn-outline-secondary btn-sm dropdown-toggle" type="button" data-toggle="dropdown">
-                  <i className="fas fa-download mr-1" />Export CSV
-                </button>
-                <div className="dropdown-menu dropdown-menu-right">
-                  {selectedConversationId && chat.conversation && (
-                    <a className="dropdown-item" href={api.getExportUrl('patient', selectedConversationId)} target="_blank" rel="noopener noreferrer">
-                      <i className="fas fa-user mr-2" />Export current patient
-                    </a>
-                  )}
-                  {activeGroupId != null && (
-                    <a className="dropdown-item" href={api.getExportUrl('group', null, activeGroupId)} target="_blank" rel="noopener noreferrer">
-                      <i className="fas fa-users mr-2" />Export current group
-                    </a>
-                  )}
-                  <a className="dropdown-item" href={api.getExportUrl('all')} target="_blank" rel="noopener noreferrer">
-                    <i className="fas fa-globe mr-2" />Export all conversations
-                  </a>
-                </div>
-              </div>
-            }
           />
         }
         sidebar={
@@ -227,8 +210,6 @@ const TherapistDashboardInner: React.FC<{ config: TherapistDashboardConfig }> = 
                   features={features}
                   config={config}
                   onMarkRead={convActions.markRead}
-                  onToggleAI={convActions.toggleAI}
-                  onSetStatus={convActions.setStatus}
                   onCreateDraft={draft.generate}
                   onGenerateSummary={summary.generate}
                   draftModalOpen={draft.open}
@@ -253,6 +234,29 @@ const TherapistDashboardInner: React.FC<{ config: TherapistDashboardConfig }> = 
                   onToggleAI={convActions.toggleAI}
                 />
               )}
+              {/* Export CSV dropdown – grouped with right-sidebar controls */}
+              <div className="card border-0 shadow-sm mb-3">
+                <div className="card-body py-2 px-3">
+                  <div className="dropdown">
+                    <button className="btn btn-outline-secondary btn-sm btn-block dropdown-toggle" type="button" data-toggle="dropdown">
+                      <i className="fas fa-download mr-1" />Export CSV
+                    </button>
+                    <div className="dropdown-menu dropdown-menu-right">
+                      <a className="dropdown-item" href={api.getExportUrl('patient', selectedConversationId)} target="_blank" rel="noopener noreferrer">
+                        <i className="fas fa-user mr-2" />Export current patient
+                      </a>
+                      {activeGroupId != null && (
+                        <a className="dropdown-item" href={api.getExportUrl('group', null, activeGroupId)} target="_blank" rel="noopener noreferrer">
+                          <i className="fas fa-users mr-2" />Export current group
+                        </a>
+                      )}
+                      <a className="dropdown-item" href={api.getExportUrl('all')} target="_blank" rel="noopener noreferrer">
+                        <i className="fas fa-globe mr-2" />Export all conversations
+                      </a>
+                    </div>
+                  </div>
+                </div>
+              </div>
               {features.enableNotes && features.showNotesPanel && (
                 <NotesPanel
                   notes={notes}

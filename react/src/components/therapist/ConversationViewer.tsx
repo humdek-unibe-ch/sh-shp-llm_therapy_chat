@@ -42,8 +42,6 @@ export interface ConversationViewerProps {
   features: TherapistFeatures;
   config: TherapistDashboardConfig;
   onMarkRead: () => void | Promise<void>;
-  onToggleAI: () => void | Promise<void>;
-  onSetStatus: (status: string) => void | Promise<void>;
   onCreateDraft: () => void | Promise<void>;
   onGenerateSummary: () => void | Promise<void>;
   draftModalOpen: boolean;
@@ -61,8 +59,6 @@ export const ConversationViewer: React.FC<ConversationViewerProps> = ({
   features,
   config,
   onMarkRead,
-  onToggleAI,
-  onSetStatus,
   onCreateDraft,
   onGenerateSummary,
   draftModalOpen,
@@ -70,13 +66,11 @@ export const ConversationViewer: React.FC<ConversationViewerProps> = ({
 }) => {
   return (
     <div className="card border-0 shadow-sm h-100 d-flex flex-column">
-      {/* Header */}
+      {/* Header – status badges only; action buttons are in right sidebar */}
       <ConversationHeader
         conversation={conversation}
         unreadCount={unreadCount}
         onMarkRead={onMarkRead}
-        onToggleAI={onToggleAI}
-        onSetStatus={onSetStatus}
         labels={labels}
         features={features}
       />

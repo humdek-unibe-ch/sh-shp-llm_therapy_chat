@@ -7,8 +7,8 @@ import type { TherapistGroup, UnreadCounts } from '../../types';
 
 export interface GroupTabsProps {
   groups: TherapistGroup[];
-  selectedGroupId: number | null;
-  onSelectGroup: (groupId: number | null) => void;
+  selectedGroupId: number | string | null;
+  onSelectGroup: (groupId: number | string | null) => void;
   unreadByGroup: UnreadCounts['byGroup'];
   totalUnread: number;
   labels: {

@@ -26,17 +26,17 @@ export function useDraftState({ createDraft, sendMessage, getConversationId }: U
     const convId = getConversationId();
     if (!convId) return;
 
+    // Open modal immediately so the user sees loading state
+    setOpen(true);
     setGenerating(true);
     setError(null);
     try {
       const response = await createDraft(convId);
       if (response.draft) {
         setText(response.draft.edited_content || response.draft.ai_content || '');
-        setOpen(true);
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to generate draft');
-      setOpen(true);
     } finally {
       setGenerating(false);
     }

@@ -8,11 +8,13 @@
  */
 
 export interface UrlState {
-  gid?: number;
+  /** Group ID – kept as the raw string so "0000000005" matches backend IDs */
+  gid?: number | string;
+  /** User/conversation ID – kept as raw string for padded IDs */
   uid?: number | string;
 }
 
-/** Read gid/uid from the current URL search params */
+/** Read gid/uid from the current URL search params (preserves padded strings) */
 export function readUrlState(): UrlState {
   if (typeof window === 'undefined') return {};
 
@@ -21,15 +23,17 @@ export function readUrlState(): UrlState {
     const state: UrlState = {};
 
     const gidStr = sp.get('gid');
-    if (gidStr != null) {
+    if (gidStr != null && gidStr !== '') {
+      // Keep as number if it's a plain number, otherwise keep original string
+      // This ensures "6" -> 6 but "0000000005" stays as string
       const gid = Number(gidStr);
-      if (!isNaN(gid)) state.gid = gid;
+      state.gid = (!isNaN(gid) && String(gid) === gidStr) ? gid : gidStr;
     }
 
     const uidStr = sp.get('uid');
-    if (uidStr != null) {
+    if (uidStr != null && uidStr !== '') {
       const uid = Number(uidStr);
-      state.uid = isNaN(uid) ? uidStr : uid;
+      state.uid = (!isNaN(uid) && String(uid) === uidStr) ? uid : uidStr;
     }
 
     return state;

@@ -2,8 +2,7 @@
  * Header Area Component
  * =====================
  *
- * Container for the dashboard header with stats, alerts, and controls.
- * Combines StatsHeader, AlertBanner, and GroupTabs into one header area.
+ * Container for the dashboard header with stats, alerts, and group tabs.
  */
 
 import React from 'react';
@@ -16,8 +15,6 @@ export interface HeaderAreaProps {
   alertBanner?: ReactNode;
   /** Group tabs component */
   groupTabs?: ReactNode;
-  /** Export controls component */
-  exportControls?: ReactNode;
   /** Additional CSS classes */
   className?: string;
 }
@@ -29,27 +26,15 @@ export const HeaderArea: React.FC<HeaderAreaProps> = ({
   statsHeader,
   alertBanner,
   groupTabs,
-  exportControls,
   className = '',
 }) => {
   return (
     <div className={`tc-header-area ${className}`}>
-      {/* Stats Header */}
       {statsHeader}
-
-      {/* Alert Banner */}
       {alertBanner}
-
-      {/* Group Tabs and Export Controls Row */}
-      {(groupTabs || exportControls) && (
-        <div className="d-flex justify-content-between align-items-center mb-3">
-          {/* Group Tabs */}
-          <div className="flex-grow-1">
-            {groupTabs}
-          </div>
-
-          {/* Export Controls */}
-          {exportControls}
+      {groupTabs && (
+        <div className="mb-3">
+          {groupTabs}
         </div>
       )}
     </div>

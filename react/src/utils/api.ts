@@ -341,7 +341,7 @@ export function createTherapistApi(sectionId?: number) {
      * Build a URL for CSV export download.
      * The browser navigates to this URL to trigger the file download.
      */
-    getExportUrl(scope: 'patient' | 'group' | 'all', conversationId?: number | string | null, groupId?: number | null): string {
+    getExportUrl(scope: 'patient' | 'group' | 'all', conversationId?: number | string | null, groupId?: number | string | null): string {
       const params: Record<string, string> = { scope };
       if (conversationId != null) params.conversation_id = String(conversationId);
       if (groupId != null) params.group_id = String(groupId);

@@ -36,7 +36,7 @@ interface DashboardState {
   
   // UI State
   selectedConversationId: number | string | null;
-  activeGroupId: number | null;
+  activeGroupId: number | string | null;
   activeFilter: 'all' | 'active' | 'critical' | 'unread';
   
   // Loading states
@@ -66,7 +66,7 @@ type DashboardAction =
   | { type: 'SET_GROUPS'; payload: TherapistGroup[] }
   | { type: 'SET_STATS'; payload: DashboardStats }
   | { type: 'SET_SELECTED_CONVERSATION'; payload: number | string | null }
-  | { type: 'SET_ACTIVE_GROUP'; payload: number | null }
+  | { type: 'SET_ACTIVE_GROUP'; payload: number | string | null }
   | { type: 'SET_ACTIVE_FILTER'; payload: 'all' | 'active' | 'critical' | 'unread' }
   | { type: 'SET_LOADING'; payload: { key: keyof DashboardState['loading']; value: boolean } }
   | { type: 'SET_ERROR'; payload: { key: keyof DashboardState['errors']; value: string | null } }
@@ -81,7 +81,7 @@ interface DashboardContextValue {
   state: DashboardState;
   actions: {
     // Data fetching
-    loadConversations: (groupId?: number | null, filter?: string, silent?: boolean) => Promise<void>;
+    loadConversations: (groupId?: number | string | null, filter?: string, silent?: boolean) => Promise<void>;
     loadAlerts: () => Promise<void>;
     loadNotes: (conversationId: number | string) => Promise<void>;
     loadUnreadCounts: () => Promise<void>;
@@ -90,7 +90,7 @@ interface DashboardContextValue {
     
     // State management
     setSelectedConversation: (id: number | string | null) => void;
-    setActiveGroup: (id: number | null) => void;
+    setActiveGroup: (id: number | string | null) => void;
     setActiveFilter: (filter: 'all' | 'active' | 'critical' | 'unread') => void;
     
     // CRUD operations
@@ -239,7 +239,7 @@ interface DashboardDataProviderProps {
   children: React.ReactNode;
   config: TherapistDashboardConfig;
   /** Initial group ID from URL (overrides config.selectedGroupId) */
-  initialGroupId?: number | null;
+  initialGroupId?: number | string | null;
   /** Initial subject/conversation ID from URL */
   initialSubjectId?: number | string | null;
 }
@@ -267,7 +267,7 @@ export const DashboardDataProvider: React.FC<DashboardDataProviderProps> = ({
   // ---------------------------------------------------------------------------
 
   const loadConversations = useCallback(async (
-    groupId?: number | null,
+    groupId?: number | string | null,
     filter?: string,
     silent = false
   ) => {
@@ -367,7 +367,7 @@ export const DashboardDataProvider: React.FC<DashboardDataProviderProps> = ({
     dispatch({ type: 'SET_SELECTED_CONVERSATION', payload: id });
   }, []);
 
-  const setActiveGroup = useCallback((id: number | null) => {
+  const setActiveGroup = useCallback((id: number | string | null) => {
     dispatch({ type: 'SET_ACTIVE_GROUP', payload: id });
   }, []);
 
