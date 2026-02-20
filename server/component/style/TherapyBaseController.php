@@ -77,6 +77,10 @@ abstract class TherapyBaseController extends BaseController
             header('Content-Type: application/json');
         }
         echo json_encode($data);
+
+        if (function_exists('uopz_allow_exit')) {
+            uopz_allow_exit(true);
+        }
         exit;
     }
 
