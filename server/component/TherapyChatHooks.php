@@ -558,5 +558,13 @@ class TherapyChatHooks extends BaseHooks
             return false;
         }
     }
+
+        /**
+     * Get the plugin version
+     */
+    public function get_plugin_db_version($plugin_name = 'llm_therapy_chat')
+    {
+        return parent::get_plugin_db_version($plugin_name);
+    }
 }
 ?>
