@@ -1,5 +1,12 @@
 # Changelog
 
+## v1.0.0 (2026-02-13)
+
+### Mobile App Enhancements (2026-02-23)
+- **`TherapyChatHooks::addTherapyChatToMobileResponse()`** — new `hook_overwrite_return` on `BasePage::output_base_content_mobile` adds a `therapy_chat` field to every mobile page response for eligible users. Contains `available`, `section_id`, `url`, `unread_count`, `icon`, `mobile_icon` (FA→Ionic mapping), `label`, `role`, `enable_floating`, and `position`. This replaces the previous approach of adding this data directly in `Selfhelp.php` core — the logic now lives entirely in the therapy chat plugin via the hook system
+- **`TherapyChatView::output_content_mobile()`** now includes `polling_interval` and `chat_config` object in the mobile JSON response
+- Hook registered via SQL: `BasePage::output_base_content_mobile` → `TherapyChatHooks::addTherapyChatToMobileResponse`
+
 ## v1.0.0 (2026-02-13) - Initial Release
 
 ### Breaking Changes

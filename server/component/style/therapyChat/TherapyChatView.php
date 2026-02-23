@@ -129,6 +129,44 @@ class TherapyChatView extends StyleView
         $style['is_subject'] = $this->model->isSubject();
         $style['tagging_enabled'] = $this->model->isTaggingEnabled();
         $style['labels'] = $this->model->getLabels();
+        $style['polling_interval'] = $this->model->getPollingInterval();
+
+        // Floating button / tab configuration for mobile app.
+        // Icon, label, position may be on the module config page rather than
+        // the style fields. Try get_db_field first (style-level), then fall
+        // back to the module config page via the services DB.
+        $icon = $this->model->get_db_field('therapy_chat_floating_icon', '');
+        $label = $this->model->get_db_field('therapy_chat_floating_label', '');
+        $position = $this->model->get_db_field('therapy_chat_floating_position', '');
+
+        if (empty($icon) || empty($label)) {
+            try {
+                $db = $this->model->get_services()->get_db();
+                $configPage = $db->fetch_page_info('sh_module_llm_therapy_chat');
+                if ($configPage) {
+                    if (empty($icon) && !empty($configPage['therapy_chat_floating_icon'])) {
+                        $icon = $configPage['therapy_chat_floating_icon'];
+                    }
+                    if (empty($label) && !empty($configPage['therapy_chat_floating_label'])) {
+                        $label = $configPage['therapy_chat_floating_label'];
+                    }
+                    if (empty($position) && !empty($configPage['therapy_chat_floating_position'])) {
+                        $position = $configPage['therapy_chat_floating_position'];
+                    }
+                }
+            } catch (Exception $e) {
+                // Module config not available; use defaults
+            }
+        }
+
+        $style['chat_config'] = array(
+            'icon' => $icon ?: 'fa-comments',
+            'label' => $label ?: 'Chat',
+            'position' => $position ?: 'bottom-right',
+            'ai_enabled' => $this->model->isAIEnabled(),
+            'ai_label' => $this->model->get_db_field('therapy_ai_label', 'AI Assistant'),
+            'therapist_label' => $this->model->get_db_field('therapy_therapist_label', 'Therapist'),
+        );
         
         return $style;
     }

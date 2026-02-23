@@ -71,6 +71,82 @@ count so the frontend can decide whether a full fetch is needed.
 
 ---
 
+## Mobile App Data (`output_content_mobile`)
+
+The `TherapyChatView::output_content_mobile()` method returns the following
+additional fields for the mobile app (Ionic/Angular frontend):
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `conversation` | object | Current conversation (auto-created if missing) |
+| `messages` | array | Messages for the current conversation |
+| `user_id` | int | Current user ID |
+| `section_id` | int | Section ID for API calls |
+| `is_subject` | bool | Whether the user is a patient/subject |
+| `tagging_enabled` | bool | Whether @therapist tagging is enabled |
+| `labels` | object | UI labels (ai_label, therapist_label, etc.) |
+| `polling_interval` | int | Polling interval in seconds (default 3) |
+| `chat_config` | object | Floating button / tab configuration |
+
+### `chat_config` object
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `icon` | string | `fa-comments` | Icon class for tab / FAB button |
+| `label` | string | `Chat` | Label for tab / FAB button |
+| `position` | string | `bottom-right` | Floating button position |
+| `ai_enabled` | bool | `true` | Whether AI responses are enabled |
+| `ai_label` | string | `AI Assistant` | Display label for AI messages |
+| `therapist_label` | string | `Therapist` | Display label for therapist messages |
+
+The mobile app uses `chat_config` to render:
+1. A bottom tab with the configured icon and label (first position)
+2. An Ionic FAB button with unread message badge
+3. Background polling via `TherapyChatNotificationService` using `check_updates` endpoint
+
+## Mobile Page Response (`therapy_chat` field)
+
+Every mobile page response for logged-in users includes a `therapy_chat` field
+injected by `TherapyChatHooks::addTherapyChatToMobileResponse()` via a
+`hook_overwrite_return` on `BasePage::output_base_content_mobile`. This keeps all
+therapy-chat logic in the plugin — no core Selfhelp.php changes are required.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `available` | bool | Whether the user has therapy chat access |
+| `section_id` | int\|null | Section ID of the therapyChat/therapistDashboard style |
+| `url` | string | URL of the chat page (from `therapy_chat_subject_page` or `therapy_chat_therapist_page`) |
+| `unread_count` | int | Current unread message count |
+| `icon` | string | FA icon class from config (e.g. `fa-comments`) |
+| `mobile_icon` | string | Ionic-compatible icon name (e.g. `chatbubbles`) — mapped server-side |
+| `label` | string | Button/tab label from config |
+| `role` | string | `subject` or `therapist` |
+| `enable_floating` | bool | Whether the floating chat modal is enabled (subjects only) |
+| `position` | string | Floating button position (`bottom-right`, `bottom-left`, `top-right`, `top-left`) |
+
+**Mobile app behavior:**
+- When `enable_floating` is `true`: show FAB button at configured `position`, do NOT show in tab bar
+- When `enable_floating` is `false`: show in tab bar as first tab, do NOT show FAB
+
+**FA → Ionic icon mapping** (server-side):
+
+| Font Awesome | Ionic |
+|-------------|-------|
+| `fa-comments` | `chatbubbles` |
+| `fa-comment` | `chatbubble` |
+| `fa-comment-dots` | `chatbubble-ellipses` |
+| `fa-comment-medical` | `medkit` |
+| `fa-envelope` | `mail` |
+| `fa-bell` | `notifications` |
+| `fa-user-md` | `person` |
+| `fa-heart` | `heart` |
+| `fa-shield` | `shield` |
+| `fa-stethoscope` | `fitness` |
+| `fa-brain` | `bulb` |
+| `fa-hands-helping` | `people` |
+
+---
+
 ## Therapist Dashboard Endpoints (TherapistDashboardController)
 
 ### GET `get_config`

@@ -214,6 +214,101 @@ class TherapyChatHooks extends BaseHooks
     }
 
     /* =========================================================================
+     * HOOK: Mobile page response (BasePage::output_base_content_mobile)
+     * Type: hook_overwrite_return
+     * Adds therapy_chat field to every mobile page response.
+     * ========================================================================= */
+
+    /**
+     * Add therapy_chat data to the mobile page response so the app can show
+     * the chat tab/FAB without loading the chat page first.
+     */
+    public function addTherapyChatToMobileResponse($args = null)
+    {
+        $res = $this->execute_private_method($args);
+        if (!is_array($res)) {
+            return $res;
+        }
+
+        $userId = $_SESSION['id_user'] ?? null;
+        if (!$userId || !($_SESSION['logged_in'] ?? false)) {
+            return $res;
+        }
+
+        try {
+            $isSubject = $this->messageService->isSubject($userId);
+            $isTherapist = $this->messageService->isTherapist($userId);
+
+            // Group membership check
+            $subjectGroupId = $this->getConfigValue('therapy_chat_subject_group');
+            $therapistGroupId = $this->getConfigValue('therapy_chat_therapist_group');
+            if ($subjectGroupId && !$this->isUserInGroup($userId, $subjectGroupId)) $isSubject = false;
+            if ($therapistGroupId && !$this->isUserInGroup($userId, $therapistGroupId)) $isTherapist = false;
+
+            if (!$isSubject && !$isTherapist) {
+                return $res;
+            }
+
+            $styleName = $isTherapist ? 'therapistDashboard' : 'therapyChat';
+            $sectionId = $this->getSectionIdForStyle($styleName);
+
+            $unreadCount = 0;
+            try {
+                if ($isTherapist) {
+                    $unreadCount = $this->messageService->getUnreadCountForUser($userId, true)
+                        + (int)$this->messageService->getUnreadAlertCount($userId);
+                } else {
+                    $unreadCount = $this->messageService->getUnreadCountForUser($userId);
+                }
+            } catch (Exception $e) {}
+
+            $icon = $this->getConfigValue('therapy_chat_floating_icon', 'fa-comments');
+            $label = $this->getConfigValue('therapy_chat_floating_label', 'Chat');
+            $position = $this->getConfigValue('therapy_chat_floating_position', 'bottom-right');
+            $enableFloating = $isSubject ? $this->isFloatingChatModalEnabled() : false;
+
+            $faToIonic = array(
+                'fa-comments' => 'chatbubbles',
+                'fa-comment' => 'chatbubble',
+                'fa-comment-dots' => 'chatbubble-ellipses',
+                'fa-comment-medical' => 'medkit',
+                'fa-envelope' => 'mail',
+                'fa-bell' => 'notifications',
+                'fa-user-md' => 'person',
+                'fa-heart' => 'heart',
+                'fa-shield' => 'shield',
+                'fa-stethoscope' => 'fitness',
+                'fa-brain' => 'bulb',
+                'fa-hands-helping' => 'people',
+            );
+            $mobileIcon = isset($faToIonic[$icon]) ? $faToIonic[$icon] : 'chatbubbles';
+
+            $pageIdField = $isTherapist ? 'therapy_chat_therapist_page' : 'therapy_chat_subject_page';
+            $chatUrl = $this->getPageUrl(
+                $this->getConfigValue($pageIdField),
+                'home'
+            );
+
+            $res['therapy_chat'] = array(
+                'available' => true,
+                'section_id' => $sectionId,
+                'url' => $chatUrl,
+                'unread_count' => (int)$unreadCount,
+                'icon' => $icon,
+                'mobile_icon' => $mobileIcon,
+                'label' => $label,
+                'role' => $isTherapist ? 'therapist' : 'subject',
+                'enable_floating' => (bool)$enableFloating,
+                'position' => $position,
+            );
+        } catch (Exception $e) {
+            // Plugin error should not break the page response
+        }
+
+        return $res;
+    }
+
+    /* =========================================================================
      * HOOK: Therapist Group Assignments on Admin User Page
      * Type: hook_on_function_execute
      * Target: UserSelectView::output_user_manipulation

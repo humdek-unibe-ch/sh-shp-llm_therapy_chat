@@ -1003,6 +1003,10 @@ VALUES ((SELECT id FROM `groups` WHERE `name` = 'admin' LIMIT 1), (SELECT id FRO
 INSERT IGNORE INTO `hooks` (`id_hookTypes`, `name`, `description`, `class`, `function`, `exec_class`, `exec_function`)
 VALUES ((SELECT id FROM lookups WHERE lookup_code = 'hook_overwrite_return' LIMIT 0,1), 'therapyChatLLM - load JS scripts', 'Load JS scripts for therapy chat LLM.', 'BasePage', 'get_js_includes', 'TherapyChatHooks', 'loadTherapyChatLLMJs');
 
+-- Hook to add therapy_chat data to mobile page response
+INSERT IGNORE INTO `hooks` (`id_hookTypes`, `name`, `description`, `class`, `function`, `exec_class`, `exec_function`)
+VALUES ((SELECT id FROM lookups WHERE lookup_code = 'hook_overwrite_return' LIMIT 0,1), 'therapyChatMobile - mobile page info', 'Add therapy chat availability data to every mobile page response.', 'BasePage', 'output_base_content_mobile', 'TherapyChatHooks', 'addTherapyChatToMobileResponse');
+
 -- =====================================================
 -- TRANSACTION LOGGING
 -- =====================================================
