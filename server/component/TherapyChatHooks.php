@@ -296,6 +296,10 @@ class TherapyChatHooks extends BaseHooks
                 $this->getConfigValue($pageIdField),
                 'home'
             );
+            $basePath = defined('BASE_PATH') ? BASE_PATH : '';
+            if ($basePath && strpos($chatUrl, $basePath) === 0) {
+                $chatUrl = substr($chatUrl, strlen($basePath));
+            }
 
             $res['therapy_chat'] = array(
                 'available' => true,
