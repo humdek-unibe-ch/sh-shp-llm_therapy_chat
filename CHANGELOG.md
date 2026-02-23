@@ -7,6 +7,10 @@
 - **`TherapyChatView::output_content_mobile()`** now includes `polling_interval` and `chat_config` object in the mobile JSON response
 - Hook registered via SQL: `BasePage::output_base_content_mobile` → `TherapyChatHooks::addTherapyChatToMobileResponse`
 
+### Controller Fixes (2026-02-23)
+- **POST routing for polling actions** — `TherapyChatController::handlePostRequest()` and `TherapistDashboardController::handlePostRequest()` now handle `check_updates`, `get_conversation`, `get_messages`, and `get_unread_counts` actions via POST (previously only handled via GET). This fixes mobile app polling which uses POST requests
+- **`TherapistDashboardController::handleGetMessages()`** reads `conversation_id` and `after_id` from both `$_POST` and `$_GET` to support both request methods
+
 ## v1.0.0 (2026-02-13) - Initial Release
 
 ### Breaking Changes

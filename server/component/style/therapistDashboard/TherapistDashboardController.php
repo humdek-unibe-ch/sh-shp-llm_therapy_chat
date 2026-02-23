@@ -92,6 +92,20 @@ class TherapistDashboardController extends TherapyBaseController
                 $this->validateTherapistOrFail();
                 $this->processSpeechTranscription();
                 break;
+
+            case 'get_unread_counts':
+            case 'check_updates':
+                $this->handlePollingAction($action, $data);
+                break;
+
+            case 'get_conversations':
+            case 'get_conversation':
+                $this->handleConversationAction($action, $data);
+                break;
+
+            case 'get_messages':
+                $this->handleGetMessages();
+                break;
         }
     }
 
@@ -551,8 +565,8 @@ class TherapistDashboardController extends TherapyBaseController
     private function handleGetMessages()
     {
         $uid = $this->validateTherapistOrFail();
-        $cid = $_GET['conversation_id'] ?? null;
-        $afterId = isset($_GET['after_id']) ? (int)$_GET['after_id'] : null;
+        $cid = $_POST['conversation_id'] ?? $_GET['conversation_id'] ?? null;
+        $afterId = isset($_POST['after_id']) ? (int)$_POST['after_id'] : (isset($_GET['after_id']) ? (int)$_GET['after_id'] : null);
 
         if (!$cid) { $this->json(['error' => 'Conversation ID is required'], 400); return; }
         if (!$this->model->canAccessConversation($uid, $cid)) { $this->json(['error' => 'Access denied'], 403); return; }
