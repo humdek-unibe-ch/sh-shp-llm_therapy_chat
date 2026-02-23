@@ -38,9 +38,17 @@ class TherapistDashboardController extends TherapyBaseController
     private function handleRequest()
     {
         if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-            $this->handlePostRequest($_POST['action'] ?? null);
+            $action = $_POST['action'] ?? null;
+            if ($action === null || $action === '') {
+                return;
+            }
+            $this->handlePostRequest($action);
         } elseif ($_SERVER['REQUEST_METHOD'] === 'GET') {
-            $this->handleGetRequest($_GET['action'] ?? null);
+            $action = $_GET['action'] ?? null;
+            if ($action === null || $action === '') {
+                return;
+            }
+            $this->handleGetRequest($action);
         }
     }
 
@@ -481,7 +489,7 @@ class TherapistDashboardController extends TherapyBaseController
     private function handleCreateDraft()
     {
         $uid = $this->validateTherapistOrFail();
-        $cid = $_POST['conversation_id'] ?? null;
+        $cid = $_POST['conversation_id'] ?? $_GET['conversation_id'] ?? null;
 
         if (!$cid) { $this->json(['error' => 'Conversation ID is required'], 400); return; }
         if (!$this->model->canAccessConversation($uid, $cid)) { $this->json(['error' => 'Access denied'], 403); return; }
@@ -675,7 +683,7 @@ class TherapistDashboardController extends TherapyBaseController
     private function handleGenerateSummary()
     {
         $uid = $this->validateTherapistOrFail();
-        $cid = $_POST['conversation_id'] ?? null;
+        $cid = $_POST['conversation_id'] ?? $_GET['conversation_id'] ?? null;
         if (!$cid) { $this->json(['error' => 'Conversation ID is required'], 400); return; }
         if (!$this->model->canAccessConversation($uid, $cid)) { $this->json(['error' => 'Access denied'], 403); return; }
 

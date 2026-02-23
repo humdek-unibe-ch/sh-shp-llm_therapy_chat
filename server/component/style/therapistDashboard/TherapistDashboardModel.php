@@ -687,7 +687,17 @@ class TherapistDashboardModel extends StyleModel
 
     public function getLlmModel()
     {
-        return $this->get_db_field('llm_model', '') ?: 'gpt-4o-mini';
+        $model = $this->get_db_field('llm_model', '');
+        if (!empty($model)) {
+            return $model;
+        }
+        try {
+            $config = $this->messageService->getPublicLlmConfig();
+            if (!empty($config['llm_model'])) {
+                return $config['llm_model'];
+            }
+        } catch (\Exception $e) {}
+        return 'gpt-4o-mini';
     }
 
     public function getLlmTemperature()

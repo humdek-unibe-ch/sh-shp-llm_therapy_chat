@@ -38,12 +38,20 @@ class TherapyChatController extends TherapyBaseController
     private function handleRequest()
     {
         if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-            $this->handlePostRequest($_POST['action'] ?? 'send_message');
+            $action = $_POST['action'] ?? null;
+            if ($action === null || $action === '') {
+                return;
+            }
+            $this->handlePostRequest($action);
             return;
         }
 
         if ($_SERVER['REQUEST_METHOD'] === 'GET') {
-            $this->handleGetRequest($_GET['action'] ?? null);
+            $action = $_GET['action'] ?? null;
+            if ($action === null || $action === '') {
+                return;
+            }
+            $this->handleGetRequest($action);
         }
     }
 

@@ -50,6 +50,11 @@ class TherapyChatService extends LlmService
         $this->job_scheduler = $services->get_job_scheduler();
     }
 
+    public function getPublicLlmConfig()
+    {
+        return $this->getLlmConfig();
+    }
+
     /* =========================================================================
      * CONVERSATION MANAGEMENT
      * ========================================================================= */
