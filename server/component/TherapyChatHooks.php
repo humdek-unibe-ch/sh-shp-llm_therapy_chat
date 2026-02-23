@@ -222,9 +222,17 @@ class TherapyChatHooks extends BaseHooks
     /**
      * Add therapy_chat data to the mobile page response so the app can show
      * the chat tab/FAB without loading the chat page first.
+     *
+     * Also intercepts API requests (action + section_id) targeting therapy
+     * sections and routes them directly to the controller, bypassing the
+     * full page rendering pipeline.
      */
     public function addTherapyChatToMobileResponse($args = null)
     {
+        if ($this->handleTherapyApiIfNeeded()) {
+            return [];
+        }
+
         $res = $this->execute_private_method($args);
         if (!is_array($res)) {
             return $res;
@@ -306,6 +314,56 @@ class TherapyChatHooks extends BaseHooks
         }
 
         return $res;
+    }
+
+    /**
+     * If the mobile request carries an action + section_id that matches a
+     * therapy-chat or therapist-dashboard section, instantiate the component
+     * directly so its controller handles the API call and exits.
+     *
+     * Uses output buffering to capture the controller's JSON response,
+     * avoiding reliance on exit() which can be intercepted by uopz inside
+     * hook_overwrite_return callbacks.
+     *
+     * @return bool true if the request was handled
+     */
+    private function handleTherapyApiIfNeeded()
+    {
+        $action = $_GET['action'] ?? $_POST['action'] ?? null;
+        $sectionId = $_GET['section_id'] ?? $_POST['section_id'] ?? null;
+
+        if (!$action || !$sectionId) {
+            return false;
+        }
+
+        $therapySectionId = $this->getSectionIdForStyle('therapyChat');
+        $dashboardSectionId = $this->getSectionIdForStyle('therapistDashboard');
+
+        $sectionIdInt = (int)$sectionId;
+        if ($sectionIdInt !== $therapySectionId && $sectionIdInt !== $dashboardSectionId) {
+            return false;
+        }
+
+        ob_start();
+        try {
+            new \StyleComponent($this->services, $sectionIdInt, [], -1);
+        } catch (\Throwable $e) {
+            // Controller calls exit which may throw in uopz
+        }
+        $captured = ob_get_clean();
+
+        if ($captured && json_decode($captured) !== null) {
+            if (!headers_sent()) {
+                header('Content-Type: application/json');
+            }
+            echo $captured;
+            if (function_exists('uopz_allow_exit')) {
+                uopz_allow_exit(true);
+            }
+            exit;
+        }
+
+        return false;
     }
 
     /* =========================================================================

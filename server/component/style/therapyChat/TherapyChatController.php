@@ -213,7 +213,7 @@ class TherapyChatController extends TherapyBaseController
     {
         $userId = $this->validatePatientOrFail();
 
-        $conversationId = $_GET['conversation_id'] ?? null;
+        $conversationId = $_POST['conversation_id'] ?? $_GET['conversation_id'] ?? null;
         if ($conversationId) {
             $conversationId = (int)$conversationId;
         }
@@ -283,8 +283,8 @@ class TherapyChatController extends TherapyBaseController
     {
         $userId = $this->validatePatientOrFail();
 
-        $conversationId = $_GET['conversation_id'] ?? null;
-        $afterId = isset($_GET['after_id']) ? (int)$_GET['after_id'] : null;
+        $conversationId = $_POST['conversation_id'] ?? $_GET['conversation_id'] ?? null;
+        $afterId = isset($_POST['after_id']) ? (int)$_POST['after_id'] : (isset($_GET['after_id']) ? (int)$_GET['after_id'] : null);
 
         if (!$conversationId) {
             $conversation = $this->model->getOrCreateConversation();

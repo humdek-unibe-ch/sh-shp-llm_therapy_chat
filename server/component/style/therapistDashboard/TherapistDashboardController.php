@@ -106,6 +106,26 @@ class TherapistDashboardController extends TherapyBaseController
             case 'get_messages':
                 $this->handleGetMessages();
                 break;
+
+            case 'get_alerts':
+                $this->handleGetAlerts();
+                break;
+
+            case 'get_stats':
+                $this->handleGetStats();
+                break;
+
+            case 'get_notes':
+                $this->handleGetNotes();
+                break;
+
+            case 'get_config':
+                $this->handleGetConfig();
+                break;
+
+            case 'get_groups':
+                $this->handleGetGroups();
+                break;
         }
     }
 
@@ -537,9 +557,12 @@ class TherapistDashboardController extends TherapyBaseController
         $this->validateTherapistOrFail();
         try {
             $filters = [];
-            if (isset($_GET['status'])) $filters['status'] = $_GET['status'];
-            if (isset($_GET['risk_level'])) $filters['risk_level'] = $_GET['risk_level'];
-            if (isset($_GET['group_id'])) $filters['group_id'] = (int)$_GET['group_id'];
+            $status = $_POST['status'] ?? $_GET['status'] ?? null;
+            $risk = $_POST['risk_level'] ?? $_GET['risk_level'] ?? null;
+            $gid = $_POST['group_id'] ?? $_GET['group_id'] ?? null;
+            if ($status) $filters['status'] = $status;
+            if ($risk) $filters['risk_level'] = $risk;
+            if ($gid) $filters['group_id'] = (int)$gid;
             $this->json(['conversations' => $this->model->getConversations($filters)]);
         } catch (Exception $e) {
             $this->json(['error' => $e->getMessage()], 500);
@@ -549,7 +572,7 @@ class TherapistDashboardController extends TherapyBaseController
     private function handleGetConversation()
     {
         $uid = $this->validateTherapistOrFail();
-        $cid = $_GET['conversation_id'] ?? null;
+        $cid = $_POST['conversation_id'] ?? $_GET['conversation_id'] ?? null;
         if (!$cid) { $this->json(['error' => 'Conversation ID is required'], 400); return; }
         if (!$this->model->canAccessConversation($uid, $cid)) { $this->json(['error' => 'Access denied'], 403); return; }
 
@@ -585,8 +608,10 @@ class TherapistDashboardController extends TherapyBaseController
         $uid = $this->validateTherapistOrFail();
         try {
             $filters = [];
-            if (isset($_GET['unread_only']) && $_GET['unread_only']) $filters['unread_only'] = true;
-            if (isset($_GET['alert_type'])) $filters['alert_type'] = $_GET['alert_type'];
+            $unread = $_POST['unread_only'] ?? $_GET['unread_only'] ?? null;
+            $type = $_POST['alert_type'] ?? $_GET['alert_type'] ?? null;
+            if ($unread) $filters['unread_only'] = true;
+            if ($type) $filters['alert_type'] = $type;
             $this->json(['alerts' => $this->model->getAlerts($filters)]);
         } catch (Exception $e) {
             $this->json(['error' => $e->getMessage()], 500);
@@ -606,7 +631,7 @@ class TherapistDashboardController extends TherapyBaseController
     private function handleGetNotes()
     {
         $uid = $this->validateTherapistOrFail();
-        $cid = $_GET['conversation_id'] ?? null;
+        $cid = $_POST['conversation_id'] ?? $_GET['conversation_id'] ?? null;
         if (!$cid) { $this->json(['error' => 'Conversation ID is required'], 400); return; }
         if (!$this->model->canAccessConversation($uid, $cid)) { $this->json(['error' => 'Access denied'], 403); return; }
 
