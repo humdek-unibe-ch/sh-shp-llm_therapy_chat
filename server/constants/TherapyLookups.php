@@ -86,7 +86,6 @@ define('THERAPY_RISK_CRITICAL', 'critical');
 
 // =====================================================
 // ALERT TYPE VALUES (lookup_code)
-// These cover ALL notification types including tags.
 // Tag-specific data (reason, urgency) is stored in the
 // alert's metadata JSON column.
 // =====================================================
@@ -96,15 +95,6 @@ define('THERAPY_ALERT_DANGER', 'danger_detected');
 
 /** Patient tagged/mentioned a therapist (was separate therapyTags table) */
 define('THERAPY_ALERT_TAG', 'tag_received');
-
-/** Unusual high message activity */
-define('THERAPY_ALERT_HIGH_ACTIVITY', 'high_activity');
-
-/** Extended silence from subject */
-define('THERAPY_ALERT_INACTIVITY', 'inactivity');
-
-/** New message received */
-define('THERAPY_ALERT_NEW_MESSAGE', 'new_message');
 
 // =====================================================
 // ALERT SEVERITY VALUES (lookup_code)
@@ -171,10 +161,7 @@ define('THERAPY_VALID_RISK_LEVELS', [THERAPY_RISK_LOW, THERAPY_RISK_MEDIUM, THER
 /** Valid alert types */
 define('THERAPY_VALID_ALERT_TYPES', [
     THERAPY_ALERT_DANGER,
-    THERAPY_ALERT_TAG,
-    THERAPY_ALERT_HIGH_ACTIVITY,
-    THERAPY_ALERT_INACTIVITY,
-    THERAPY_ALERT_NEW_MESSAGE
+    THERAPY_ALERT_TAG
 ]);
 
 /** Valid alert severities */
@@ -216,9 +203,6 @@ define('THERAPY_VALID_URGENCIES', [THERAPY_URGENCY_NORMAL, THERAPY_URGENCY_URGEN
 // CONFIGURATION DEFAULTS
 // =====================================================
 
-/** Default conversation list limit */
-define('THERAPY_DEFAULT_LIST_LIMIT', 50);
-
 /** Maximum conversations for stats queries (no pagination) */
 define('THERAPY_STATS_LIMIT', 10000);
 
@@ -234,15 +218,6 @@ define('THERAPY_SUMMARY_MESSAGE_LIMIT', 200);
 /** Maximum audio file size in bytes (25 MB) */
 define('THERAPY_MAX_AUDIO_SIZE', 25 * 1024 * 1024);
 
-/** Default polling interval in seconds */
-define('THERAPY_DEFAULT_POLLING_INTERVAL', 3);
-
 /** Default message preview length for email notifications */
 define('THERAPY_EMAIL_PREVIEW_LENGTH', 200);
-
-/** Default LLM max tokens */
-define('THERAPY_DEFAULT_MAX_TOKENS', 2048);
-
-/** Default LLM temperature */
-define('THERAPY_DEFAULT_TEMPERATURE', 0.7);
 ?>

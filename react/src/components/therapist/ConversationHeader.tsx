@@ -1,7 +1,7 @@
 /**
- * ConversationHeader – Conversation header bar with patient info and status badges
+ * ConversationHeader – Conversation header bar with patient info and risk/AI indicators
  *
- * Action buttons (AI toggle, status control, flag dropdown) are intentionally
+ * Action buttons (AI toggle + risk controls) are intentionally
  * NOT here – they live exclusively in the right-sidebar RiskStatusControls
  * to avoid confusing duplicate controls.
  */

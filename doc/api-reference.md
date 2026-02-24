@@ -121,7 +121,7 @@ therapy-chat logic in the plugin — no core Selfhelp.php changes are required.
 | `mobile_icon` | string | Ionic-compatible icon name (e.g. `chatbubbles`) — mapped server-side |
 | `label` | string | Button/tab label from config |
 | `role` | string | `subject` or `therapist` |
-| `enable_floating` | bool | Whether the floating chat modal is enabled (subjects only) |
+| `enable_floating` | bool | Whether floating quick-access button behavior is enabled (subjects only) |
 | `position` | string | Floating button position (`bottom-right`, `bottom-left`, `top-right`, `top-left`) |
 
 **Mobile app behavior:**
@@ -255,14 +255,6 @@ Soft-deletes a message (sets `deleted` flag).
 |-------|------|----------|-------------|
 | `conversation_id` | int | Yes | Conversation |
 | `risk_level` | string | Yes | `low`/`medium`/`high`/`critical` |
-
-**Response**: `{ success }`
-
-### POST `set_status`
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `conversation_id` | int | Yes | Conversation |
-| `status` | string | Yes | `active`/`paused`/`closed` |
 
 **Response**: `{ success }`
 

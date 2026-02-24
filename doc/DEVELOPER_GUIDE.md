@@ -230,6 +230,12 @@ The plugin uses these hooks:
 |------|-------|--------|---------|
 | `outputTherapyChatIcon` | `NavView` | `output_profile` | Floating chat/dashboard button |
 | `outputTherapistGroupAssignments` | `UserSelectView` | `output_user_manipulation` | Admin user page: group assignment UI |
+| `field-select-page-edit` | `CmsView` | `create_field_form_item` | Custom module field editor for select-page |
+| `field-select-page-view` | `CmsView` | `create_field_item` | Custom module field renderer for select-page |
+| `field-select-floating-position-edit` | `CmsView` | `create_field_form_item` | Custom floating position field editor |
+| `field-select-floating-position-view` | `CmsView` | `create_field_item` | Custom floating position field renderer |
+| `therapyChatLLM - load JS scripts` | `BasePage` | `get_js_includes` | Inject therapy chat JS assets |
+| `therapyChatMobile - mobile page info` | `BasePage` | `output_base_content_mobile` | Inject `therapy_chat` metadata into mobile response |
 
 Assignments are saved via AJAX endpoint `/request/AjaxTherapyChat/saveTherapistAssignments`, not via a hook on user save.
 

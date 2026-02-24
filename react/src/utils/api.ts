@@ -32,7 +32,7 @@ import type {
 
 /**
  * Build a GET URL for an API action.
- * When `customBaseUrl` is set (floating modal mode), use that instead of
+ * When `customBaseUrl` is set (embedded/floating context), use that instead of
  * `window.location.href` so the request reaches the correct controller.
  */
 function buildUrl(action: string, params: Record<string, string> = {}, customBaseUrl?: string): string {
@@ -86,6 +86,25 @@ function postData(action: string, sectionId?: number): FormData {
   return fd;
 }
 
+/** Generic POST action helper to avoid repetitive fd.append boilerplate */
+async function postAction<T>(
+  action: string,
+  sectionId: number | undefined,
+  params: Record<string, string | number | boolean | null | undefined>,
+  customBaseUrl?: string
+): Promise<T> {
+  const fd = postData(action, sectionId);
+  for (const [key, value] of Object.entries(params)) {
+    if (value === undefined || value === null) continue;
+    if (typeof value === 'boolean') {
+      fd.append(key, value ? '1' : '0');
+    } else {
+      fd.append(key, String(value));
+    }
+  }
+  return apiPost<T>(fd, customBaseUrl);
+}
+
 /** Append optional section_id to GET params */
 function withSection(params: Record<string, string>, sectionId?: number): Record<string, string> {
   if (sectionId !== undefined) params.section_id = String(sectionId);
@@ -100,7 +119,7 @@ function withSection(params: Record<string, string>, sectionId?: number): Record
  * Create a Subject (patient) API instance.
  *
  * @param sectionId - The therapy chat section ID
- * @param baseUrl   - Optional custom base URL. Required for floating modal mode
+ * @param baseUrl   - Optional custom base URL for embedded/floating contexts
  *                    where `window.location.href` points to a different page.
  */
 export function createSubjectApi(sectionId?: number, baseUrl?: string) {
@@ -123,24 +142,30 @@ export function createSubjectApi(sectionId?: number, baseUrl?: string) {
     },
 
     async sendMessage(conversationId: number | string | undefined, message: string): Promise<SendMessageResponse> {
-      const fd = postData('send_message', sectionId);
-      fd.append('message', message);
-      if (conversationId != null) fd.append('conversation_id', String(conversationId));
-      return apiPost(fd, baseUrl);
+      return postAction<SendMessageResponse>(
+        'send_message',
+        sectionId,
+        { message, conversation_id: conversationId },
+        baseUrl
+      );
     },
 
     async tagTherapist(conversationId: number | string, reason?: string, urgency?: string): Promise<TagTherapistResponse> {
-      const fd = postData('tag_therapist', sectionId);
-      fd.append('conversation_id', String(conversationId));
-      if (reason) fd.append('reason', reason);
-      if (urgency) fd.append('urgency', urgency);
-      return apiPost(fd, baseUrl);
+      return postAction<TagTherapistResponse>(
+        'tag_therapist',
+        sectionId,
+        { conversation_id: conversationId, reason, urgency },
+        baseUrl
+      );
     },
 
     async markMessagesRead(conversationId?: number | string): Promise<{ success: boolean; unread_count: number }> {
-      const fd = postData('mark_messages_read', sectionId);
-      if (conversationId != null) fd.append('conversation_id', String(conversationId));
-      return apiPost(fd, baseUrl);
+      return postAction<{ success: boolean; unread_count: number }>(
+        'mark_messages_read',
+        sectionId,
+        { conversation_id: conversationId },
+        baseUrl
+      );
     },
 
     async checkUpdates(): Promise<{ latest_message_id: number | null; unread_count: number }> {
@@ -188,85 +213,81 @@ export function createTherapistApi(sectionId?: number) {
     // ---- Messaging ----
 
     async sendMessage(conversationId: number | string, message: string): Promise<SendMessageResponse> {
-      const fd = postData('send_message', sectionId);
-      fd.append('conversation_id', String(conversationId));
-      fd.append('message', message);
-      return apiPost(fd);
+      return postAction<SendMessageResponse>('send_message', sectionId, {
+        conversation_id: conversationId,
+        message,
+      });
     },
 
     async editMessage(messageId: number, newContent: string): Promise<ApiOk> {
-      const fd = postData('edit_message', sectionId);
-      fd.append('message_id', String(messageId));
-      fd.append('content', newContent);
-      return apiPost(fd);
+      return postAction<ApiOk>('edit_message', sectionId, {
+        message_id: messageId,
+        content: newContent,
+      });
     },
 
     async deleteMessage(messageId: number): Promise<ApiOk> {
-      const fd = postData('delete_message', sectionId);
-      fd.append('message_id', String(messageId));
-      return apiPost(fd);
+      return postAction<ApiOk>('delete_message', sectionId, { message_id: messageId });
     },
 
     // ---- AI Drafts ----
 
     async createDraft(conversationId: number | string): Promise<{ success: boolean; draft?: Draft }> {
-      const fd = postData('create_draft', sectionId);
-      fd.append('conversation_id', String(conversationId));
-      return apiPost(fd);
+      return postAction<{ success: boolean; draft?: Draft }>('create_draft', sectionId, {
+        conversation_id: conversationId,
+      });
     },
 
     async updateDraft(draftId: number, editedContent: string): Promise<ApiOk> {
-      const fd = postData('update_draft', sectionId);
-      fd.append('draft_id', String(draftId));
-      fd.append('edited_content', editedContent);
-      return apiPost(fd);
+      return postAction<ApiOk>('update_draft', sectionId, {
+        draft_id: draftId,
+        edited_content: editedContent,
+      });
     },
 
     async sendDraft(draftId: number, conversationId: number | string): Promise<SendMessageResponse> {
-      const fd = postData('send_draft', sectionId);
-      fd.append('draft_id', String(draftId));
-      fd.append('conversation_id', String(conversationId));
-      return apiPost(fd);
+      return postAction<SendMessageResponse>('send_draft', sectionId, {
+        draft_id: draftId,
+        conversation_id: conversationId,
+      });
     },
 
     async discardDraft(draftId: number): Promise<ApiOk> {
-      const fd = postData('discard_draft', sectionId);
-      fd.append('draft_id', String(draftId));
-      return apiPost(fd);
+      return postAction<ApiOk>('discard_draft', sectionId, { draft_id: draftId });
     },
 
     // ---- Conversation initialization ----
 
     async initializeConversation(patientId: number): Promise<InitializeConversationResponse> {
-      const fd = postData('initialize_conversation', sectionId);
-      fd.append('patient_id', String(patientId));
-      return apiPost(fd);
+      return postAction<InitializeConversationResponse>('initialize_conversation', sectionId, {
+        patient_id: patientId,
+      });
     },
 
     // ---- Conversation controls ----
 
     async toggleAI(conversationId: number | string, enabled: boolean): Promise<{ success: boolean; ai_enabled: boolean }> {
-      const fd = postData('toggle_ai', sectionId);
-      fd.append('conversation_id', String(conversationId));
-      fd.append('enabled', enabled ? '1' : '0');
-      return apiPost(fd);
+      return postAction<{ success: boolean; ai_enabled: boolean }>('toggle_ai', sectionId, {
+        conversation_id: conversationId,
+        enabled,
+      });
     },
 
     async setRiskLevel(conversationId: number | string, riskLevel: string): Promise<ApiOk> {
-      const fd = postData('set_risk', sectionId);
-      fd.append('conversation_id', String(conversationId));
-      fd.append('risk_level', riskLevel);
-      return apiPost(fd);
+      return postAction<ApiOk>('set_risk', sectionId, {
+        conversation_id: conversationId,
+        risk_level: riskLevel,
+      });
     },
 
     // ---- Notes ----
 
     async addNote(conversationId: number | string, content: string, noteType?: string): Promise<{ success: boolean; note_id: number }> {
-      const fd = postData('add_note', sectionId);
-      fd.append('conversation_id', String(conversationId));
-      fd.append('content', content);
-      if (noteType) fd.append('note_type', noteType);
-      return apiPost(fd);
+      return postAction<{ success: boolean; note_id: number }>('add_note', sectionId, {
+        conversation_id: conversationId,
+        content,
+        note_type: noteType,
+      });
     },
 
     async getNotes(conversationId: number | string): Promise<{ notes: Note[] }> {
@@ -274,16 +295,14 @@ export function createTherapistApi(sectionId?: number) {
     },
 
     async editNote(noteId: number, content: string): Promise<ApiOk> {
-      const fd = postData('edit_note', sectionId);
-      fd.append('note_id', String(noteId));
-      fd.append('content', content);
-      return apiPost(fd);
+      return postAction<ApiOk>('edit_note', sectionId, {
+        note_id: noteId,
+        content,
+      });
     },
 
     async deleteNote(noteId: number): Promise<ApiOk> {
-      const fd = postData('delete_note', sectionId);
-      fd.append('note_id', String(noteId));
-      return apiPost(fd);
+      return postAction<ApiOk>('delete_note', sectionId, { note_id: noteId });
     },
 
     // ---- Alerts ----
@@ -295,23 +314,21 @@ export function createTherapistApi(sectionId?: number) {
     },
 
     async markAlertRead(alertId: number): Promise<ApiOk> {
-      const fd = postData('mark_alert_read', sectionId);
-      fd.append('alert_id', String(alertId));
-      return apiPost(fd);
+      return postAction<ApiOk>('mark_alert_read', sectionId, { alert_id: alertId });
     },
 
     async markAllAlertsRead(conversationId?: number | string): Promise<ApiOk> {
-      const fd = postData('mark_all_read', sectionId);
-      if (conversationId != null) fd.append('conversation_id', String(conversationId));
-      return apiPost(fd);
+      return postAction<ApiOk>('mark_all_read', sectionId, {
+        conversation_id: conversationId,
+      });
     },
 
     // ---- Read receipts ----
 
     async markMessagesRead(conversationId: number | string): Promise<ApiOk> {
-      const fd = postData('mark_messages_read', sectionId);
-      fd.append('conversation_id', String(conversationId));
-      return apiPost(fd);
+      return postAction<ApiOk>('mark_messages_read', sectionId, {
+        conversation_id: conversationId,
+      });
     },
 
     async getUnreadCounts(): Promise<{ unread_counts: UnreadCounts }> {
@@ -350,9 +367,9 @@ export function createTherapistApi(sectionId?: number) {
     // ---- Summarization ----
 
     async generateSummary(conversationId: number | string): Promise<SummaryResponse> {
-      const fd = postData('generate_summary', sectionId);
-      fd.append('conversation_id', String(conversationId));
-      return apiPost(fd);
+      return postAction<SummaryResponse>('generate_summary', sectionId, {
+        conversation_id: conversationId,
+      });
     },
   };
 }

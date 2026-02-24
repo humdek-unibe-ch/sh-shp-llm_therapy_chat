@@ -15,7 +15,7 @@ It explains, in plain language, how to:
 You configure pages and settings in CMS, manage groups, and assign therapists.
 
 ### Therapist
-You use the dashboard to monitor patients, respond, create notes, and manage risk/status.
+You use the dashboard to monitor patients, respond, create notes, and manage risk/AI mode.
 
 ### Patient
 You use the chat interface and can tag therapists when needed.
@@ -79,9 +79,8 @@ Open the module page in CMS and configure these core fields:
 
 8. **Enable Tagging**  
    Allows patients to use `@therapist` and `#topic`.
-
-9. **Tag Reasons**  
-   Predefined topic list that appears when patient types `#`.
+   
+Tag reason definitions are configured on the **patient chat style** (`therapyChat`), not on the module page.
 
 ---
 
@@ -102,7 +101,6 @@ This is useful when you want a fully therapist-led communication flow.
 - **Conversation Context** - extra instruction for AI tone and scope.
 - **Help Text** - message under input to explain `@` and `#`.
 - **Danger Settings** - safety topic hints + safety message + optional alert emails.
-- **Enable Floating Chat** - opens chat in modal from floating button.
 - **Auto Start + Auto Start Context** - optional first welcome/system message.
 - **Speech-to-Text** - microphone input if enabled.
 - **Therapist email notification fields** - email templates for patient-to-therapist messages/tags.
@@ -118,7 +116,7 @@ On the dashboard section, set:
 - **LLM Model / Temperature / Max Tokens** for draft and summary tools.
 - **Draft Context** - extra instruction for AI draft responses.
 - **Summary Context** - extra instruction for AI conversation summaries.
-- **Conversation controls** permissions (AI toggle, risk, status, notes).
+- **Conversation controls** permissions (AI toggle, risk, notes).
 - **Email notification templates** for therapist-to-patient and patient-to-therapist notifications.
 - **Speech-to-Text** options.
 - **Start Conversation labels** for patients without an active conversation.
@@ -180,7 +178,6 @@ If therapist assignment and patient group overlap, that patient appears in thera
 
 ### C. Clinical controls
 - **AI Toggle**: pause/resume AI
-- **Status**: Active / Paused / Closed
 - **Risk**: Low / Medium / High / Critical
 - **Notes**: add, edit, delete (therapist-only)
 
@@ -197,7 +194,7 @@ If therapist assignment and patient group overlap, that patient appears in thera
 - They can type messages and receive AI and/or therapist responses (depending on mode/settings).
 - Typing `@` lets them notify therapist(s).
 - Typing `#` lets them add a predefined topic.
-- If therapist pauses conversation status, patient cannot send until resumed.
+- When AI is paused/blocked, patient messages are still accepted and routed to therapists (manual mode).
 
 ---
 
@@ -246,7 +243,7 @@ Check:
 ### AI is not responding
 Check:
 1. **Enable AI** is on for the style.
-2. Conversation is not paused/closed.
+2. Conversation has not been safety-blocked (critical/emergency flow).
 3. LLM model is configured.
 
 ### Tagging does not work
@@ -263,7 +260,7 @@ Check:
 - [ ] Verify therapist can see only assigned patients.
 - [ ] Verify `@therapist` creates alert/notification.
 - [ ] Verify AI draft + summary works.
-- [ ] Verify risk/status changes are saved.
+- [ ] Verify risk changes are saved.
 - [ ] Verify clinical notes are therapist-only.
 - [ ] Verify email templates and sender address.
 
@@ -279,7 +276,7 @@ Check:
 ### Therapist
 - Monitors assigned patients
 - Sends messages / uses AI draft
-- Sets risk/status
+- Sets risk
 - Adds notes and handles alerts
 
 ### Patient

@@ -1,73 +1,49 @@
 # Configuration Guide
 
-## Module Page Configuration
+## Module Page (`sh_module_llm_therapy_chat`)
 
-The plugin registers a page type `sh_module_llm_therapy_chat` with these fields:
+The plugin registers page type `sh_module_llm_therapy_chat` with these fields:
 
-| Field | Type | Description |
-|-------|------|-------------|
-| `therapy_chat_subject_group` | select-group | Group containing patients (subjects) |
-| `therapy_chat_therapist_group` | select-group | Group containing therapists (for floating button visibility) |
-| `therapy_chat_subject_page` | select-page | Page ID for the patient chat interface |
-| `therapy_chat_therapist_page` | select-page | Page ID for the therapist dashboard |
-| `therapy_chat_floating_icon` | text | Font Awesome icon class for the floating button (e.g. `fa-comments`) |
-| `therapy_chat_floating_label` | text | Optional text label for the floating button |
-| `therapy_chat_floating_position` | select | Position of the floating chat button |
+| Field | Type | Purpose |
+|-------|------|---------|
+| `therapy_chat_subject_group` | `select-group` | Group containing patient users |
+| `therapy_chat_therapist_group` | `select-group` | Group containing therapist users |
+| `therapy_chat_subject_page` | `select-page` | Page hosting `therapyChat` style |
+| `therapy_chat_therapist_page` | `select-page` | Page hosting `therapistDashboard` style |
+| `therapy_chat_floating_icon` | `text` | Floating/nav icon class (FA) |
+| `therapy_chat_floating_label` | `text` | Optional label text |
+| `therapy_chat_floating_position` | `select-floating-position` | `bottom-right`, `bottom-left`, `top-right`, `top-left` |
+| `therapy_chat_enable_floating_button` | `checkbox` | Enable floating icon/link rendering |
+| `therapy_chat_default_mode` | `select` | Default mode for new conversations (`ai_hybrid` / `human_only`) |
+| `therapy_chat_polling_interval` | `number` | Polling interval in seconds |
+| `therapy_chat_enable_tagging` | `checkbox` | Enables `@therapist` and `#topic` flows |
 
-When the floating chat is enabled, the panel loads `therapy-chat.css` explicitly via a `<link>` tag so styles work on any page (not just the chat page).
+## `therapyChat` Style Fields
 
-## Style Fields (therapyChat)
+Most therapy behavior is configured on the `therapyChat` section (not the module page):
 
-Each `therapyChat` style instance can be configured with:
+- AI and prompt fields: `therapy_enable_ai`, `llm_model`, `llm_temperature`, `llm_max_tokens`, `conversation_context`
+- Safety fields: `enable_danger_detection`, `danger_keywords`, `danger_notification_emails`, `danger_blocked_message`
+- Tagging fields: `therapy_chat_enable_tagging`, `therapy_tag_reasons`, `therapy_chat_help_text`
+- Polling and UX fields: `therapy_chat_polling_interval`, message labels/placeholders
+- Speech input fields: `enable_speech_to_text`, `speech_to_text_model`, `speech_to_text_language`
+- Auto-start fields: `therapy_auto_start`, `therapy_auto_start_context`
+- Notification templates (patient -> therapist): email and push template fields
 
-| Field | Default | Description |
-|-------|---------|-------------|
-| `therapy_enable_ai` | `1` (enabled) | When disabled, AI is off — pure human-to-human chat |
-| `therapy_chat_default_mode` | `ai_hybrid` | Default mode: `ai_hybrid` or `human_only` |
-| `llm_model` | (empty, defaults to `gpt-4o-mini`) | LLM model for AI responses |
-| `llm_max_tokens` | `2048` | Max tokens for AI response |
-| `llm_temperature` | `0.7` | AI temperature (creativity) |
-| `conversation_context` | (built-in) | Custom system prompt for the AI |
-| `therapy_chat_polling_interval` | `3` | Polling interval in **seconds** |
-| `therapy_chat_enable_tagging` | `1` | Allow patients to tag therapists |
-| `danger_keywords` | (comma-separated) | Safety topic hints for the LLM. Comma/semicolon/newline-separated. These are NOT matched server-side — they are injected into the LLM context so it knows which safety areas to focus on (e.g., suicide, self-harm, violence). The LLM performs contextual assessment and returns a structured safety field. |
-| `danger_notification_emails` | (empty) | Comma-separated email addresses to receive urgent danger notifications in addition to assigned therapists (e.g., clinical supervisors). Triggered when the LLM's safety assessment returns critical or emergency danger level. |
-| `enable_speech_to_text` | `0` | Enable speech input |
-| `therapy_auto_start` | `0` | When enabled, inserts an initial welcome message when a conversation is created |
-| `therapy_auto_start_context` | (empty) | Markdown field for the auto-start welcome message shown when a conversation is created |
-| `therapy_chat_help_text` | `Use @therapist to request your therapist, or #topic to tag a predefined topic.` | Help text shown below chat input explaining @mention and #hashtag usage. Supports multilingual content via field translations. |
-| `css` | (empty) | Additional CSS class |
+## `therapistDashboard` Style Fields
 
-## Style Fields (therapistDashboard) - LLM, Draft & Summary
+The dashboard style owns therapist-facing UI/config:
 
-| Field | Default | Description |
-|-------|---------|-------------|
-| `llm_model` | (empty, defaults to `gpt-4o-mini`) | AI model for draft generation and summarization. Used by both "Generate AI Draft" and "Summarize" features. |
-| `llm_temperature` | `0.7` | Temperature for AI draft/summary generation |
-| `llm_max_tokens` | `2048` | Max tokens for AI draft/summary responses |
-| `conversation_context` | (empty) | System context for AI responses in draft generation. This is the base system prompt used when building conversation context for the LLM. |
-| `therapy_draft_context` | (default therapeutic guidance) | Additional context/instructions for AI draft generation. Appended to the draft system prompt to guide the AI output (e.g., "Generate a response based on the conversation and the patient's last message"). Supports multilingual content via field translations. |
-| `therapy_summary_context` | (default therapeutic guidance) | Additional context/instructions for AI summarization. This text is prepended to the summarization prompt to guide the AI output. Supports multilingual content via field translations. |
-| `debug` | `0` | Debug mode |
+- Dashboard labels and headings (including stats + group tab labels)
+- Feature toggles (`dashboard_show_*`, `dashboard_enable_*`)
+- Draft/summary LLM fields (`llm_*`, `conversation_context`, `therapy_draft_context`, `therapy_summary_context`)
+- Speech input fields: `enable_speech_to_text`, `speech_to_text_model`, `speech_to_text_language`
+- Auto-start fields: `therapy_auto_start`, `therapy_auto_start_context`
+- Notification templates (therapist -> patient and therapist alert channels)
 
-## Access Control
+## Access Model
 
-### Patient Access
-Patients must be in the configured `therapy_chat_subject_group`.
-They see a floating chat button on all pages and can access the chat page.
-
-### Therapist Access
-Therapists must be in the configured `therapy_chat_therapist_group`.
-They see a floating dashboard button.
-
-### Patient Monitoring Scope
-**Separate from SelfHelp group membership.** Controlled by `therapyTherapistAssignments`:
-- Admin assigns therapist → patient groups via the user admin page hook
-- Therapist only sees conversations from patients in their assigned groups
-- Multiple therapists can be assigned to the same group
-
-## Therapist Group Assignment
-
-Assignments are managed via the admin user edit page (`/admin/user/{id}`).
-The plugin injects a "Therapy Chat - Patient Group Monitoring" card with checkboxes
-for each available group. This is done via the `outputTherapistGroupAssignments` hook.
+- Role visibility is controlled by configured subject/therapist groups.
+- Monitoring scope is controlled separately by `therapyTherapistAssignments`.
+- Subject page ACL is explicitly granted to the `subject` group by migration.
+- Therapist monitoring assignments are managed in admin user edit via injected hook UI.

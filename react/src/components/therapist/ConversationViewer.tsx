@@ -66,7 +66,7 @@ export const ConversationViewer: React.FC<ConversationViewerProps> = ({
 }) => {
   return (
     <div className="card border-0 shadow-sm h-100 d-flex flex-column">
-      {/* Header – status badges only; action buttons are in right sidebar */}
+      {/* Header – conversation context only; actions stay in right sidebar */}
       <ConversationHeader
         conversation={conversation}
         unreadCount={unreadCount}

@@ -18,7 +18,12 @@ export interface StatsHeaderProps {
   };
   labels: {
     title: string;
-    riskCritical: string;
+    statPatients: string;
+    statAiEnabled: string;
+    statAiBlocked: string;
+    filterUnread: string;
+    statCritical: string;
+    statAlerts: string;
   };
 }
 
@@ -46,18 +51,18 @@ export const StatsHeader: React.FC<StatsHeaderProps> = ({
         {title}
       </h5>
       <div className="d-flex flex-wrap tc-flex-gap-md">
-        <StatItem value={stats.total} label="Patients" />
-        <StatItem value={stats.ai_enabled} label="AI Enabled" className="text-success" />
-        <StatItem value={stats.ai_blocked} label="AI Blocked" className="text-warning" />
+        <StatItem value={stats.total} label={labels.statPatients} />
+        <StatItem value={stats.ai_enabled} label={labels.statAiEnabled} className="text-success" />
+        <StatItem value={stats.ai_blocked} label={labels.statAiBlocked} className="text-warning" />
         <StatItem
           value={unreadCounts.total}
-          label="Unread"
+          label={labels.filterUnread}
           className={unreadCounts.total > 0 ? 'text-primary font-weight-bold' : ''}
         />
-        <StatItem value={stats.risk_critical} label={labels.riskCritical} className="text-danger" />
+        <StatItem value={stats.risk_critical} label={labels.statCritical} className="text-danger" />
         <StatItem
           value={unreadCounts.totalAlerts}
-          label="Alerts"
+          label={labels.statAlerts}
           className={unreadCounts.totalAlerts > 0 ? 'text-warning font-weight-bold' : 'text-warning'}
         />
       </div>

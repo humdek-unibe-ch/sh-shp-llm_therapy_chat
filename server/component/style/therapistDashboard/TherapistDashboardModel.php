@@ -6,10 +6,11 @@
 <?php
 
 require_once __DIR__ . "/../../../service/TherapyMessageService.php";
-require_once __DIR__ . "/../../../service/TherapyEmailHelper.php";
+require_once __DIR__ . "/../../../service/TherapyNotificationService.php";
 require_once __DIR__ . "/../../../constants/TherapyLookups.php";
 require_once __DIR__ . "/TherapistDashboardDraftHelper.php";
 require_once __DIR__ . "/TherapistDashboardNotificationHelper.php";
+require_once __DIR__ . "/../TherapyModelConfigTrait.php";
 
 /**
  * Therapist Dashboard Model
@@ -22,7 +23,7 @@ require_once __DIR__ . "/TherapistDashboardNotificationHelper.php";
  * - AI draft generation (builds context, calls LLM, saves to llmMessages + draft table)
  * - Conversation summarization (builds context, calls LLM, saves to llmMessages)
  * - Message send/edit/delete
- * - Risk/status/AI toggle management
+ * - Risk/AI toggle management
  * - Email notifications on new messages
  * - React configuration
  *
@@ -30,6 +31,7 @@ require_once __DIR__ . "/TherapistDashboardNotificationHelper.php";
  */
 class TherapistDashboardModel extends StyleModel
 {
+    use TherapyModelConfigTrait;
     use TherapistDashboardDraftTrait;
     use TherapistDashboardNotificationTrait;
 
@@ -45,11 +47,15 @@ class TherapistDashboardModel extends StyleModel
     /** @var int|null Subject filter from URL */
     private $selectedSubjectId;
 
+    /** @var TherapyNotificationService|null */
+    private $notificationService;
+
     public function __construct($services, $id, $params = array(), $id_page = -1, $entry_record = array())
     {
         parent::__construct($services, $id, $params, $id_page, $entry_record);
 
         $this->messageService = new TherapyMessageService($services);
+        $this->notificationService = null;
         $this->userId = $_SESSION['id_user'] ?? null;
         $this->selectedGroupId = isset($params['gid']) ? (int)$params['gid'] : null;
         $this->selectedSubjectId = $params['uid'] ?? null;
@@ -118,11 +124,11 @@ class TherapistDashboardModel extends StyleModel
      */
     private function getMessageLabelOverrides()
     {
-        return array(
-            'ai' => $this->get_db_field('dashboard_ai_label', 'AI Assistant'),
-            'therapist' => $this->get_db_field('dashboard_therapist_label', 'Therapist'),
-            'subject' => $this->get_db_field('dashboard_subject_label', 'Patient'),
-            'system' => 'System',
+        return $this->buildMessageLabelOverrides(
+            'dashboard_ai_label',
+            'dashboard_therapist_label',
+            'dashboard_subject_label',
+            'Patient'
         );
     }
 
@@ -186,10 +192,7 @@ class TherapistDashboardModel extends StyleModel
 
         if (isset($result['success'])) {
             $this->messageService->updateLastSeen($conversationId, 'therapist');
-
-            // Notify the patient (email + push)
-            $this->notifyPatientNewMessage($conversationId, $therapistId, $message);
-            $this->notifyPatientPush($conversationId, $therapistId, $message);
+            $this->notifyPatientMessageChannels($conversationId, $therapistId, $message);
         }
 
         return $result;
@@ -502,14 +505,6 @@ class TherapistDashboardModel extends StyleModel
         return $this->messageService->updateRiskLevel($conversationId, $riskLevel);
     }
 
-    /**
-     * Set conversation status
-     */
-    public function setStatus($conversationId, $status)
-    {
-        return $this->messageService->updateTherapyStatus($conversationId, $status);
-    }
-
     /* =========================================================================
      * NOTES (business logic)
      * ========================================================================= */
@@ -713,19 +708,29 @@ class TherapistDashboardModel extends StyleModel
 
     public function isSpeechToTextEnabled()
     {
-        $enabled = (bool)$this->get_db_field('enable_speech_to_text', '0');
-        $model = $this->get_db_field('speech_to_text_model', '');
-        return $enabled && !empty($model);
+        return $this->isSpeechToTextConfigured();
     }
 
     public function getSpeechToTextModel()
     {
-        return $this->get_db_field('speech_to_text_model', '');
+        return $this->getSpeechToTextConfiguredModel();
     }
 
     public function getSpeechToTextLanguage()
     {
-        return $this->get_db_field('speech_to_text_language', 'auto');
+        return $this->getSpeechToTextConfiguredLanguage();
+    }
+
+    public function getNotificationService()
+    {
+        if ($this->notificationService === null) {
+            $this->notificationService = new TherapyNotificationService(
+                $this->get_services(),
+                $this->messageService,
+                array($this, 'get_db_field')
+            );
+        }
+        return $this->notificationService;
     }
 
     /* =========================================================================

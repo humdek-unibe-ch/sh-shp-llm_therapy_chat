@@ -1,6 +1,29 @@
 # Changelog
 
-## v1.0.0 (2026-02-13)
+## v1.0.0 (2026-02-24)
+
+### Audit-Driven Cleanup
+- Removed dead hook methods in `TherapyChatHooks` that were never registered in SQL (`addTherapyChatToWebNavigation`, `addTherapyChatToMobileNavigation`, `buildTherapyChatNavEntry`).
+- Removed stale therapist action `set_status` from `TherapistDashboardController`/`TherapistDashboardModel` and API docs.
+- Removed unused frontend exports in `react/src/utils/floatingBadge.ts` and `react/src/utils/unreadHelpers.ts`.
+- Simplified floating/nav unread polling to one path in `js/ext/therapy_chat_floating.js`; removed stale modal-only branch.
+
+### Architecture Improvements
+- Added shared `TherapyNotificationService` and routed both patient->therapist and therapist->patient notifications through it.
+- Added shared `TherapyModelConfigTrait` for repeated message-label and speech-to-text field access logic.
+- Reduced duplicated controller patterns in `TherapistDashboardController` with request/access/error helper methods.
+- Refactored React API helper to use generic `postAction(...)` and removed repeated FormData boilerplate.
+
+### SQL/Data Consistency
+- Removed duplicate `styles_fields` insert for `therapy_tag_reasons`.
+- Removed unused lookup `transactionBy/by_therapy_chat_plugin`.
+- Added missing dashboard fields used by runtime config: `dashboard_stat_ai_enabled`, `dashboard_stat_ai_blocked`, `dashboard_all_groups_tab`.
+- Added explicit ACL grant for `subject` group to `therapyChatSubject` page.
+- Removed unused alert lookup types (`high_activity`, `inactivity`, `new_message`) and aligned PHP constants.
+- Added `server/db/v1.0.1.sql` for existing installations to backfill missing dashboard fields + subject ACL without full reinstall.
+
+### Documentation Alignment
+- Updated `doc/configuration.md`, `doc/ADMIN_SETUP.md`, `doc/USER_GUIDE.md`, `doc/architecture.md`, `doc/api-reference.md`, `doc/DEVELOPER_GUIDE.md`, and `doc/CODE_AUDIT_REPORT.md` to match current runtime behavior and SQL.
 
 ### Mobile App Enhancements (2026-02-23)
 - **`TherapyChatHooks::addTherapyChatToMobileResponse()`** — new `hook_overwrite_return` on `BasePage::output_base_content_mobile` adds a `therapy_chat` field to every mobile page response for eligible users. Contains `available`, `section_id`, `url`, `unread_count`, `icon`, `mobile_icon` (FA→Ionic mapping), `label`, `role`, `enable_floating`, and `position`. This replaces the previous approach of adding this data directly in `Selfhelp.php` core — the logic now lives entirely in the therapy chat plugin via the hook system

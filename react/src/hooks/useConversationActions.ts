@@ -3,7 +3,7 @@
  * ==========================
  *
  * Encapsulates conversation-level actions: mark read, toggle AI,
- * set status, set risk, and initialize conversation.
+ * set risk, and initialize conversation.
  *
  * After each mutation the relevant conversation state is updated
  * optimistically AND a full data refresh is triggered so the

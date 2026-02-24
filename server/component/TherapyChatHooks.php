@@ -92,17 +92,17 @@ class TherapyChatHooks extends BaseHooks
         $label = $this->getConfigValue('therapy_chat_floating_label', '');
 
         $pollSectionId = $isTherapist
-            ? $this->getSectionIdForStyle('therapistDashboard')
-            : $this->getSectionIdForStyle('therapyChat');
+            ? $this->getSectionIdForPageStyle($therapistPageId, 'therapistDashboard')
+            : $this->getSectionIdForPageStyle($subjectPageId, 'therapyChat');
         $pollConfig = json_encode(array(
             'role' => $isTherapist ? 'therapist' : 'subject',
             'baseUrl' => $chatUrl,
             'sectionId' => $pollSectionId,
-            'interval' => 5000
+            'interval' => $this->getPollingIntervalMs()
         ));
 
         if ($this->isFloatingButtonEnabled()) {
-            $badgeClass = $unreadCount > 0 ? 'badge-danger' : 'badge-secondary';
+            $badgeClass = $unreadCount > 0 ? 'badge-danger' : 'badge-danger';
             $badgeHtml = $unreadCount > 0 ? "<span class=\"badge $badgeClass badge-pill position-absolute therapy-chat-badge\">$unreadCount</span>" : "<span class=\"badge badge-secondary badge-pill position-absolute therapy-chat-badge\" style=\"display:none\"></span>";
             $positionCss = $this->getPositionCss($position);
 
@@ -131,6 +131,64 @@ class TherapyChatHooks extends BaseHooks
         } catch (Exception $e) {
             return null;
         }
+    }
+
+    /**
+     * Resolve section ID for a specific page + style.
+     *
+     * Uses a recursive CTE so nested section hierarchies are handled.
+     * Falls back to the first global section for the style if page resolution fails.
+     *
+     * @param int|string|null $pageId
+     * @param string $styleName
+     * @return int|null
+     */
+    private function getSectionIdForPageStyle($pageId, $styleName)
+    {
+        if (!empty($pageId) && is_numeric($pageId)) {
+            try {
+                $sql = "WITH RECURSIVE section_tree AS (
+                            SELECT s.id, s.id_styles
+                            FROM pages_sections ps
+                            INNER JOIN sections s ON s.id = ps.id_Sections
+                            WHERE ps.id_pages = ?
+                            UNION ALL
+                            SELECT child.id, child.id_styles
+                            FROM section_tree st
+                            INNER JOIN sections_hierarchy sh ON sh.parent = st.id
+                            INNER JOIN sections child ON child.id = sh.child
+                        )
+                        SELECT st.id
+                        FROM section_tree st
+                        INNER JOIN styles sty ON sty.id = st.id_styles
+                        WHERE sty.name = ?
+                        LIMIT 1";
+                $result = $this->db->query_db_first($sql, array((int)$pageId, $styleName));
+                if ($result && isset($result['id'])) {
+                    return (int)$result['id'];
+                }
+            } catch (Exception $e) {
+                // Fall back to style-only lookup
+            }
+        }
+
+        return $this->getSectionIdForStyle($styleName);
+    }
+
+    /**
+     * Poll interval for icon badges in milliseconds.
+     * Source of truth: module field `therapy_chat_polling_interval` (seconds).
+     */
+    private function getPollingIntervalMs()
+    {
+        $seconds = (int)$this->getConfigValue('therapy_chat_polling_interval', '3');
+        if ($seconds < 1) {
+            $seconds = 1;
+        }
+        if ($seconds > 300) {
+            $seconds = 300;
+        }
+        return $seconds * 1000;
     }
 
     /* =========================================================================
@@ -178,7 +236,9 @@ class TherapyChatHooks extends BaseHooks
             }
 
             $styleName = $isTherapist ? 'therapistDashboard' : 'therapyChat';
-            $sectionId = $this->getSectionIdForStyle($styleName);
+            $pageIdField = $isTherapist ? 'therapy_chat_therapist_page' : 'therapy_chat_subject_page';
+            $targetPageId = $this->getConfigValue($pageIdField);
+            $sectionId = $this->getSectionIdForPageStyle($targetPageId, $styleName);
 
             $unreadCount = 0;
             try {
@@ -211,9 +271,8 @@ class TherapyChatHooks extends BaseHooks
             );
             $mobileIcon = isset($faToIonic[$icon]) ? $faToIonic[$icon] : 'chatbubbles';
 
-            $pageIdField = $isTherapist ? 'therapy_chat_therapist_page' : 'therapy_chat_subject_page';
             $chatUrl = $this->getPageUrl(
-                $this->getConfigValue($pageIdField),
+                $targetPageId,
                 'home'
             );
             $basePath = defined('BASE_PATH') ? BASE_PATH : '';
@@ -338,148 +397,6 @@ class TherapyChatHooks extends BaseHooks
         $multiSelect = new BaseStyleComponent('select', $selectOptions);
 
         include __DIR__ . '/TherapyChatHooks/tpl/therapist_group_assignments.php';
-    }
-
-    /* =========================================================================
-     * HOOK: Web Navigation Menu Entry (NavModel::get_pages)
-     * Type: hook_overwrite_return
-     * When floating is disabled, inject the therapy chat page into the
-     * web navigation so it appears in the menu.
-     * ========================================================================= */
-
-    public function addTherapyChatToWebNavigation($args = null)
-    {
-        $pages = $this->execute_private_method($args);
-        if (!is_array($pages)) {
-            return $pages;
-        }
-
-        if ($this->isFloatingButtonEnabled()) {
-            return $pages;
-        }
-
-        $navEntry = $this->buildTherapyChatNavEntry();
-        if ($navEntry) {
-            $pages[] = $navEntry;
-        }
-
-        return $pages;
-    }
-
-    /* =========================================================================
-     * HOOK: Mobile Navigation Menu Entry (NavView::output_content_mobile)
-     * Type: hook_overwrite_return
-     * When floating is disabled, inject the therapy chat page into the
-     * mobile navigation array.
-     * ========================================================================= */
-
-    public function addTherapyChatToMobileNavigation($args = null)
-    {
-        $pages = $this->execute_private_method($args);
-        if (!is_array($pages)) {
-            return $pages;
-        }
-
-        if ($this->isFloatingButtonEnabled()) {
-            return $pages;
-        }
-
-        $userId = $_SESSION['id_user'] ?? null;
-        if (!$userId) {
-            return $pages;
-        }
-
-        $isSubject = $this->messageService->isSubject($userId);
-        $isTherapist = $this->messageService->isTherapist($userId);
-
-        $subjectGroupId = $this->getConfigValue('therapy_chat_subject_group');
-        $therapistGroupId = $this->getConfigValue('therapy_chat_therapist_group');
-        if ($subjectGroupId && !$this->isUserInGroup($userId, $subjectGroupId)) $isSubject = false;
-        if ($therapistGroupId && !$this->isUserInGroup($userId, $therapistGroupId)) $isTherapist = false;
-
-        if (!$isSubject && !$isTherapist) {
-            return $pages;
-        }
-
-        $icon = $this->getConfigValue('therapy_chat_floating_icon', 'fa-comments');
-        $label = $this->getConfigValue('therapy_chat_floating_label', 'Chat');
-        $faToIonic = array(
-            'fa-comments' => 'chatbubbles',
-            'fa-comment' => 'chatbubble',
-            'fa-comment-dots' => 'chatbubble-ellipses',
-            'fa-comment-medical' => 'medkit',
-            'fa-envelope' => 'mail',
-            'fa-bell' => 'notifications',
-        );
-        $mobileIcon = isset($faToIonic[$icon]) ? $faToIonic[$icon] : 'chatbubbles';
-
-        $pageIdField = $isTherapist ? 'therapy_chat_therapist_page' : 'therapy_chat_subject_page';
-        $chatUrl = $this->getPageUrl(
-            $this->getConfigValue($pageIdField),
-            'home'
-        );
-        $basePath = defined('BASE_PATH') ? BASE_PATH : '';
-        if ($basePath && strpos($chatUrl, $basePath) === 0) {
-            $chatUrl = substr($chatUrl, strlen($basePath));
-        }
-
-        $pages[] = array(
-            'id_navigation_section' => null,
-            'title' => $label ?: 'Chat',
-            'keyword' => 'therapy-chat',
-            'url' => $chatUrl,
-            'icon' => $mobileIcon,
-            'children' => array(),
-            'is_active' => false
-        );
-
-        return $pages;
-    }
-
-    /**
-     * Build a navigation entry for the therapy chat page.
-     * Used by addTherapyChatToWebNavigation.
-     */
-    private function buildTherapyChatNavEntry()
-    {
-        $userId = $_SESSION['id_user'] ?? null;
-        if (!$userId) return null;
-
-        try {
-            $isSubject = $this->messageService->isSubject($userId);
-            $isTherapist = $this->messageService->isTherapist($userId);
-
-            $subjectGroupId = $this->getConfigValue('therapy_chat_subject_group');
-            $therapistGroupId = $this->getConfigValue('therapy_chat_therapist_group');
-            if ($subjectGroupId && !$this->isUserInGroup($userId, $subjectGroupId)) $isSubject = false;
-            if ($therapistGroupId && !$this->isUserInGroup($userId, $therapistGroupId)) $isTherapist = false;
-
-            if (!$isSubject && !$isTherapist) return null;
-
-            $pageIdField = $isTherapist ? 'therapy_chat_therapist_page' : 'therapy_chat_subject_page';
-            $pageId = $this->getConfigValue($pageIdField);
-
-            if (empty($pageId) || !is_numeric($pageId)) return null;
-
-            $pageKeyword = $this->db->fetch_page_keyword_by_id($pageId);
-            if (!$pageKeyword) return null;
-
-            $icon = $this->getConfigValue('therapy_chat_floating_icon', 'fa-comments');
-            $label = $this->getConfigValue('therapy_chat_floating_label', '');
-            $url = $this->services->get_router()->get_link_url($pageKeyword);
-
-            return array(
-                'id_navigation_section' => null,
-                'title' => $label ?: 'Therapy Chat',
-                'keyword' => $pageKeyword,
-                'url' => $url ?: '/' . $pageKeyword,
-                'icon' => $icon,
-                'children' => array(),
-                'is_active' => false
-            );
-        } catch (Exception $e) {
-            return null;
-        }
     }
 
     /* =========================================================================

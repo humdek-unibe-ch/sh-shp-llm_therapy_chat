@@ -67,7 +67,7 @@ without altering them. All therapy-specific data lives in separate tables.
 | `therapyTherapistAssignments` | Maps therapist users → patient groups they monitor |
 | `therapyConversationMeta` | 1:1 extension of `llmConversations` with therapy metadata |
 | `therapyMessageRecipients` | Per-user message delivery / read tracking |
-| `therapyAlerts` | All notifications (danger, tags, activity, inactivity) |
+| `therapyAlerts` | Therapist alerts (danger detection + patient tags) |
 | `therapyNotes` | Clinical notes per conversation |
 | `therapyDraftMessages` | AI draft editing workflow for therapists |
 
@@ -133,9 +133,9 @@ DOM containers:
 
 Configuration is passed via `data-config` JSON attribute from PHP.
 
-When the floating chat is enabled, the hook renders a panel that loads `therapy-chat.css`
-explicitly via a `<link>` tag so styles apply on any page; the React app mounts into
-the panel after config is fetched.
+When floating chat is enabled, the hook renders a floating **link/icon** with unread badge
+and polling config. It navigates to the configured chat/dashboard page; there is no
+server-rendered floating modal panel in current wiring.
 
 ### Component Hierarchy
 
@@ -147,10 +147,14 @@ TherapyChat.tsx (entry point)
 │   ├── TaggingPanel
 │   └── LoadingIndicator
 └── TherapistDashboardLoader → TherapistDashboard
-    ├── MessageList
-    ├── MessageInput
-    ├── LoadingIndicator
-    └── StatItem (inline)
+    └── DashboardDataProvider
+        ├── HeaderArea (StatsHeader, AlertBanner, GroupTabs)
+        ├── PatientList
+        ├── ConversationViewer
+        ├── RiskStatusControls
+        ├── NotesPanel
+        ├── DraftEditorModal
+        └── SummaryModal
 ```
 
 ### Data Flow

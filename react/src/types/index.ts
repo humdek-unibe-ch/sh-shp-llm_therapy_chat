@@ -232,6 +232,12 @@ export interface TherapistDashboardLabels {
   humanModeIndicator: string;
   acknowledge: string;
   dismiss: string;
+  statPatients: string;
+  statAiEnabled: string;
+  statAiBlocked: string;
+  statCritical: string;
+  statAlerts: string;
+  statTags: string;
   filterAll: string;
   filterActive: string;
   filterCritical: string;
@@ -280,7 +286,7 @@ export interface SubjectChatConfig {
   speechToTextEnabled?: boolean;
   speechToTextModel?: string;
   speechToTextLanguage?: string;
-  /** When true, the chat is rendered inside the floating modal panel (server-side) */
+  /** Optional flag for embedded/floating rendering context */
   isFloatingMode?: boolean;
 }
 

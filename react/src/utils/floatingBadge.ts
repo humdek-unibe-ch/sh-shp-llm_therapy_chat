@@ -1,10 +1,10 @@
 /**
  * Floating Badge Utility
  *
- * Shared logic for updating the floating chat icon badge count.
- * Used by SubjectChat, TherapistDashboard, and therapy_chat_floating.js.
+ * Shared logic for updating therapy chat icon badge counts.
+ * Used by SubjectChat and TherapistDashboard.
  *
- * Uses .therapy-chat-badge (server-rendered) for compatibility.
+ * Updates both floating and nav badges when present.
  */
 
 /**
@@ -14,31 +14,20 @@
  * @param count Unread message count
  */
 export function updateFloatingBadge(count: number): void {
-  const badge = document.querySelector('.therapy-chat-badge');
-  if (!badge) return;
+  const badges = Array.from(
+    document.querySelectorAll<HTMLElement>('.therapy-chat-badge, .therapy-chat-nav-badge')
+  );
+  if (badges.length === 0) return;
 
-  if (count > 0) {
-    (badge as HTMLElement).textContent = count > 99 ? '99+' : String(count);
-    (badge as HTMLElement).style.display = '';
-  } else {
-    (badge as HTMLElement).textContent = '';
-    (badge as HTMLElement).style.display = 'none';
-  }
-}
-
-/**
- * Hide the floating chat icon when chat panel is visible.
- * Restores it when the panel closes.
- * Targets the trigger/link (therapy-chat-floating-trigger or therapy-chat-floating-link).
- *
- * @param isVisible Whether the chat panel is currently visible
- */
-export function setFloatingIconVisibility(isVisible: boolean): void {
-  const container =
-    document.querySelector('.therapy-chat-floating-container') ??
-    document.getElementById('therapy-chat-floating-trigger') ??
-    document.getElementById('therapy-chat-floating-link');
-  if (container) {
-    (container as HTMLElement).style.display = isVisible ? 'none' : '';
-  }
+  badges.forEach((badge) => {
+    if (count > 0) {
+      badge.textContent = count > 99 ? '99+' : String(count);
+      badge.style.display = '';
+      badge.classList.remove('d-none');
+    } else {
+      badge.textContent = '';
+      badge.style.display = 'none';
+      badge.classList.add('d-none');
+    }
+  });
 }
