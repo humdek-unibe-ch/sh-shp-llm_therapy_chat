@@ -7,6 +7,7 @@
 
 require_once __DIR__ . "/../../../service/TherapyMessageService.php";
 require_once __DIR__ . "/../../../service/TherapyEmailHelper.php";
+require_once __DIR__ . "/../../../service/TherapyPushHelper.php";
 require_once __DIR__ . "/../../../constants/TherapyLookups.php";
 
 // Include LLM plugin services - only if LLM plugin is available
@@ -401,6 +402,7 @@ class TherapyChatModel extends StyleModel
         // Notify therapists when tagged or when AI is off
         if ($isTag || !$aiActive) {
             $this->notifyTherapistsNewMessage($conversationId, $userId, $message, $isTag);
+            $this->notifyTherapistsPush($conversationId, $userId, $message, $isTag);
         }
 
         // Process AI response only if active and no tag
@@ -802,6 +804,79 @@ class TherapyChatModel extends StyleModel
                 array($therapist['id'])
             );
         }
+    }
+
+    /**
+     * Send push notification to therapist(s) when patient sends a message.
+     *
+     * @param int $conversationId
+     * @param int $patientId
+     * @param string $messageContent
+     * @param bool $isTag
+     */
+    public function notifyTherapistsPush($conversationId, $patientId, $messageContent, $isTag = false)
+    {
+        $enabled = (bool)$this->get_db_field('enable_therapist_push_notification', '1');
+        if (!$enabled) return;
+
+        $conversation = $this->therapyService->getTherapyConversation($conversationId);
+        if (!$conversation) return;
+
+        $services = $this->get_services();
+        $db = $services->get_db();
+        $jobScheduler = $services->get_job_scheduler();
+
+        $patient = $db->select_by_uid('users', $patientId);
+        $patientName = $patient ? $patient['name'] : 'Patient';
+
+        $therapists = $this->therapyService->getTherapistsForPatient($patientId);
+        if (empty($therapists)) return;
+
+        $titleTemplate = $isTag
+            ? $this->get_db_field('therapist_tag_push_notification_title', '@therapist tag from {{patient_name}}')
+            : $this->get_db_field('therapist_push_notification_title', 'New message from {{patient_name}}');
+
+        $bodyTemplate = $isTag
+            ? $this->get_db_field('therapist_tag_push_notification_body', '{{patient_name}} has tagged you in therapy chat: {{message_preview}}')
+            : $this->get_db_field('therapist_push_notification_body', 'You have a new therapy chat message from {{patient_name}}. Tap to open.');
+
+        $preview = mb_substr(strip_tags($messageContent), 0, 100);
+        if (mb_strlen($messageContent) > 100) $preview .= '...';
+
+        $therapistPageId = null;
+        try {
+            $therapistPageId = $this->get_db_field('therapy_chat_therapist_page', null);
+        } catch (Exception $e) {}
+
+        $chatUrl = '';
+        if ($therapistPageId) {
+            $pageInfo = $db->select_by_uid('pages', $therapistPageId);
+            if ($pageInfo && isset($pageInfo['keyword'])) {
+                $chatUrl = '/' . $pageInfo['keyword'];
+            }
+        }
+
+        $recipientIds = array();
+        foreach ($therapists as $therapist) {
+            $recipientIds[] = (int)$therapist['id'];
+        }
+
+        $title = str_replace('{{patient_name}}', $patientName, $titleTemplate);
+        $body = str_replace(
+            array('{{patient_name}}', '{{message_preview}}'),
+            array($patientName, $preview),
+            $bodyTemplate
+        );
+
+        TherapyPushHelper::schedulePush(
+            $db,
+            $jobScheduler,
+            $title,
+            $body,
+            $chatUrl,
+            $recipientIds,
+            ($isTag ? "Therapy Chat: tag" : "Therapy Chat: message") . " push to therapists"
+        );
     }
 
     /* =========================================================================

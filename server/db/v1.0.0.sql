@@ -1145,6 +1145,44 @@ INSERT IGNORE INTO `styles_fields` (`id_styles`, `id_fields`, `default_value`, `
  'Sender display name for therapy chat notifications from patient side.');
 
 -- =====================================================
+-- PUSH NOTIFICATION CONFIGURATION
+-- =====================================================
+
+-- Field definitions for push notifications (mobile)
+INSERT IGNORE INTO `fields` (`id`, `name`, `id_type`, `display`) VALUES
+(NULL, 'enable_therapist_push_notification', get_field_type_id('checkbox'), '0'),
+(NULL, 'therapist_push_notification_title', get_field_type_id('text'), '1'),
+(NULL, 'therapist_push_notification_body', get_field_type_id('text'), '1'),
+(NULL, 'therapist_tag_push_notification_title', get_field_type_id('text'), '1'),
+(NULL, 'therapist_tag_push_notification_body', get_field_type_id('text'), '1');
+
+-- Push notification settings for therapyChat style
+INSERT IGNORE INTO `styles_fields` (`id_styles`, `id_fields`, `default_value`, `help`) VALUES
+(get_style_id('therapyChat'), get_field_id('enable_therapist_push_notification'), '1',
+ 'Enable mobile push notifications to therapists when a patient sends a message or tags them. Default: enabled.'),
+(get_style_id('therapyChat'), get_field_id('therapist_push_notification_title'), 'New message from {{patient_name}}',
+ 'Push notification title for therapist notifications. Placeholders: {{patient_name}}'),
+(get_style_id('therapyChat'), get_field_id('therapist_push_notification_body'), 'You have a new therapy chat message from {{patient_name}}. Tap to open.',
+ 'Push notification body for therapist notifications. Placeholders: {{patient_name}}, {{message_preview}}, @user_name'),
+(get_style_id('therapyChat'), get_field_id('therapist_tag_push_notification_title'), '@therapist tag from {{patient_name}}',
+ 'Push notification title when a patient tags a therapist. Placeholders: {{patient_name}}'),
+(get_style_id('therapyChat'), get_field_id('therapist_tag_push_notification_body'), '{{patient_name}} has tagged you in therapy chat: {{message_preview}}',
+ 'Push notification body when a patient tags a therapist. Placeholders: {{patient_name}}, {{message_preview}}, @user_name');
+
+-- Push notification settings for therapistDashboard style
+INSERT IGNORE INTO `styles_fields` (`id_styles`, `id_fields`, `default_value`, `help`) VALUES
+(get_style_id('therapistDashboard'), get_field_id('enable_therapist_push_notification'), '1',
+ 'Enable mobile push notifications to therapists when a patient sends a message or tags them. Default: enabled.'),
+(get_style_id('therapistDashboard'), get_field_id('therapist_push_notification_title'), 'New message from {{patient_name}}',
+ 'Push notification title for therapist notifications. Placeholders: {{patient_name}}'),
+(get_style_id('therapistDashboard'), get_field_id('therapist_push_notification_body'), 'You have a new therapy chat message from {{patient_name}}. Tap to open.',
+ 'Push notification body for therapist notifications. Placeholders: {{patient_name}}, {{message_preview}}, @user_name'),
+(get_style_id('therapistDashboard'), get_field_id('therapist_tag_push_notification_title'), '@therapist tag from {{patient_name}}',
+ 'Push notification title when a patient tags a therapist. Placeholders: {{patient_name}}'),
+(get_style_id('therapistDashboard'), get_field_id('therapist_tag_push_notification_body'), '{{patient_name}} has tagged you in therapy chat: {{message_preview}}',
+ 'Push notification body when a patient tags a therapist. Placeholders: {{patient_name}}, {{message_preview}}, @user_name');
+
+-- =====================================================
 -- NEW FIELDS: auto_start and auto_start_context
 -- =====================================================
 
@@ -1181,29 +1219,3 @@ INSERT IGNORE INTO `styles_fields` (`id_styles`, `id_fields`, `default_value`, `
 (get_style_id('therapistDashboard'), get_field_id('dashboard_start_conversation'), 'Start Conversation', 'Button label for initializing a conversation with a patient'),
 (get_style_id('therapistDashboard'), get_field_id('dashboard_no_conversation_yet'), 'No conversation yet', 'Text shown for patients who have not started a conversation'),
 (get_style_id('therapistDashboard'), get_field_id('dashboard_initializing_conversation'), 'Initializing conversation...', 'Text shown while a conversation is being initialized');
-
--- Hook: inject therapy chat page into web navigation
-INSERT IGNORE INTO `hooks` (`id_hookTypes`, `name`, `description`, `class`, `function`, `exec_class`, `exec_function`, `priority`)
-VALUES (
-    (SELECT id FROM lookups WHERE lookup_code = 'hook_overwrite_return' AND type_code = 'hookTypes'),
-    'therapyChat - web navigation menu entry',
-    'When floating button is disabled, add therapy chat page to the web navigation menu for subjects/therapists.',
-    'NavModel',
-    'get_pages',
-    'TherapyChatHooks',
-    'addTherapyChatToWebNavigation',
-    20
-);
-
--- Hook: inject therapy chat page into mobile navigation
-INSERT IGNORE INTO `hooks` (`id_hookTypes`, `name`, `description`, `class`, `function`, `exec_class`, `exec_function`, `priority`)
-VALUES (
-    (SELECT id FROM lookups WHERE lookup_code = 'hook_overwrite_return' AND type_code = 'hookTypes'),
-    'therapyChat - mobile navigation menu entry',
-    'When floating button is disabled, add therapy chat page to the mobile navigation for subjects/therapists.',
-    'NavView',
-    'output_content_mobile',
-    'TherapyChatHooks',
-    'addTherapyChatToMobileNavigation',
-    20
-);

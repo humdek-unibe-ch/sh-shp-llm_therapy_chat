@@ -80,6 +80,12 @@ class TherapyChatController extends TherapyBaseController
             case 'check_updates':
                 $this->handleCheckUpdates();
                 break;
+            case 'get_config':
+                $this->handleGetConfig();
+                break;
+            case 'get_therapists':
+                $this->handleGetTherapists();
+                break;
             default:
                 if (isset($_POST['message'])) {
                     $this->handleSendMessage();

@@ -76,8 +76,25 @@
 
 <script>
 (function() {
-    var navLink = document.querySelector('.therapy-chat-nav-link[data-poll-config]');
+    var navItem = document.getElementById('therapy-chat-nav-item');
+    var navLink = navItem ? navItem.querySelector('.therapy-chat-nav-link[data-poll-config]') : null;
     if (!navLink) return;
+
+    // Remove duplicate: hide any regular nav item that links to the same URL
+    var chatHref = navLink.getAttribute('href');
+    if (chatHref) {
+        var allNavLinks = document.querySelectorAll('.navbar-nav .nav-link, .nav-item .nav-link');
+        allNavLinks.forEach(function(link) {
+            if (link === navLink) return;
+            var href = link.getAttribute('href') || '';
+            if (href && (href === chatHref || href.replace(/\/$/, '') === chatHref.replace(/\/$/, ''))) {
+                var parentLi = link.closest('li');
+                if (parentLi && parentLi !== navItem) {
+                    parentLi.style.display = 'none';
+                }
+            }
+        });
+    }
 
     var badge = document.getElementById('therapy-chat-nav-badge');
     if (!badge) return;
