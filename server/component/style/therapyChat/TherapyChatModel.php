@@ -334,21 +334,6 @@ class TherapyChatModel extends StyleModel
     }
 
     /* =========================================================================
-     * FLOATING CHAT CONFIGURATION
-     * ========================================================================= */
-
-    /**
-     * Whether the chat should render as a floating modal.
-     * When enabled, the server-rendered floating icon opens an inline modal
-     * instead of navigating to the page. Icon/position/label are in the
-     * main plugin config (therapy_chat_floating_icon, etc.).
-     */
-    public function isFloatingChatEnabled()
-    {
-        return (bool)$this->get_db_field('enable_floating_chat', '0');
-    }
-
-    /* =========================================================================
      * BUSINESS LOGIC — message sending
      * ========================================================================= */
 

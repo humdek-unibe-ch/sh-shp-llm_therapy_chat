@@ -42,11 +42,12 @@ class TherapyChatHooks extends BaseHooks
     /**
      * Output floating therapy chat icon next to user profile.
      *
-     * For subjects: when enable_floating_chat is enabled on the therapyChat
-     * style, the button opens an inline modal containing the React chat
-     * instead of navigating to the page. Otherwise it navigates normally.
-     *
      * For therapists: always navigates to the therapist dashboard page.
+     * For subjects: navigates to the therapy chat page.
+     *
+     * When `therapy_chat_enable_floating_button` is enabled in the module
+     * config, the icon renders as a fixed-position floating button.
+     * Otherwise it renders as a navigation bar item.
      */
     public function outputTherapyChatIcon($args = null)
     {
@@ -92,7 +93,7 @@ class TherapyChatHooks extends BaseHooks
 
         $pollSectionId = $isTherapist
             ? $this->getSectionIdForStyle('therapistDashboard')
-            : $this->getTherapyChatSectionId();
+            : $this->getSectionIdForStyle('therapyChat');
         $pollConfig = json_encode(array(
             'role' => $isTherapist ? 'therapist' : 'subject',
             'baseUrl' => $chatUrl,
@@ -100,92 +101,15 @@ class TherapyChatHooks extends BaseHooks
             'interval' => 5000
         ));
 
-        if (!$this->isFloatingButtonEnabled()) {
-            include __DIR__ . '/TherapyChatHooks/tpl/nav_chat_item.php';
-        }
-
-        // Additionally render the floating button/modal when enabled
         if ($this->isFloatingButtonEnabled()) {
-            $enableFloatingModal = false;
-            $floatingModalConfig = '';
-            if ($isSubject) {
-                $enableFloatingModal = $this->isFloatingChatModalEnabled();
-                if ($enableFloatingModal) {
-                    $floatingModalConfig = $this->buildFloatingModalConfig($userId, $subjectPageUrl);
-                }
-            }
-
             $badgeClass = $unreadCount > 0 ? 'badge-danger' : 'badge-secondary';
             $badgeHtml = $unreadCount > 0 ? "<span class=\"badge $badgeClass badge-pill position-absolute therapy-chat-badge\">$unreadCount</span>" : "<span class=\"badge badge-secondary badge-pill position-absolute therapy-chat-badge\" style=\"display:none\"></span>";
             $positionCss = $this->getPositionCss($position);
 
             include __DIR__ . '/TherapyChatHooks/tpl/floating_chat_icon.php';
+        } else {
+            include __DIR__ . '/TherapyChatHooks/tpl/nav_chat_item.php';
         }
-    }
-
-    /**
-     * Check if the floating chat modal mode is enabled.
-     * Looks up the actual configured value of `enable_floating_chat` from the
-     * sections_fields_translation table (runtime value), falling back to the
-     * styles_fields default_value.
-     */
-    private function isFloatingChatModalEnabled()
-    {
-        try {
-            // First try to get the actual runtime value from section field translations
-            $sql = "SELECT sft.content
-                    FROM sections_fields_translation sft
-                    INNER JOIN sections s ON sft.id_sections = s.id
-                    INNER JOIN styles st ON s.id_styles = st.id
-                    INNER JOIN fields f ON sft.id_fields = f.id
-                    WHERE st.name = 'therapyChat' AND f.name = 'enable_floating_chat'
-                    LIMIT 1";
-            $result = $this->db->query_db_first($sql);
-            if ($result && isset($result['content'])) {
-                return ($result['content'] === '1' || $result['content'] === 1);
-            }
-
-            // Fallback: check the style field default value
-            $sql = "SELECT sf.default_value
-                    FROM styles_fields sf
-                    INNER JOIN styles s ON sf.id_styles = s.id
-                    INNER JOIN fields f ON sf.id_fields = f.id
-                    WHERE s.name = 'therapyChat' AND f.name = 'enable_floating_chat'
-                    LIMIT 1";
-            $result = $this->db->query_db_first($sql);
-            return $result && ($result['default_value'] === '1' || $result['default_value'] === 1);
-        } catch (Exception $e) {
-            return false;
-        }
-    }
-
-    /**
-     * Build the React config JSON for the floating modal chat.
-     * Includes sectionId and baseUrl so the React app can fetch
-     * the full configuration from the correct controller endpoint.
-     */
-    private function buildFloatingModalConfig($userId, $chatUrl)
-    {
-        try {
-            $sectionId = $this->getTherapyChatSectionId();
-            return json_encode(array(
-                'userId' => (int)$userId,
-                'sectionId' => $sectionId ? (int)$sectionId : null,
-                'baseUrl' => $chatUrl,
-                'isFloatingMode' => true,
-            ));
-        } catch (Exception $e) {
-            return '';
-        }
-    }
-
-    /**
-     * Get the section ID for the therapyChat style component.
-     * Looks up the sections table for a section using the therapyChat style.
-     */
-    private function getTherapyChatSectionId()
-    {
-        return $this->getSectionIdForStyle('therapyChat');
     }
 
     /**
@@ -861,7 +785,7 @@ class TherapyChatHooks extends BaseHooks
         }
     }
 
-        /**
+    /**
      * Get the plugin version
      */
     public function get_plugin_db_version($plugin_name = 'llm_therapy_chat')

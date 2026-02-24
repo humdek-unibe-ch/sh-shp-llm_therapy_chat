@@ -161,24 +161,9 @@ AI response messages (`llmMessages` with `role = 'assistant'`) store the full co
 
 The React source CSS lives in `react/src/styles/therapy-chat.css` with `tc-` prefixed custom rules only. The build process (Vite) outputs the compiled CSS to `css/ext/therapy-chat.css`. Bootstrap 4.6 is **not** bundled — it's loaded globally by SelfHelp. The `css/ext/therapy-chat.css` file is ~6KB of custom styles.
 
-## Floating Chat Modal
+## Floating Chat Button
 
-When `enable_floating_chat` is enabled on the `therapyChat` style:
-
-**Inline chat suppression**: `TherapyChatView::output_content()` returns early when `isFloatingChatEnabled()` is true. This prevents the inline chat from rendering on the page — the floating modal panel is the sole chat interface in this mode.
-
-1. **Hook renders a `<button>`** instead of an `<a>` link
-2. **On click**: Panel opens, AJAX request fetches full config from chat page endpoint (`?action=get_config&section_id=X`)
-3. **React mount**: After config is loaded, the `.therapy-chat-root` element's `data-config` is updated and React is mounted via `window.__TherapyChatMount()` or `window.TherapyChat.mount()`
-4. **Config check**: `isFloatingChatModalEnabled()` checks `sections_fields_translation.content` first (actual runtime value), then falls back to `styles_fields.default_value`
-5. **CSS loading**: The floating panel loads `therapy-chat.css` explicitly via a `<link>` tag in `floating_chat_icon.php` so styles work on any page (not just the chat page). Flex layout rules ensure proper scrolling and height in the floating panel; bubble background colors use `!important` for the floating modal context.
-
-**Floating panel layout** (in `floating_chat_icon.php`):
-- Panel height: `calc(100vh - 80px)` with `top: 40px` for equal top/bottom spacing
-- Panel left-positioned at `12px` (hardcoded in inline style)
-- Message bubbles: explicit `margin-left`/`margin-right` and `align-self` for proper alignment
-  - Own (patient) messages: `align-self: flex-end` + `margin-left: auto` → right side
-  - Other messages (AI, therapist, subject in therapist view): `align-self: flex-start` + `margin-right: auto` → left side
+When `therapy_chat_enable_floating_button` is enabled in the module config, the hook renders a fixed-position floating icon that navigates to the chat page. When disabled, the chat appears as a navigation bar item instead. Icon, position, and label are configured in the module config page (`therapy_chat_floating_icon`, `therapy_chat_floating_position`, `therapy_chat_floating_label`).
 
 ## Unread Count for Therapists
 

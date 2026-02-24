@@ -1064,21 +1064,6 @@ INSERT IGNORE INTO `styles_fields` (`id_styles`, `id_fields`, `default_value`, `
 (get_style_id('therapistDashboard'), get_field_id('speech_to_text_language'), 'auto',
  'Language code for speech recognition (e.g., "en", "de", "fr"). Use "auto" for automatic detection.');
 
--- =====================================================
--- FLOATING CHAT CONFIGURATION FOR therapyChat
--- =====================================================
--- When enable_floating_chat is active, clicking the server-rendered floating
--- icon opens an inline modal instead of navigating to the page.
--- Position, icon, and label are controlled by the main plugin config page
--- (therapy_chat_floating_icon, therapy_chat_floating_position, therapy_chat_floating_label).
-
-INSERT IGNORE INTO `fields` (`id`, `name`, `id_type`, `display`) VALUES
-(NULL, 'enable_floating_chat', get_field_type_id('checkbox'), '0');
-
-INSERT IGNORE INTO `styles_fields` (`id_styles`, `id_fields`, `default_value`, `help`) VALUES
-(get_style_id('therapyChat'), get_field_id('enable_floating_chat'), '0',
- 'Enable floating/modal chat interface. When enabled, clicking the global floating icon opens the chat in a modal panel instead of navigating to the page. Icon, position and label are configured in the main plugin config page.');
-
 INSERT IGNORE INTO `styles_fields` (`id_styles`, `id_fields`, `default_value`, `help`) VALUES
 (get_style_id('therapyChat'), get_field_id('therapy_tag_reasons'), '[{"key":"overwhelmed","label":"I am feeling overwhelmed","urgency":"normal"}]', 'JSON array of tag reasons with key, label, and urgency for patient tagging options.');
 
