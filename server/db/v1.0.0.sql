@@ -1139,7 +1139,10 @@ INSERT IGNORE INTO `fields` (`id`, `name`, `id_type`, `display`) VALUES
 (NULL, 'therapist_push_notification_title', get_field_type_id('text'), '1'),
 (NULL, 'therapist_push_notification_body', get_field_type_id('text'), '1'),
 (NULL, 'therapist_tag_push_notification_title', get_field_type_id('text'), '1'),
-(NULL, 'therapist_tag_push_notification_body', get_field_type_id('text'), '1');
+(NULL, 'therapist_tag_push_notification_body', get_field_type_id('text'), '1'),
+(NULL, 'enable_patient_push_notification', get_field_type_id('checkbox'), '0'),
+(NULL, 'patient_push_notification_title', get_field_type_id('text'), '1'),
+(NULL, 'patient_push_notification_body', get_field_type_id('text'), '1');
 
 -- Push notification settings for therapyChat style
 INSERT IGNORE INTO `styles_fields` (`id_styles`, `id_fields`, `default_value`, `help`) VALUES
@@ -1165,7 +1168,13 @@ INSERT IGNORE INTO `styles_fields` (`id_styles`, `id_fields`, `default_value`, `
 (get_style_id('therapistDashboard'), get_field_id('therapist_tag_push_notification_title'), '@therapist tag from {{patient_name}}',
  'Push notification title when a patient tags a therapist. Placeholders: {{patient_name}}'),
 (get_style_id('therapistDashboard'), get_field_id('therapist_tag_push_notification_body'), '{{patient_name}} has tagged you in therapy chat: {{message_preview}}',
- 'Push notification body when a patient tags a therapist. Placeholders: {{patient_name}}, {{message_preview}}, @user_name');
+ 'Push notification body when a patient tags a therapist. Placeholders: {{patient_name}}, {{message_preview}}, @user_name'),
+(get_style_id('therapistDashboard'), get_field_id('enable_patient_push_notification'), '1',
+ 'Enable mobile push notifications to patients when a therapist sends them a message. Default: enabled.'),
+(get_style_id('therapistDashboard'), get_field_id('patient_push_notification_title'), 'New message from your therapist',
+ 'Push notification title for patient notifications. Placeholders: {{therapist_name}}'),
+(get_style_id('therapistDashboard'), get_field_id('patient_push_notification_body'), 'Your therapist {{therapist_name}} sent you a new message. Tap to open.',
+ 'Push notification body for patient notifications. Placeholders: {{therapist_name}}, {{message_preview}}');
 
 -- =====================================================
 -- NEW FIELDS: auto_start and auto_start_context

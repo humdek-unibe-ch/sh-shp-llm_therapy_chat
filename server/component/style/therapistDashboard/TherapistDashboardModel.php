@@ -187,8 +187,9 @@ class TherapistDashboardModel extends StyleModel
         if (isset($result['success'])) {
             $this->messageService->updateLastSeen($conversationId, 'therapist');
 
-            // Schedule email notification to the patient
+            // Notify the patient (email + push)
             $this->notifyPatientNewMessage($conversationId, $therapistId, $message);
+            $this->notifyPatientPush($conversationId, $therapistId, $message);
         }
 
         return $result;

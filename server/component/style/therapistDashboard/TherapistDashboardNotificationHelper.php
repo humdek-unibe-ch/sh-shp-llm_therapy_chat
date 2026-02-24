@@ -5,11 +5,13 @@
 ?>
 <?php
 
+require_once __DIR__ . "/../../../service/TherapyPushHelper.php";
+
 /**
  * Therapist Dashboard Notification Helper
  *
  * Extracted from TherapistDashboardModel to keep files focused.
- * Contains email notification logic for patient message notifications.
+ * Contains email and push notification logic for patient message notifications.
  *
  * @package LLM Therapy Chat Plugin
  */
@@ -71,6 +73,62 @@ trait TherapistDashboardNotificationTrait
             $fromName,
             "Therapy Chat: therapist message notification to patient #" . $patientId,
             array($patientId)
+        );
+    }
+
+    /**
+     * Send push notification to patient when therapist sends a message.
+     *
+     * @param int $conversationId
+     * @param int $therapistId
+     * @param string $messageContent
+     */
+    public function notifyPatientPush($conversationId, $therapistId, $messageContent)
+    {
+        $enabled = (bool)$this->get_db_field('enable_patient_push_notification', '1');
+        if (!$enabled) return;
+
+        $conversation = $this->messageService->getTherapyConversation($conversationId);
+        if (!$conversation) return;
+
+        $patientId = $conversation['id_users'];
+        if (!$patientId) return;
+
+        $services = $this->get_services();
+        $db = $services->get_db();
+        $jobScheduler = $services->get_job_scheduler();
+
+        // Get therapist info for placeholders
+        $therapist = $db->select_by_uid('users', $therapistId);
+        $therapistName = $therapist ? $therapist['name'] : 'Your Therapist';
+
+        // Get configurable title and body
+        $title = $this->get_db_field('patient_push_notification_title', 'New message from your therapist');
+        $body = $this->get_db_field('patient_push_notification_body',
+            'Your therapist {{therapist_name}} sent you a new message. Tap to open.');
+
+        // Message preview (first 80 chars, strip tags)
+        $preview = mb_substr(strip_tags($messageContent), 0, 80);
+        if (mb_strlen(strip_tags($messageContent)) > 80) {
+            $preview .= '...';
+        }
+
+        // Replace placeholders
+        $title = str_replace('{{therapist_name}}', $therapistName, $title);
+        $body = str_replace('{{therapist_name}}', $therapistName, $body);
+        $body = str_replace('{{message_preview}}', $preview, $body);
+
+        // Build deep-link URL to the therapy chat page
+        $chatUrl = $this->get_services()->get_router()->get_base_url();
+
+        TherapyPushHelper::schedulePush(
+            $db,
+            $jobScheduler,
+            $title,
+            $body,
+            $chatUrl,
+            array($patientId),
+            "Therapy Chat: therapist message push to patient #" . $patientId
         );
     }
 }

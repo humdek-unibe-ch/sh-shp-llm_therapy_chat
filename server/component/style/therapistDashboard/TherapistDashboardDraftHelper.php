@@ -135,11 +135,12 @@ trait TherapistDashboardDraftTrait
     {
         $result = $this->messageService->sendDraft($draftId, $therapistId, $conversationId);
 
-        // Send email notification to patient when draft is sent
+        // Notify patient (email + push) when draft is sent
         if (isset($result['success'])) {
             $draft = $this->messageService->getActiveDraft($conversationId, $therapistId);
             $content = $draft ? ($draft['edited_content'] ?: $draft['ai_generated_content']) : '';
             $this->notifyPatientNewMessage($conversationId, $therapistId, $content);
+            $this->notifyPatientPush($conversationId, $therapistId, $content);
         }
 
         return $result;
