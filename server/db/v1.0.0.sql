@@ -573,6 +573,7 @@ INSERT IGNORE INTO `fields` (`id`, `name`, `id_type`, `display`) VALUES
 (NULL, 'therapy_chat_floating_icon', get_field_type_id('text'), '0'),
 (NULL, 'therapy_chat_floating_label', get_field_type_id('text'), '1'),
 (NULL, 'therapy_chat_floating_position', get_field_type_id('select-floating-position'), '0'),
+(NULL, 'therapy_chat_enable_floating_button', get_field_type_id('checkbox'), '0'),
 (NULL, 'therapy_chat_default_mode', get_field_type_id('select'), '0'),
 (NULL, 'therapy_chat_polling_interval', get_field_type_id('number'), '0'),
 (NULL, 'therapy_chat_enable_tagging', get_field_type_id('checkbox'), '0'),
@@ -591,6 +592,7 @@ INSERT IGNORE INTO `pageType_fields` (`id_pageType`, `id_fields`, `default_value
 ((SELECT id FROM pageType WHERE `name` = 'sh_module_llm_therapy_chat'), get_field_id('therapy_chat_floating_icon'), 'fa-comments', 'Font Awesome icon class for the floating button'),
 ((SELECT id FROM pageType WHERE `name` = 'sh_module_llm_therapy_chat'), get_field_id('therapy_chat_floating_label'), '', 'Optional text label for the floating button'),
 ((SELECT id FROM pageType WHERE `name` = 'sh_module_llm_therapy_chat'), get_field_id('therapy_chat_floating_position'), 'bottom-right', 'Position of the floating button: bottom-right, bottom-left, top-right, top-left'),
+((SELECT id FROM pageType WHERE `name` = 'sh_module_llm_therapy_chat'), get_field_id('therapy_chat_enable_floating_button'), '1', 'Enable floating button for therapy chat on web and mobile. When disabled, clients should show chat in menu/tab navigation.'),
 ((SELECT id FROM pageType WHERE `name` = 'sh_module_llm_therapy_chat'), get_field_id('therapy_chat_default_mode'), 'ai_hybrid', 'Default chat mode: ai_hybrid (AI responds, therapist can join) or human_only (therapist only)'),
 ((SELECT id FROM pageType WHERE `name` = 'sh_module_llm_therapy_chat'), get_field_id('therapy_chat_polling_interval'), '3', 'Polling interval in seconds for message updates'),
 ((SELECT id FROM pageType WHERE `name` = 'sh_module_llm_therapy_chat'), get_field_id('therapy_chat_enable_tagging'), '1', 'Enable @mention tagging for therapists');
@@ -1026,6 +1028,7 @@ INSERT IGNORE INTO `pages_fields_translation` (`id_pages`, `id_fields`, `id_lang
 (@id_page_therapy_chat_config, get_field_id('therapy_chat_floating_icon'), '0000000001', 'fa-comments'),
 (@id_page_therapy_chat_config, get_field_id('therapy_chat_floating_label'), '0000000001', ''),
 (@id_page_therapy_chat_config, get_field_id('therapy_chat_floating_position'), '0000000001', 'bottom-right'),
+(@id_page_therapy_chat_config, get_field_id('therapy_chat_enable_floating_button'), '0000000001', '1'),
 (@id_page_therapy_chat_config, get_field_id('therapy_chat_default_mode'), '0000000001', 'ai_hybrid'),
 (@id_page_therapy_chat_config, get_field_id('therapy_chat_polling_interval'), '0000000001', '3'),
 (@id_page_therapy_chat_config, get_field_id('therapy_chat_enable_tagging'), '0000000001', '1');
@@ -1178,3 +1181,29 @@ INSERT IGNORE INTO `styles_fields` (`id_styles`, `id_fields`, `default_value`, `
 (get_style_id('therapistDashboard'), get_field_id('dashboard_start_conversation'), 'Start Conversation', 'Button label for initializing a conversation with a patient'),
 (get_style_id('therapistDashboard'), get_field_id('dashboard_no_conversation_yet'), 'No conversation yet', 'Text shown for patients who have not started a conversation'),
 (get_style_id('therapistDashboard'), get_field_id('dashboard_initializing_conversation'), 'Initializing conversation...', 'Text shown while a conversation is being initialized');
+
+-- Hook: inject therapy chat page into web navigation
+INSERT IGNORE INTO `hooks` (`id_hookTypes`, `name`, `description`, `class`, `function`, `exec_class`, `exec_function`, `priority`)
+VALUES (
+    (SELECT id FROM lookups WHERE lookup_code = 'hook_overwrite_return' AND type_code = 'hookTypes'),
+    'therapyChat - web navigation menu entry',
+    'When floating button is disabled, add therapy chat page to the web navigation menu for subjects/therapists.',
+    'NavModel',
+    'get_pages',
+    'TherapyChatHooks',
+    'addTherapyChatToWebNavigation',
+    20
+);
+
+-- Hook: inject therapy chat page into mobile navigation
+INSERT IGNORE INTO `hooks` (`id_hookTypes`, `name`, `description`, `class`, `function`, `exec_class`, `exec_function`, `priority`)
+VALUES (
+    (SELECT id FROM lookups WHERE lookup_code = 'hook_overwrite_return' AND type_code = 'hookTypes'),
+    'therapyChat - mobile navigation menu entry',
+    'When floating button is disabled, add therapy chat page to the mobile navigation for subjects/therapists.',
+    'NavView',
+    'output_content_mobile',
+    'TherapyChatHooks',
+    'addTherapyChatToMobileNavigation',
+    20
+);

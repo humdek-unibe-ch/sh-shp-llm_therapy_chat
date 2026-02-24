@@ -349,7 +349,9 @@ class TherapistDashboardController extends TherapyBaseController
     {
         $uid = $this->validateTherapistOrFail();
         $cid = $_POST['conversation_id'] ?? null;
-        $enabled = isset($_POST['enabled']) ? (bool)$_POST['enabled'] : true;
+        $enabled = isset($_POST['enabled'])
+            ? filter_var($_POST['enabled'], FILTER_VALIDATE_BOOLEAN)
+            : true;
 
         if (!$cid) { $this->json(['error' => 'Conversation ID is required'], 400); return; }
         if (!$this->model->canAccessConversation($uid, $cid)) { $this->json(['error' => 'Access denied'], 403); return; }

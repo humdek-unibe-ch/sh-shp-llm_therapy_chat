@@ -53,13 +53,11 @@ class TherapyChatHooks extends BaseHooks
         $userId = $_SESSION['id_user'] ?? null;
         if (!$userId) return;
 
-        // Don't show in CMS admin
         if ($this->isCmsPage()) return;
 
         $isSubject = $this->messageService->isSubject($userId);
         $isTherapist = $this->messageService->isTherapist($userId);
 
-        // Additional group check from config
         $subjectGroupId = $this->getConfigValue('therapy_chat_subject_group');
         $therapistGroupId = $this->getConfigValue('therapy_chat_therapist_group');
 
@@ -71,25 +69,13 @@ class TherapyChatHooks extends BaseHooks
 
         if (!$isSubject && !$isTherapist) return;
 
-        // Resolve URLs
         $subjectPageId = $this->getConfigValue('therapy_chat_subject_page');
         $therapistPageId = $this->getConfigValue('therapy_chat_therapist_page');
 
         $subjectPageUrl = $this->getPageUrl($subjectPageId, 'home');
         $therapistPageUrl = $this->getPageUrl($therapistPageId, 'home');
 
-        // Check if floating modal mode is enabled for subjects
-        $enableFloatingModal = false;
-        $floatingModalConfig = '';
-        if ($isSubject) {
-            $enableFloatingModal = $this->isFloatingChatModalEnabled();
-            if ($enableFloatingModal) {
-                $floatingModalConfig = $this->buildFloatingModalConfig($userId, $subjectPageUrl);
-            }
-        }
-
         if ($isTherapist) {
-            // For therapists: count alerts + patient messages only (exclude AI)
             $unreadCount = $this->messageService->getUnreadAlertCount($userId)
                 + $this->messageService->getUnreadCountForUser($userId, true);
             $chatUrl = $therapistPageUrl;
@@ -100,20 +86,10 @@ class TherapyChatHooks extends BaseHooks
             $iconTitle = 'Therapy Chat';
         }
 
-        // Config
         $icon = $this->getConfigValue('therapy_chat_floating_icon', 'fa-comments');
         $position = $this->getConfigValue('therapy_chat_floating_position', 'bottom-right');
         $label = $this->getConfigValue('therapy_chat_floating_label', '');
 
-        $badgeClass = $unreadCount > 0 ? 'badge-danger' : 'badge-secondary';
-        $badgeHtml = $unreadCount > 0 ? "<span class=\"badge $badgeClass badge-pill position-absolute therapy-chat-badge\">$unreadCount</span>" : "<span class=\"badge badge-secondary badge-pill position-absolute therapy-chat-badge\" style=\"display:none\"></span>";
-        $positionCss = $this->getPositionCss($position);
-
-        // Build polling config for the floating icon JS (works for both modes).
-        // The JS will poll check_updates (subject) or get_unread_counts (therapist)
-        // to keep the badge count fresh without React.
-        // For therapists, use the therapistDashboard section ID (polls that controller).
-        // For subjects, use the therapyChat section ID.
         $pollSectionId = $isTherapist
             ? $this->getSectionIdForStyle('therapistDashboard')
             : $this->getTherapyChatSectionId();
@@ -121,10 +97,29 @@ class TherapyChatHooks extends BaseHooks
             'role' => $isTherapist ? 'therapist' : 'subject',
             'baseUrl' => $chatUrl,
             'sectionId' => $pollSectionId,
-            'interval' => 3000 // 3 seconds
+            'interval' => 5000
         ));
 
-        include __DIR__ . '/TherapyChatHooks/tpl/floating_chat_icon.php';
+        // Always render the navigation bar item with unread badge
+        include __DIR__ . '/TherapyChatHooks/tpl/nav_chat_item.php';
+
+        // Additionally render the floating button/modal when enabled
+        if ($this->isFloatingButtonEnabled()) {
+            $enableFloatingModal = false;
+            $floatingModalConfig = '';
+            if ($isSubject) {
+                $enableFloatingModal = $this->isFloatingChatModalEnabled();
+                if ($enableFloatingModal) {
+                    $floatingModalConfig = $this->buildFloatingModalConfig($userId, $subjectPageUrl);
+                }
+            }
+
+            $badgeClass = $unreadCount > 0 ? 'badge-danger' : 'badge-secondary';
+            $badgeHtml = $unreadCount > 0 ? "<span class=\"badge $badgeClass badge-pill position-absolute therapy-chat-badge\">$unreadCount</span>" : "<span class=\"badge badge-secondary badge-pill position-absolute therapy-chat-badge\" style=\"display:none\"></span>";
+            $positionCss = $this->getPositionCss($position);
+
+            include __DIR__ . '/TherapyChatHooks/tpl/floating_chat_icon.php';
+        }
     }
 
     /**
@@ -273,7 +268,7 @@ class TherapyChatHooks extends BaseHooks
             $icon = $this->getConfigValue('therapy_chat_floating_icon', 'fa-comments');
             $label = $this->getConfigValue('therapy_chat_floating_label', 'Chat');
             $position = $this->getConfigValue('therapy_chat_floating_position', 'bottom-right');
-            $enableFloating = $isSubject ? $this->isFloatingChatModalEnabled() : false;
+            $enableFloating = $this->isFloatingButtonEnabled();
 
             $faToIonic = array(
                 'fa-comments' => 'chatbubbles',
@@ -418,6 +413,148 @@ class TherapyChatHooks extends BaseHooks
         $multiSelect = new BaseStyleComponent('select', $selectOptions);
 
         include __DIR__ . '/TherapyChatHooks/tpl/therapist_group_assignments.php';
+    }
+
+    /* =========================================================================
+     * HOOK: Web Navigation Menu Entry (NavModel::get_pages)
+     * Type: hook_overwrite_return
+     * When floating is disabled, inject the therapy chat page into the
+     * web navigation so it appears in the menu.
+     * ========================================================================= */
+
+    public function addTherapyChatToWebNavigation($args = null)
+    {
+        $pages = $this->execute_private_method($args);
+        if (!is_array($pages)) {
+            return $pages;
+        }
+
+        if ($this->isFloatingButtonEnabled()) {
+            return $pages;
+        }
+
+        $navEntry = $this->buildTherapyChatNavEntry();
+        if ($navEntry) {
+            $pages[] = $navEntry;
+        }
+
+        return $pages;
+    }
+
+    /* =========================================================================
+     * HOOK: Mobile Navigation Menu Entry (NavView::output_content_mobile)
+     * Type: hook_overwrite_return
+     * When floating is disabled, inject the therapy chat page into the
+     * mobile navigation array.
+     * ========================================================================= */
+
+    public function addTherapyChatToMobileNavigation($args = null)
+    {
+        $pages = $this->execute_private_method($args);
+        if (!is_array($pages)) {
+            return $pages;
+        }
+
+        if ($this->isFloatingButtonEnabled()) {
+            return $pages;
+        }
+
+        $userId = $_SESSION['id_user'] ?? null;
+        if (!$userId) {
+            return $pages;
+        }
+
+        $isSubject = $this->messageService->isSubject($userId);
+        $isTherapist = $this->messageService->isTherapist($userId);
+
+        $subjectGroupId = $this->getConfigValue('therapy_chat_subject_group');
+        $therapistGroupId = $this->getConfigValue('therapy_chat_therapist_group');
+        if ($subjectGroupId && !$this->isUserInGroup($userId, $subjectGroupId)) $isSubject = false;
+        if ($therapistGroupId && !$this->isUserInGroup($userId, $therapistGroupId)) $isTherapist = false;
+
+        if (!$isSubject && !$isTherapist) {
+            return $pages;
+        }
+
+        $icon = $this->getConfigValue('therapy_chat_floating_icon', 'fa-comments');
+        $label = $this->getConfigValue('therapy_chat_floating_label', 'Chat');
+        $faToIonic = array(
+            'fa-comments' => 'chatbubbles',
+            'fa-comment' => 'chatbubble',
+            'fa-comment-dots' => 'chatbubble-ellipses',
+            'fa-comment-medical' => 'medkit',
+            'fa-envelope' => 'mail',
+            'fa-bell' => 'notifications',
+        );
+        $mobileIcon = isset($faToIonic[$icon]) ? $faToIonic[$icon] : 'chatbubbles';
+
+        $pageIdField = $isTherapist ? 'therapy_chat_therapist_page' : 'therapy_chat_subject_page';
+        $chatUrl = $this->getPageUrl(
+            $this->getConfigValue($pageIdField),
+            'home'
+        );
+        $basePath = defined('BASE_PATH') ? BASE_PATH : '';
+        if ($basePath && strpos($chatUrl, $basePath) === 0) {
+            $chatUrl = substr($chatUrl, strlen($basePath));
+        }
+
+        $pages[] = array(
+            'id_navigation_section' => null,
+            'title' => $label ?: 'Chat',
+            'keyword' => 'therapy-chat',
+            'url' => $chatUrl,
+            'icon' => $mobileIcon,
+            'children' => array(),
+            'is_active' => false
+        );
+
+        return $pages;
+    }
+
+    /**
+     * Build a navigation entry for the therapy chat page.
+     * Used by addTherapyChatToWebNavigation.
+     */
+    private function buildTherapyChatNavEntry()
+    {
+        $userId = $_SESSION['id_user'] ?? null;
+        if (!$userId) return null;
+
+        try {
+            $isSubject = $this->messageService->isSubject($userId);
+            $isTherapist = $this->messageService->isTherapist($userId);
+
+            $subjectGroupId = $this->getConfigValue('therapy_chat_subject_group');
+            $therapistGroupId = $this->getConfigValue('therapy_chat_therapist_group');
+            if ($subjectGroupId && !$this->isUserInGroup($userId, $subjectGroupId)) $isSubject = false;
+            if ($therapistGroupId && !$this->isUserInGroup($userId, $therapistGroupId)) $isTherapist = false;
+
+            if (!$isSubject && !$isTherapist) return null;
+
+            $pageIdField = $isTherapist ? 'therapy_chat_therapist_page' : 'therapy_chat_subject_page';
+            $pageId = $this->getConfigValue($pageIdField);
+
+            if (empty($pageId) || !is_numeric($pageId)) return null;
+
+            $pageKeyword = $this->db->fetch_page_keyword_by_id($pageId);
+            if (!$pageKeyword) return null;
+
+            $icon = $this->getConfigValue('therapy_chat_floating_icon', 'fa-comments');
+            $label = $this->getConfigValue('therapy_chat_floating_label', '');
+            $url = $this->services->get_router()->get_link_url($pageKeyword);
+
+            return array(
+                'id_navigation_section' => null,
+                'title' => $label ?: 'Therapy Chat',
+                'keyword' => $pageKeyword,
+                'url' => $url ?: '/' . $pageKeyword,
+                'icon' => $icon,
+                'children' => array(),
+                'is_active' => false
+            );
+        } catch (Exception $e) {
+            return null;
+        }
     }
 
     /* =========================================================================
@@ -649,13 +786,20 @@ class TherapyChatHooks extends BaseHooks
     {
         try {
             $configPage = $this->db->fetch_page_info('sh_module_llm_therapy_chat');
-            if ($configPage && isset($configPage[$fieldName])) {
-                return $configPage[$fieldName] ?: $defaultValue;
+            if ($configPage && array_key_exists($fieldName, $configPage)
+                && $configPage[$fieldName] !== null && $configPage[$fieldName] !== '') {
+                return $configPage[$fieldName];
             }
         } catch (Exception $e) {
             // Fall through
         }
         return $defaultValue;
+    }
+
+    private function isFloatingButtonEnabled()
+    {
+        $value = $this->getConfigValue('therapy_chat_enable_floating_button', '0');
+        return ($value === '1' || $value === 1 || $value === true || $value === 'true');
     }
 
     private function getPageUrl($pageId, $fallbackKeyword)
