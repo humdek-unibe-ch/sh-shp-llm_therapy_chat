@@ -118,8 +118,7 @@ trait TherapistDashboardNotificationTrait
         $body = str_replace('{{therapist_name}}', $therapistName, $body);
         $body = str_replace('{{message_preview}}', $preview, $body);
 
-        // Build deep-link URL to the therapy chat page
-        $chatUrl = $this->get_services()->get_router()->get_base_url();
+        $chatUrl = $this->getChatPageUrl($db, 'therapy_chat_subject_page');
 
         TherapyPushHelper::schedulePush(
             $db,
@@ -130,5 +129,37 @@ trait TherapistDashboardNotificationTrait
             array($patientId),
             "Therapy Chat: therapist message push to patient #" . $patientId
         );
+    }
+
+    /**
+     * Look up a chat page URL from the module config fields.
+     *
+     * Fields like therapy_chat_subject_page / therapy_chat_therapist_page
+     * store a page ID in sections_fields_translation. We resolve the
+     * page keyword from there to build a URL the mobile app can open.
+     *
+     * @param object $db
+     * @param string $fieldName  e.g. 'therapy_chat_subject_page'
+     * @return string  e.g. '/therapyChatSubject' or ''
+     */
+    private function getChatPageUrl($db, $fieldName)
+    {
+        try {
+            $sql = "SELECT sft.content AS page_id
+                    FROM sections_fields_translation sft
+                    INNER JOIN fields f ON f.id = sft.id_fields
+                    WHERE f.name = ?
+                    AND sft.content IS NOT NULL AND sft.content != '' AND sft.content != '0'
+                    LIMIT 1";
+            $result = $db->query_db($sql, array($fieldName));
+            if (!empty($result) && !empty($result[0]['page_id'])) {
+                $pageInfo = $db->select_by_uid('pages', $result[0]['page_id']);
+                if ($pageInfo && isset($pageInfo['keyword'])) {
+                    return '/' . $pageInfo['keyword'];
+                }
+            }
+        } catch (\Exception $e) {}
+
+        return '';
     }
 }
