@@ -100,8 +100,9 @@ class TherapyChatHooks extends BaseHooks
             'interval' => 5000
         ));
 
-        // Always render the navigation bar item with unread badge
-        include __DIR__ . '/TherapyChatHooks/tpl/nav_chat_item.php';
+        if (!$this->isFloatingButtonEnabled()) {
+            include __DIR__ . '/TherapyChatHooks/tpl/nav_chat_item.php';
+        }
 
         // Additionally render the floating button/modal when enabled
         if ($this->isFloatingButtonEnabled()) {
