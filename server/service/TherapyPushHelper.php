@@ -16,7 +16,9 @@
 class TherapyPushHelper
 {
     /**
-     * Schedule a push notification via the SelfHelp JobScheduler.
+     * Schedule and immediately execute a push notification via the SelfHelp
+     * JobScheduler. Uses add_and_execute_job() so the push is sent within
+     * the current request instead of waiting for the cron queue.
      *
      * @param object $db           Database service
      * @param object $jobScheduler JobScheduler service
@@ -44,10 +46,10 @@ class TherapyPushHelper
         );
 
         try {
-            $jobScheduler->schedule_job($pushData, transactionBy_by_system);
+            $jobScheduler->add_and_execute_job($pushData, transactionBy_by_system);
             return true;
         } catch (\Exception $e) {
-            error_log("TherapyPushHelper: Failed to schedule push for users [" . implode(',', $recipientUserIds) . "]: " . $e->getMessage());
+            error_log("TherapyPushHelper: Failed to send push for users [" . implode(',', $recipientUserIds) . "]: " . $e->getMessage());
             return false;
         }
     }
