@@ -3,23 +3,79 @@
  * =======================
  *
  * Speech-to-text recording: microphone button, recording state, and transcription.
- * Uses MediaRecorder API; sends audio to server for transcription.
+ * Uses MediaRecorder API with silence detection for automatic transcription.
  *
  * Props: onTranscription callback, speechToTextEnabled flag, sectionId for API.
  */
 
 import React, { useCallback, useRef, useEffect, useState } from 'react';
 
-const MAX_RECORDING_MS = 60_000; // 60 s
+const MAX_RECORDING_MS = 60_000;
+const SILENCE_THRESHOLD = 0.01;
+const SILENCE_DURATION_MS = 2000;
+const SILENCE_CHECK_INTERVAL_MS = 150;
+const PREFERRED_AUDIO_MIME_TYPES = [
+  'audio/webm;codecs=opus',
+  'audio/webm',
+  'audio/ogg;codecs=opus',
+  'audio/mp4',
+];
+const MIC_CONSTRAINTS_FALLBACKS: MediaStreamConstraints[] = [
+  {
+    audio: {
+      echoCancellation: true,
+      noiseSuppression: true,
+      channelCount: { ideal: 1 },
+      sampleRate: { ideal: 24000 },
+    },
+  },
+  {
+    audio: {
+      echoCancellation: true,
+      noiseSuppression: true,
+    },
+  },
+  { audio: true },
+];
+
+function getPreferredAudioMimeType(): string {
+  for (const mime of PREFERRED_AUDIO_MIME_TYPES) {
+    if (MediaRecorder.isTypeSupported(mime)) {
+      return mime;
+    }
+  }
+  return '';
+}
+
+function mimeToExtension(mimeType: string): string {
+  const base = mimeType.split(';')[0].trim().toLowerCase();
+  if (base === 'audio/mp4') return 'm4a';
+  if (base === 'audio/ogg') return 'ogg';
+  return 'webm';
+}
+
+async function requestMicrophoneStream(): Promise<MediaStream> {
+  let lastError: unknown = null;
+
+  for (const constraints of MIC_CONSTRAINTS_FALLBACKS) {
+    try {
+      return await navigator.mediaDevices.getUserMedia(constraints);
+    } catch (err) {
+      lastError = err;
+      const name = err instanceof DOMException ? err.name : '';
+      if (name !== 'OverconstrainedError' && name !== 'NotFoundError') {
+        throw err;
+      }
+    }
+  }
+
+  throw lastError || new Error('No supported microphone constraints');
+}
 
 export interface VoiceRecorderProps {
-  /** Called when transcription succeeds with the transcribed text */
   onTranscription: (text: string) => void;
-  /** Whether speech-to-text is enabled */
   speechToTextEnabled: boolean;
-  /** Section ID for the transcription API */
   sectionId?: number;
-  /** Disable the microphone button (e.g. when sending) */
   disabled?: boolean;
 }
 
@@ -37,27 +93,43 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({
   const audioStreamRef = useRef<MediaStream | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
   const recordingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const silenceTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const audioContextRef = useRef<AudioContext | null>(null);
+  const analyserRef = useRef<AnalyserNode | null>(null);
+  const silenceStartRef = useRef<number>(0);
+  const hasSpokenRef = useRef(false);
 
   const isSpeechAvailable =
     speechToTextEnabled &&
+    typeof MediaRecorder !== 'undefined' &&
     typeof navigator !== 'undefined' &&
     navigator.mediaDevices &&
     typeof navigator.mediaDevices.getUserMedia === 'function';
 
-  // Cleanup on unmount
-  useEffect(() => {
-    return () => {
-      if (audioStreamRef.current) {
-        audioStreamRef.current.getTracks().forEach((t) => t.stop());
-      }
-      if (recordingTimeoutRef.current) {
-        clearTimeout(recordingTimeoutRef.current);
-      }
-    };
+  const cleanup = useCallback(() => {
+    if (silenceTimerRef.current) {
+      clearInterval(silenceTimerRef.current);
+      silenceTimerRef.current = null;
+    }
+    if (audioContextRef.current) {
+      audioContextRef.current.close().catch(() => {});
+      audioContextRef.current = null;
+      analyserRef.current = null;
+    }
+    if (audioStreamRef.current) {
+      audioStreamRef.current.getTracks().forEach((t) => t.stop());
+      audioStreamRef.current = null;
+    }
+    if (recordingTimeoutRef.current) {
+      clearTimeout(recordingTimeoutRef.current);
+      recordingTimeoutRef.current = null;
+    }
   }, []);
 
+  useEffect(() => cleanup, [cleanup]);
+
   const processAudioBlob = useCallback(
-    async (audioBlob: Blob) => {
+    async (audioBlob: Blob, mimeType: string) => {
       if (audioBlob.size === 0) {
         setSpeechError('No audio recorded');
         return;
@@ -67,8 +139,9 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({
       setSpeechError(null);
 
       try {
+        const extension = mimeToExtension(mimeType);
         const fd = new FormData();
-        fd.append('audio', audioBlob, 'recording.webm');
+        fd.append('audio', audioBlob, `recording.${extension}`);
         fd.append('action', 'speech_transcribe');
         if (sectionId != null) fd.append('section_id', String(sectionId));
 
@@ -99,13 +172,20 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({
   );
 
   const handleStopRecording = useCallback(() => {
-    if (!isRecording || !mediaRecorderRef.current) return;
-
+    if (silenceTimerRef.current) {
+      clearInterval(silenceTimerRef.current);
+      silenceTimerRef.current = null;
+    }
+    if (audioContextRef.current) {
+      audioContextRef.current.close().catch(() => {});
+      audioContextRef.current = null;
+      analyserRef.current = null;
+    }
     if (recordingTimeoutRef.current) {
       clearTimeout(recordingTimeoutRef.current);
       recordingTimeoutRef.current = null;
     }
-    if (mediaRecorderRef.current.state === 'recording') {
+    if (mediaRecorderRef.current?.state === 'recording') {
       mediaRecorderRef.current.stop();
     }
     if (audioStreamRef.current) {
@@ -113,24 +193,66 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({
       audioStreamRef.current = null;
     }
     setIsRecording(false);
-  }, [isRecording]);
+  }, []);
+
+  const startSilenceDetection = useCallback(
+    (stream: MediaStream) => {
+      try {
+        const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
+        const source = ctx.createMediaStreamSource(stream);
+        const analyser = ctx.createAnalyser();
+        analyser.fftSize = 512;
+        source.connect(analyser);
+
+        audioContextRef.current = ctx;
+        analyserRef.current = analyser;
+        silenceStartRef.current = 0;
+        hasSpokenRef.current = false;
+
+        const dataArray = new Float32Array(analyser.fftSize);
+
+        silenceTimerRef.current = setInterval(() => {
+          if (!analyserRef.current) return;
+          analyserRef.current.getFloatTimeDomainData(dataArray);
+
+          let rms = 0;
+          for (let i = 0; i < dataArray.length; i++) {
+            rms += dataArray[i] * dataArray[i];
+          }
+          rms = Math.sqrt(rms / dataArray.length);
+
+          if (rms > SILENCE_THRESHOLD) {
+            hasSpokenRef.current = true;
+            silenceStartRef.current = 0;
+          } else if (hasSpokenRef.current) {
+            if (silenceStartRef.current === 0) {
+              silenceStartRef.current = Date.now();
+            } else if (Date.now() - silenceStartRef.current >= SILENCE_DURATION_MS) {
+              handleStopRecording();
+            }
+          }
+        }, SILENCE_CHECK_INTERVAL_MS);
+      } catch {
+        // Silence detection not available — user must stop manually
+      }
+    },
+    [handleStopRecording],
+  );
 
   const handleStartRecording = useCallback(async () => {
     if (!isSpeechAvailable || isRecording) return;
     setSpeechError(null);
 
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        audio: { echoCancellation: true, noiseSuppression: true, sampleRate: 16000 },
-      });
+      const mimeType = getPreferredAudioMimeType();
+      if (!mimeType) {
+        setSpeechError('No supported compressed audio format available.');
+        return;
+      }
+
+      const stream = await requestMicrophoneStream();
       audioStreamRef.current = stream;
       audioChunksRef.current = [];
-
-      const mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
-        ? 'audio/webm;codecs=opus'
-        : MediaRecorder.isTypeSupported('audio/webm')
-          ? 'audio/webm'
-          : 'audio/mp4';
 
       const recorder = new MediaRecorder(stream, { mimeType, audioBitsPerSecond: 16000 });
       mediaRecorderRef.current = recorder;
@@ -141,13 +263,15 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({
       recorder.onstop = async () => {
         if (audioChunksRef.current.length > 0) {
           const blob = new Blob(audioChunksRef.current, { type: mimeType });
-          await processAudioBlob(blob);
+          await processAudioBlob(blob, mimeType);
         }
         audioChunksRef.current = [];
       };
 
-      recorder.start();
+      recorder.start(250);
       setIsRecording(true);
+
+      startSilenceDetection(stream);
 
       recordingTimeoutRef.current = setTimeout(() => {
         if (mediaRecorderRef.current?.state === 'recording') handleStopRecording();
@@ -158,10 +282,12 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({
       setSpeechError(
         msg.includes('Permission denied') || msg.includes('NotAllowedError')
           ? 'Microphone access denied. Please allow microphone access in your browser settings.'
+          : msg.includes('OverconstrainedError')
+            ? 'Microphone constraints not supported on this device. Retrying with safe defaults failed.'
           : 'Failed to start recording: ' + msg,
       );
     }
-  }, [isSpeechAvailable, isRecording, processAudioBlob, handleStopRecording]);
+  }, [isSpeechAvailable, isRecording, processAudioBlob, handleStopRecording, startSilenceDetection]);
 
   const handleMicClick = useCallback(() => {
     if (isRecording) handleStopRecording();

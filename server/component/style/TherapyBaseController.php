@@ -25,13 +25,15 @@ abstract class TherapyBaseController extends BaseController
     private const AUDIO_MIME_TYPES = [
         'audio/webm',
         'audio/webm;codecs=opus',
-        'audio/wav',
+        'audio/ogg',
+        'audio/ogg;codecs=opus',
+        'audio/aac',
+        'audio/x-aac',
         'audio/mp3',
         'audio/mpeg',
         'audio/mp4',
-        'audio/ogg',
+        'audio/m4a',
         'audio/flac',
-        'video/webm',
     ];
 
     /** Max audio upload size (25 MB) - uses THERAPY_MAX_AUDIO_SIZE from TherapyLookups */
@@ -158,7 +160,7 @@ abstract class TherapyBaseController extends BaseController
         $baseMime = explode(';', $mimeType)[0];
         if (!in_array($mimeType, self::AUDIO_MIME_TYPES) && !in_array($baseMime, self::AUDIO_MIME_TYPES)) {
             $this->json([
-                'error' => 'Invalid audio format: ' . $mimeType . '. Supported: WebM, WAV, MP3, OGG, FLAC'
+                'error' => 'Invalid audio format: ' . $mimeType . '. Supported: WebM/Opus, OGG/Opus, M4A/MP4, MP3, FLAC'
             ], 400);
         }
 
