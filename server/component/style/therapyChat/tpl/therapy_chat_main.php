@@ -11,7 +11,7 @@
  */
 ?>
 <!-- Therapy Chat React App Container -->
-<div class="therapy-chat-root <?php echo $class; ?>"
+<div class="therapy-chat-root <?php echo $this->css; ?>"
      data-user-id="<?php echo htmlspecialchars($user_id, ENT_QUOTES, 'UTF-8'); ?>"
      data-section-id="<?php echo htmlspecialchars($section_id, ENT_QUOTES, 'UTF-8'); ?>"
      data-conversation-id="<?php echo htmlspecialchars($conversation_id ?? '', ENT_QUOTES, 'UTF-8'); ?>"
