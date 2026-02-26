@@ -548,6 +548,10 @@
   height: 0.7rem;
 }
 
+.tc-dashboard-layout {
+  overflow-x: hidden;
+}
+
 .tc-row-min-height {
   min-height: 500px;
 }
