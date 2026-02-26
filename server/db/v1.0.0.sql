@@ -1227,4 +1227,18 @@ INSERT IGNORE INTO `styles_fields` (`id_styles`, `id_fields`, `default_value`, `
 INSERT IGNORE INTO `acl_groups` (`id_groups`, `id_pages`, `acl_select`, `acl_insert`, `acl_update`, `acl_delete`)
 VALUES ((SELECT id FROM `groups` WHERE `name` = 'subject'), (SELECT id FROM pages WHERE keyword = 'therapyChatSubject'), '1', '0', '0', '0');
 
+-- -------------------------------------------------------------------
+-- Chat color configuration (JSON, display=0)
+-- -------------------------------------------------------------------
+INSERT IGNORE INTO `fields` (`id`, `name`, `id_type`, `display`) VALUES
+(NULL, 'therapy_chat_colors', get_field_type_id('json'), '0');
+
+INSERT IGNORE INTO `styles_fields` (`id_styles`, `id_fields`, `default_value`, `help`) VALUES
+(get_style_id('therapyChat'), get_field_id('therapy_chat_colors'),
+ '{"me_as_patient":{"bg":"#DCF8C6","text":"#1b5e20","border":"#a5d6a7"},"me_as_therapist":{"bg":"#E3F2FD","text":"#0d47a1","border":"#90caf9"},"patient":{"bg":"#FFF8E1","text":"#4e342e","border":"#ffe082"},"ai":{"bg":"#F3E5F5","text":"#4a148c","border":"#ce93d8"},"therapist_1":{"bg":"#E8F5E9","text":"#1b5e20","border":"#81c784"},"therapist_2":{"bg":"#E3F2FD","text":"#0d47a1","border":"#64b5f6"},"therapist_3":{"bg":"#F3E5F5","text":"#4a148c","border":"#ba68c8"},"therapist_4":{"bg":"#FBE9E7","text":"#bf360c","border":"#ff8a65"},"therapist_5":{"bg":"#E0F2F1","text":"#004d40","border":"#80cbc4"},"therapist_6":{"bg":"#FCE4EC","text":"#880e4f","border":"#f48fb1"},"therapist_7":{"bg":"#E8EAF6","text":"#1a237e","border":"#7986cb"},"therapist_8":{"bg":"#EFEBE9","text":"#3e2723","border":"#a1887f"},"therapist_9":{"bg":"#FFF3E0","text":"#e65100","border":"#ffb74d"},"therapist_10":{"bg":"#E0F7FA","text":"#006064","border":"#4dd0e1"}}',
+ 'JSON color palette for therapy chat. Keys: me_as_patient, me_as_therapist, patient, ai, therapist_1..therapist_10. Each has bg (background), text (text color), border (accent border). Used in both web and mobile.'),
+(get_style_id('therapistDashboard'), get_field_id('therapy_chat_colors'),
+ '{"me_as_patient":{"bg":"#DCF8C6","text":"#1b5e20","border":"#a5d6a7"},"me_as_therapist":{"bg":"#E3F2FD","text":"#0d47a1","border":"#90caf9"},"patient":{"bg":"#FFF8E1","text":"#4e342e","border":"#ffe082"},"ai":{"bg":"#F3E5F5","text":"#4a148c","border":"#ce93d8"},"therapist_1":{"bg":"#E8F5E9","text":"#1b5e20","border":"#81c784"},"therapist_2":{"bg":"#E3F2FD","text":"#0d47a1","border":"#64b5f6"},"therapist_3":{"bg":"#F3E5F5","text":"#4a148c","border":"#ba68c8"},"therapist_4":{"bg":"#FBE9E7","text":"#bf360c","border":"#ff8a65"},"therapist_5":{"bg":"#E0F2F1","text":"#004d40","border":"#80cbc4"},"therapist_6":{"bg":"#FCE4EC","text":"#880e4f","border":"#f48fb1"},"therapist_7":{"bg":"#E8EAF6","text":"#1a237e","border":"#7986cb"},"therapist_8":{"bg":"#EFEBE9","text":"#3e2723","border":"#a1887f"},"therapist_9":{"bg":"#FFF3E0","text":"#e65100","border":"#ffb74d"},"therapist_10":{"bg":"#E0F7FA","text":"#006064","border":"#4dd0e1"}}',
+ 'JSON color palette for therapist dashboard chat. Same structure as therapyChat colors.');
+
 COMMIT;

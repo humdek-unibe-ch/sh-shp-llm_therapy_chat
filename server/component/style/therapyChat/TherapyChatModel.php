@@ -272,6 +272,22 @@ class TherapyChatModel extends StyleModel
         );
     }
 
+    /**
+     * Get chat color palette from the database field.
+     * Returns a decoded JSON object with keys like me_as_patient, ai, therapist_1..10, etc.
+     */
+    public function getChatColors()
+    {
+        $default = '{}';
+        $raw = $this->get_db_field('therapy_chat_colors', $default);
+        if (empty($raw)) return array();
+        if (is_string($raw)) {
+            $decoded = json_decode($raw, true);
+            return is_array($decoded) ? $decoded : array();
+        }
+        return is_array($raw) ? $raw : array();
+    }
+
     /* =========================================================================
      * TAG REASONS
      * ========================================================================= */
@@ -837,6 +853,9 @@ class TherapyChatModel extends StyleModel
             'speechToTextEnabled' => $this->isSpeechToTextEnabled(),
             'speechToTextModel' => $this->getSpeechToTextModel(),
             'speechToTextLanguage' => $this->getSpeechToTextLanguage(),
+
+            // Chat colors
+            'chatColors' => $this->getChatColors(),
         );
     }
 

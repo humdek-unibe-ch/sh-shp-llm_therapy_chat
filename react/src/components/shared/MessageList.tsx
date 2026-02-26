@@ -16,8 +16,8 @@
  *   - Auto-scroll to newest message
  */
 
-import React, { useRef, useEffect } from 'react';
-import type { Message, SenderType } from '../../types';
+import React, { useRef, useEffect, useMemo } from 'react';
+import type { Message, SenderType, TherapyChatColors, ChatColorEntry } from '../../types';
 import { MarkdownRenderer } from './MarkdownRenderer';
 
 // ---------------------------------------------------------------------------
@@ -28,6 +28,8 @@ interface MessageListProps {
   messages: Message[];
   isLoading?: boolean;
   isTherapistView?: boolean;
+  currentUserId?: number;
+  chatColors?: TherapyChatColors;
   emptyText?: string;
   senderLabels?: {
     ai?: string;
@@ -53,9 +55,76 @@ function formatTime(ts: string): string {
   }
 }
 
+function formatFullTimestamp(ts: string): string {
+  try {
+    const d = new Date(ts);
+    const day = String(d.getDate()).padStart(2, '0');
+    const mon = String(d.getMonth() + 1).padStart(2, '0');
+    const hh = String(d.getHours()).padStart(2, '0');
+    const mm = String(d.getMinutes()).padStart(2, '0');
+    return `${day}.${mon} ${hh}:${mm}`;
+  } catch {
+    return '';
+  }
+}
+
+/**
+ * Build a stable sender_id → therapist_N index map.
+ * The first therapist (by message order) gets therapist_1, the second therapist_2, etc.
+ * The current user's own therapist ID is excluded (they get me_as_therapist).
+ */
+function buildTherapistIndexMap(messages: Message[], currentUserId?: number): Map<number, number> {
+  const map = new Map<number, number>();
+  let idx = 1;
+  for (const msg of messages) {
+    if (msg.sender_type !== 'therapist' || !msg.sender_id) continue;
+    if (currentUserId && msg.sender_id === currentUserId) continue;
+    if (map.has(msg.sender_id)) continue;
+    map.set(msg.sender_id, idx);
+    idx++;
+    if (idx > 10) idx = 1;
+  }
+  return map;
+}
+
+function getColorForMessage(
+  msg: Message,
+  isTherapistView: boolean,
+  currentUserId: number | undefined,
+  chatColors: TherapyChatColors | undefined,
+  therapistMap: Map<number, number>,
+): React.CSSProperties | undefined {
+  if (!chatColors) return undefined;
+
+  let entry: ChatColorEntry | undefined;
+  const own = isOwnMessage(msg, isTherapistView, currentUserId);
+
+  if (own) {
+    entry = isTherapistView ? chatColors.me_as_therapist : chatColors.me_as_patient;
+  } else if (msg.sender_type === 'ai' || msg.role === 'assistant') {
+    entry = chatColors.ai;
+  } else if (msg.sender_type === 'system') {
+    return undefined;
+  } else if (msg.sender_type === 'subject') {
+    entry = isTherapistView ? chatColors.patient : chatColors.me_as_patient;
+  } else if (msg.sender_type === 'therapist') {
+    const tIdx = msg.sender_id ? therapistMap.get(msg.sender_id) : 1;
+    const key = `therapist_${tIdx || 1}` as keyof TherapyChatColors;
+    entry = chatColors[key];
+  }
+
+  if (!entry) return undefined;
+  return {
+    backgroundColor: entry.bg,
+    color: entry.text,
+    borderLeft: `3px solid ${entry.border}`,
+  };
+}
+
 function senderLabel(
   msg: Message,
   isTherapistView: boolean,
+  currentUserId?: number,
   senderLabels?: MessageListProps['senderLabels'],
 ): string {
   const aiLabel = senderLabels?.ai || 'AI Assistant';
@@ -64,21 +133,39 @@ function senderLabel(
   const subjectLabel = senderLabels?.subject || 'Patient';
   const youLabel = senderLabels?.you || 'You';
 
-  if (msg.label && msg.label !== 'Unknown') return msg.label;
+  if (msg.label && msg.label !== 'Unknown') {
+    if (isTherapistView && msg.sender_type === 'therapist' && isOwnMessage(msg, isTherapistView, currentUserId)) {
+      return youLabel;
+    }
+    return msg.label;
+  }
   const st = msg.sender_type;
   if (st === 'ai') return aiLabel;
   if (st === 'system') return systemLabel;
-  if (st === 'therapist') return isTherapistView ? youLabel : msg.sender_name || therapistLabel;
+  if (st === 'therapist') {
+    if (isTherapistView && isOwnMessage(msg, isTherapistView, currentUserId)) return youLabel;
+    return msg.sender_name ? `${therapistLabel} (${msg.sender_name})` : therapistLabel;
+  }
   if (st === 'subject') return isTherapistView ? msg.sender_name || subjectLabel : youLabel;
-  // Legacy role-based fallback
   if (msg.role === 'assistant') return aiLabel;
   if (msg.role === 'system') return systemLabel;
   return youLabel;
 }
 
-function isOwnMessage(msg: Message, isTherapistView: boolean): boolean {
-  if (isTherapistView) return msg.sender_type === 'therapist';
+function isOwnMessage(msg: Message, isTherapistView: boolean, currentUserId?: number): boolean {
+  if (isTherapistView) {
+    if (msg.sender_type !== 'therapist') return false;
+    if (currentUserId && msg.sender_id) {
+      return msg.sender_id === currentUserId;
+    }
+    return !msg.sender_id;
+  }
   return msg.sender_type === 'subject' || (msg.role === 'user' && !msg.sender_type);
+}
+
+function isOtherTherapist(msg: Message, isTherapistView: boolean, currentUserId?: number): boolean {
+  if (!isTherapistView) return false;
+  return msg.sender_type === 'therapist' && !isOwnMessage(msg, isTherapistView, currentUserId);
 }
 
 function senderIcon(st?: SenderType): string {
@@ -88,9 +175,10 @@ function senderIcon(st?: SenderType): string {
   return 'fas fa-user';
 }
 
-function bubbleClass(msg: Message, isTherapistView: boolean): string {
+function bubbleClass(msg: Message, isTherapistView: boolean, currentUserId?: number): string {
   if (msg.sender_type === 'system') return 'tc-msg tc-msg--system';
-  if (isOwnMessage(msg, isTherapistView)) return 'tc-msg tc-msg--self';
+  if (isOwnMessage(msg, isTherapistView, currentUserId)) return 'tc-msg tc-msg--self';
+  if (isOtherTherapist(msg, isTherapistView, currentUserId)) return 'tc-msg tc-msg--other-therapist';
   if (msg.sender_type === 'ai' || msg.role === 'assistant') return 'tc-msg tc-msg--ai';
   if (msg.sender_type === 'therapist') return 'tc-msg tc-msg--therapist';
   if (msg.sender_type === 'subject') return 'tc-msg tc-msg--subject';
@@ -105,15 +193,21 @@ export const MessageList: React.FC<MessageListProps> = ({
   messages,
   isLoading = false,
   isTherapistView = false,
+  currentUserId,
+  chatColors,
   emptyText = 'No messages yet. Start the conversation!',
   senderLabels,
 }) => {
   const endRef = useRef<HTMLDivElement>(null);
 
-  // Auto-scroll on new messages
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages.length]);
+
+  const therapistMap = useMemo(
+    () => buildTherapistIndexMap(messages, currentUserId),
+    [messages, currentUserId],
+  );
 
   if (isLoading && messages.length === 0) {
     return (
@@ -140,7 +234,6 @@ export const MessageList: React.FC<MessageListProps> = ({
   return (
     <div className="tc-msg-list">
       {messages.map((msg) => {
-        // Soft-deleted messages
         if (msg.is_deleted) {
           return (
             <div key={msg.id} className="tc-msg tc-msg--deleted text-center">
@@ -152,10 +245,11 @@ export const MessageList: React.FC<MessageListProps> = ({
           );
         }
 
-        const own = isOwnMessage(msg, isTherapistView);
+        const own = isOwnMessage(msg, isTherapistView, currentUserId);
+        const colorStyle = getColorForMessage(msg, isTherapistView, currentUserId, chatColors, therapistMap);
 
         return (
-          <div key={msg.id} className={bubbleClass(msg, isTherapistView)}>
+          <div key={msg.id} className={bubbleClass(msg, isTherapistView, currentUserId)} style={colorStyle}>
             {/* Header: sender + time */}
             <div className="tc-msg__header d-flex">
               {!own && (
@@ -163,8 +257,8 @@ export const MessageList: React.FC<MessageListProps> = ({
                   <i className={senderIcon(msg.sender_type)} />
                 </span>
               )}
-              <span className="tc-msg__sender">{senderLabel(msg, isTherapistView, senderLabels)}</span>
-              <span className="tc-msg__time ml-auto">{formatTime(msg.timestamp)}</span>
+              <span className="tc-msg__sender">{senderLabel(msg, isTherapistView, currentUserId, senderLabels)}</span>
+              <span className="tc-msg__time ml-auto">{formatFullTimestamp(msg.timestamp)}</span>
             </div>
 
             {/* Content */}
@@ -176,15 +270,15 @@ export const MessageList: React.FC<MessageListProps> = ({
               )}
             </div>
 
-            {/* Edited indicator */}
-            {msg.is_edited && (
-              <div className="tc-msg__edited">
-                <small className="text-muted font-italic">
-                  <i className="fas fa-pen mr-1" style={{ fontSize: '0.6rem' }} />
+            {/* Footer: timestamp + edited */}
+            <div className="tc-msg__footer">
+              {msg.is_edited && (
+                <small className="tc-msg__edited-tag">
+                  <i className="fas fa-pen mr-1" style={{ fontSize: '0.55rem' }} />
                   edited{msg.edited_at ? ` ${formatTime(msg.edited_at)}` : ''}
                 </small>
-              </div>
-            )}
+              )}
+            </div>
           </div>
         );
       })}

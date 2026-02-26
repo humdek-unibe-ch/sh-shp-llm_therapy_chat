@@ -91,6 +91,8 @@ export const ConversationViewer: React.FC<ConversationViewerProps> = ({
           messages={chat.messages}
           isLoading={chat.isLoading}
           isTherapistView={true}
+          currentUserId={config.userId}
+          chatColors={config.chatColors}
           emptyText={labels.emptyMessage}
           senderLabels={{
             ai: labels.aiLabel,

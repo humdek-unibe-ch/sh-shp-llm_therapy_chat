@@ -860,7 +860,25 @@ class TherapistDashboardModel extends StyleModel
             'speechToTextEnabled' => $this->isSpeechToTextEnabled(),
             'speechToTextModel' => $this->getSpeechToTextModel(),
             'speechToTextLanguage' => $this->getSpeechToTextLanguage(),
+
+            // Chat colors
+            'chatColors' => $this->getChatColors(),
         ];
+    }
+
+    /**
+     * Get chat color palette from the database field.
+     */
+    public function getChatColors()
+    {
+        $default = '{}';
+        $raw = $this->get_db_field('therapy_chat_colors', $default);
+        if (empty($raw)) return array();
+        if (is_string($raw)) {
+            $decoded = json_decode($raw, true);
+            return is_array($decoded) ? $decoded : array();
+        }
+        return is_array($raw) ? $raw : array();
     }
 }
 ?>

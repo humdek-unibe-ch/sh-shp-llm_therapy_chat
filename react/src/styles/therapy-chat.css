@@ -57,15 +57,26 @@
   font-weight: 600;
 }
 .tc-msg__time {
-  opacity: 0.6;
+  opacity: 0.55;
   white-space: nowrap;
+  font-size: 0.65rem;
+  font-variant-numeric: tabular-nums;
 }
 .tc-msg__icon {
   opacity: 0.6;
   font-size: 0.65rem;
 }
-.tc-msg__edited {
+.tc-msg__footer {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.5rem;
   margin-top: 0.15rem;
+}
+.tc-msg__edited-tag {
+  opacity: 0.6;
+  font-size: 0.6rem;
+  font-style: italic;
 }
 
 /* Own messages — right-aligned, primary blue */
@@ -77,8 +88,9 @@
   border-bottom-right-radius: 0.2rem;
 }
 .tc-msg--self .tc-msg__sender,
-.tc-msg--self .tc-msg__time {
-  color: rgba(255, 255, 255, 0.85);
+.tc-msg--self .tc-msg__time,
+.tc-msg--self .tc-msg__edited-tag {
+  color: rgba(255, 255, 255, 0.75);
 }
 
 /* Subject (patient) messages — left, light blue */
@@ -113,6 +125,20 @@
   border-left: 3px solid #28a745;
   border-radius: 0 0.75rem 0.75rem 0;
   border-bottom-left-radius: 0;
+}
+
+/* Other therapist messages (seen by current therapist) — left, distinct from own */
+.tc-msg--other-therapist {
+  align-self: flex-start;
+  margin-right: auto;
+  background-color: #d4edda;
+  color: #155724;
+  border-left: 3px solid #28a745;
+  border-radius: 0 0.75rem 0.75rem 0;
+  border-bottom-left-radius: 0;
+}
+.tc-msg--other-therapist .tc-msg__sender {
+  font-weight: 700;
 }
 
 /* System messages — centered, yellow */

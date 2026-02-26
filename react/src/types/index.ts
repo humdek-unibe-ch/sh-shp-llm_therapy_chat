@@ -270,6 +270,32 @@ export interface TherapistFeatures {
 // Configuration (passed from PHP via data-config JSON)
 // ---------------------------------------------------------------------------
 
+/** Color triplet for a sender role */
+export interface ChatColorEntry {
+  bg: string;
+  text: string;
+  border: string;
+}
+
+/** Color palette for therapy chat. Keys map to sender roles. */
+export interface TherapyChatColors {
+  me_as_patient?: ChatColorEntry;
+  me_as_therapist?: ChatColorEntry;
+  patient?: ChatColorEntry;
+  ai?: ChatColorEntry;
+  therapist_1?: ChatColorEntry;
+  therapist_2?: ChatColorEntry;
+  therapist_3?: ChatColorEntry;
+  therapist_4?: ChatColorEntry;
+  therapist_5?: ChatColorEntry;
+  therapist_6?: ChatColorEntry;
+  therapist_7?: ChatColorEntry;
+  therapist_8?: ChatColorEntry;
+  therapist_9?: ChatColorEntry;
+  therapist_10?: ChatColorEntry;
+  [key: string]: ChatColorEntry | undefined;
+}
+
 /** Config for subject/patient chat */
 export interface SubjectChatConfig {
   baseUrl?: string;
@@ -288,6 +314,7 @@ export interface SubjectChatConfig {
   speechToTextLanguage?: string;
   /** Optional flag for embedded/floating rendering context */
   isFloatingMode?: boolean;
+  chatColors?: TherapyChatColors;
 }
 
 /** Config for therapist dashboard */
@@ -306,6 +333,7 @@ export interface TherapistDashboardConfig {
   speechToTextEnabled?: boolean;
   speechToTextModel?: string;
   speechToTextLanguage?: string;
+  chatColors?: TherapyChatColors;
 }
 
 // ---------------------------------------------------------------------------
