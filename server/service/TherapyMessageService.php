@@ -195,7 +195,7 @@ class TherapyMessageService extends TherapyAlertService
         $llmConversationId = $conversation['id_llmConversations'];
 
         $sql = "SELECT lm.id, lm.role, lm.content, lm.model, lm.tokens_used,
-                       lm.timestamp, lm.sent_context, lm.deleted,
+                       lm.timestamp, lm.timestamp as created_at, lm.sent_context, lm.deleted,
                        JSON_UNQUOTE(JSON_EXTRACT(lm.sent_context, '$.therapy_sender_type')) as sender_type,
                        JSON_UNQUOTE(JSON_EXTRACT(lm.sent_context, '$.therapy_sender_id')) as sender_id,
                        JSON_UNQUOTE(JSON_EXTRACT(lm.sent_context, '$.edited_at')) as edited_at,

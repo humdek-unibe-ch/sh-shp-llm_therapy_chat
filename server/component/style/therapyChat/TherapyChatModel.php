@@ -418,6 +418,7 @@ class TherapyChatModel extends StyleModel
                     'content' => $aiResponse['content'],
                     'sender_type' => 'ai',
                     'label' => $messageLabels['ai'] ?? 'AI Assistant',
+                    'created_at' => date('c'),
                     'timestamp' => date('c')
                 );
             }
