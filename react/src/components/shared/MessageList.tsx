@@ -110,10 +110,10 @@ function getColorForMessage(
   } else if (msg.sender_type === 'therapist') {
     const tIdx = msg.sender_id ? therapistMap.get(msg.sender_id) : 1;
     const key = `therapist_${tIdx || 1}` as keyof TherapyChatColors;
-    entry = chatColors[key];
+    entry = chatColors[key] || chatColors.therapist_1;
   }
 
-  if (!entry) return undefined;
+  if (!entry || !entry.bg || !entry.text || !entry.border) return undefined;
   return {
     backgroundColor: entry.bg,
     color: entry.text,

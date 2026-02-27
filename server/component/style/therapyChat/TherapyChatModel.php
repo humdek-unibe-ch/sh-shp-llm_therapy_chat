@@ -278,14 +278,47 @@ class TherapyChatModel extends StyleModel
      */
     public function getChatColors()
     {
+        $defaultPalette = array(
+            'me_as_patient' => array('bg' => '#DCF8C6', 'text' => '#1b5e20', 'border' => '#a5d6a7'),
+            'me_as_therapist' => array('bg' => '#E3F2FD', 'text' => '#0d47a1', 'border' => '#90caf9'),
+            'patient' => array('bg' => '#FFF8E1', 'text' => '#4e342e', 'border' => '#ffe082'),
+            'ai' => array('bg' => '#F3E5F5', 'text' => '#4a148c', 'border' => '#ce93d8'),
+            'therapist_1' => array('bg' => '#E8F5E9', 'text' => '#1b5e20', 'border' => '#81c784'),
+            'therapist_2' => array('bg' => '#E3F2FD', 'text' => '#0d47a1', 'border' => '#64b5f6'),
+            'therapist_3' => array('bg' => '#F3E5F5', 'text' => '#4a148c', 'border' => '#ba68c8'),
+            'therapist_4' => array('bg' => '#FBE9E7', 'text' => '#bf360c', 'border' => '#ff8a65'),
+            'therapist_5' => array('bg' => '#E0F2F1', 'text' => '#004d40', 'border' => '#80cbc4'),
+            'therapist_6' => array('bg' => '#FCE4EC', 'text' => '#880e4f', 'border' => '#f48fb1'),
+            'therapist_7' => array('bg' => '#E8EAF6', 'text' => '#1a237e', 'border' => '#7986cb'),
+            'therapist_8' => array('bg' => '#EFEBE9', 'text' => '#3e2723', 'border' => '#a1887f'),
+            'therapist_9' => array('bg' => '#FFF3E0', 'text' => '#e65100', 'border' => '#ffb74d'),
+            'therapist_10' => array('bg' => '#E0F7FA', 'text' => '#006064', 'border' => '#4dd0e1')
+        );
+
         $default = '{}';
         $raw = $this->get_db_field('therapy_chat_colors', $default);
-        if (empty($raw)) return array();
+        if (empty($raw)) return $defaultPalette;
+
+        $decoded = array();
         if (is_string($raw)) {
-            $decoded = json_decode($raw, true);
-            return is_array($decoded) ? $decoded : array();
+            $parsed = json_decode($raw, true);
+            $decoded = is_array($parsed) ? $parsed : array();
+        } elseif (is_array($raw)) {
+            $decoded = $raw;
         }
-        return is_array($raw) ? $raw : array();
+
+        $merged = $defaultPalette;
+        foreach ($defaultPalette as $key => $fallback) {
+            if (!isset($decoded[$key]) || !is_array($decoded[$key])) continue;
+            $entry = $decoded[$key];
+            $merged[$key] = array(
+                'bg' => isset($entry['bg']) ? $entry['bg'] : $fallback['bg'],
+                'text' => isset($entry['text']) ? $entry['text'] : $fallback['text'],
+                'border' => isset($entry['border']) ? $entry['border'] : $fallback['border']
+            );
+        }
+
+        return $merged;
     }
 
     /* =========================================================================

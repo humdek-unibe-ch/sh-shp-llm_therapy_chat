@@ -83,8 +83,6 @@
 .tc-msg--self {
   align-self: flex-end;
   margin-left: auto;
-  background-color: #DCF8C6;
-  color: #1b5e20;
   border-bottom-right-radius: 0.2rem;
 }
 .tc-msg--self .tc-msg__sender,
@@ -98,8 +96,6 @@
 .tc-msg--subject {
   align-self: flex-start;
   margin-right: auto;
-  background-color: #e3f2fd;
-  color: #0d47a1;
   border-bottom-left-radius: 0.2rem;
 }
 
@@ -107,8 +103,6 @@
 .tc-msg--ai {
   align-self: flex-start;
   margin-right: auto;
-  background-color: #F3E5F5;
-  color: #4a148c;
   border-bottom-left-radius: 0.2rem;
 }
 .tc-msg--ai .tc-msg__sender,
@@ -121,9 +115,6 @@
 .tc-msg--therapist {
   align-self: flex-start;
   margin-right: auto;
-  background-color: #d4edda;
-  color: #155724;
-  border-left: 3px solid #28a745;
   border-radius: 0 0.75rem 0.75rem 0;
   border-bottom-left-radius: 0;
 }
@@ -132,9 +123,6 @@
 .tc-msg--other-therapist {
   align-self: flex-start;
   margin-right: auto;
-  background-color: #d4edda;
-  color: #155724;
-  border-left: 3px solid #28a745;
   border-radius: 0 0.75rem 0.75rem 0;
   border-bottom-left-radius: 0;
 }
@@ -624,3 +612,4 @@
     min-height: 36px !important;
   }
 }
+
