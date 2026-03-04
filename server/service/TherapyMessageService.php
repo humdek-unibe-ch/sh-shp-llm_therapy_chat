@@ -329,9 +329,25 @@ class TherapyMessageService extends TherapyAlertService
         }
 
         try {
-            // Call LLM API directly — context already includes schema/safety
-            // instructions injected by the caller (TherapyChatModel).
-            $response = $this->callLlmApi($contextMessages, $model, $temperature, $maxTokens);
+            $llmConversationId = $conversation['id_llmConversations'];
+            $sentContext = array(
+                'therapy_sender_type' => self::SENDER_AI,
+                'therapy_sender_id' => 0,
+                'llm_context' => $contextMessages
+            );
+
+            // Call LLM API with centralized assistant logging.
+            $response = $this->callLlmApi(
+                $contextMessages,
+                $model,
+                $temperature,
+                $maxTokens,
+                array(
+                    'conversation_id' => $llmConversationId,
+                    'sent_context' => $sentContext,
+                    'is_validated' => true
+                )
+            );
 
             if (!$response || empty($response['content'])) {
                 return array('error' => 'No response from AI');
@@ -344,28 +360,14 @@ class TherapyMessageService extends TherapyAlertService
             $rawContent = $response['content'];
             $displayContent = $this->extractDisplayContent($rawContent);
 
-            $llmConversationId = $conversation['id_llmConversations'];
+            $messageId = isset($response['logged_message_id']) ? (int)$response['logged_message_id'] : 0;
+            if ($messageId <= 0) {
+                return array('error' => 'AI response could not be logged');
+            }
 
-            // Build sent_context: full context messages sent to the LLM.
-            // This matches the parent sh-shp-llm plugin's behavior where
-            // LlmContextService::getContextForTracking() returns the full
-            // context array. Stored as JSON in llmMessages.sent_context
-            // for debugging and audit purposes.
-            $sentContext = $contextMessages;
-
-            $messageId = $this->addMessage(
-                $llmConversationId,
-                'assistant',
-                $displayContent,
-                null,
-                $model,
-                $response['tokens_used'] ?? null,
-                $response,
-                $sentContext,
-                $response['reasoning'] ?? null,
-                true,
-                $response['request_payload'] ?? null
-            );
+            // Centralized logger stores raw model content by default.
+            // For therapy UI, persist the extracted human-readable content.
+            $this->updateMessage($messageId, array('content' => $displayContent));
 
             // Create recipient for patient
             $this->createMessageRecipients($messageId, $conversation, self::SENDER_AI, 0);
@@ -1134,19 +1136,15 @@ class TherapyMessageService extends TherapyAlertService
      * ========================================================================= */
 
     /**
-     * Store a summary request/response in the therapist's tools conversation.
-     * All summaries for the same therapist + section are appended to the
-     * same conversation instead of creating a new one each time.
+     * Ensure summary user prompt is logged in therapist tools conversation.
+     * The assistant response is logged centrally by callLlmApi.
      *
      * @param int $therapyConvId The therapy conversation being summarized
      * @param int $therapistId
      * @param int $sectionId The therapist dashboard section
-     * @param string $summaryContent The AI-generated summary
-     * @param array $requestMessages The messages sent to the LLM
-     * @param array $response The raw LLM response
      * @return int|null The LLM conversation ID
      */
-    public function createSummaryConversation($therapyConvId, $therapistId, $sectionId, $summaryContent, $requestMessages, $response)
+    public function createSummaryConversation($therapyConvId, $therapistId, $sectionId)
     {
         // Use the shared therapist tools conversation
         $llmConvId = $this->getOrCreateTherapistToolsConversation($therapistId, $sectionId, 'summary');
@@ -1165,28 +1163,10 @@ class TherapyMessageService extends TherapyAlertService
             )
         );
 
-        // Log the AI response (the generated summary)
-        $this->addMessage(
-            $llmConvId,
-            'assistant',
-            $summaryContent,
-            null,
-            $response['model'] ?? null,
-            $response['tokens_used'] ?? null,
-            $response,
-            array(
-                'therapy_sender_type' => self::SENDER_AI,
-                'summary_for_conversation' => $therapyConvId
-            ),
-            $response['reasoning'] ?? null,
-            true,
-            $response['request_payload'] ?? null
-        );
-
         // Log transaction
         $this->logTransaction(
             transactionTypes_insert, 'llmMessages', $llmConvId, $therapistId,
-            'Summary appended for therapy conversation #' . $therapyConvId
+            'Summary request logged for therapy conversation #' . $therapyConvId
         );
 
         return $llmConvId;

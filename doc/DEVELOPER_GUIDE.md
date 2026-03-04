@@ -11,6 +11,15 @@ TherapyMessageService   ← Use this in controllers
 
 Controllers only instantiate `TherapyMessageService` — it inherits all methods from the chain.
 
+## Centralized LLM Logging (Required)
+
+`sh-shp-llm` v1.1.0+ enforces strict centralized API logging:
+
+- Always call `callLlmApi($messages, $model, $temperature, $maxTokens, $logOptions)` with `conversation_id`.
+- Do not manually add assistant messages after `callLlmApi`; the service auto-logs them.
+- Log user prompts first (if needed), then call `callLlmApi` so message order remains user -> assistant.
+- Include therapy metadata in `sent_context` (`therapy_sender_type`, `therapy_sender_id`) and optionally `llm_context` for audit/debugging.
+
 ## Adding a New Feature
 
 ### Backend

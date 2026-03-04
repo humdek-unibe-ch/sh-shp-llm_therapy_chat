@@ -26,14 +26,14 @@ The two roles interact through the same conversation stored in the base plugin's
 
 ### Dependency
 
-This plugin **requires** `sh-shp-llm` to be installed first. It extends the base plugin's `LlmService` and uses its conversation, message, and speech-to-text infrastructure.
+This plugin **requires** `sh-shp-llm` **v1.1.0+** to be installed first. It extends the base plugin's `LlmService` and uses its conversation, message, and speech-to-text infrastructure.
 
 ## Prerequisites
 
 | Requirement | Version | Notes |
 |-------------|---------|-------|
 | SelfHelp | v7.8.0+ | Core CMS framework |
-| `sh-shp-llm` plugin | v1.0.0+ | Base LLM plugin (must be installed first) |
+| `sh-shp-llm` plugin | v1.1.0+ | Base LLM plugin (must be installed first) |
 | PHP | 8.2+ | With cURL extension |
 | MySQL | 8.0+ | InnoDB, utf8mb4 |
 | Node.js | 16+ | For building frontend assets |

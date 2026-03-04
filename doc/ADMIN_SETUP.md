@@ -3,7 +3,7 @@
 ## Prerequisites
 
 1. **SelfHelp** platform installed and running
-2. **sh-shp-llm** plugin installed (provides base LLM functionality)
+2. **sh-shp-llm v1.1.0+** plugin installed (provides base LLM functionality)
 3. PHP 8.2+ with `uopz` extension (for hooks)
 4. MySQL 8.0+
 

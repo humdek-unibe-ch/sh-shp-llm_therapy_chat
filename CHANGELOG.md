@@ -2,6 +2,20 @@
 
 All notable changes to the **sh-shp-llm_therapy_chat** plugin are documented in this file.
 
+## [1.0.1] - 2026-03-04
+
+### Changed
+
+- Migrated all therapy plugin `callLlmApi(...)` usage to the centralized strict logging flow in `sh-shp-llm` v1.1.0 (`callLlmApi(..., log_options)`).
+- Removed duplicated manual assistant `addMessage(...)` writes for draft, summary, and patient AI-response paths to avoid double logging and inconsistent payload/context storage.
+- Ensured user request messages are logged before LLM assistant responses in therapist tools conversations (drafts and summaries).
+- Added structured `sent_context` metadata to centralized assistant logs (`therapy_sender_type`, sender IDs, and `llm_context`) so therapy sender labeling and audit traces remain complete.
+- Kept therapy UI readable by updating centrally logged assistant message content to extracted display text after structured JSON responses.
+
+### Dependency
+
+- Requires `sh-shp-llm` **v1.1.0+**.
+
 ## [1.0.0] - 2026-02-26
 
 Initial release. Extends the `sh-shp-llm` base plugin with therapy-specific features: a patient chat with AI and therapist messaging, a therapist dashboard for monitoring multiple patients, group-based access control, AI draft generation, clinical notes, risk management, and real-time notifications.
