@@ -28,6 +28,11 @@ The two roles interact through the same conversation stored in the base plugin's
 
 This plugin **requires** `sh-shp-llm` **v1.1.0+** to be installed first. It extends the base plugin's `LlmService` and uses its conversation, message, and speech-to-text infrastructure.
 
+Model dropdown data is intentionally not duplicated in this plugin:
+- `select-llm-model` and `select-audio-model` are populated by base plugin hooks.
+- Both use the shared base catalog (`LlmService::getAvailableModels(..., 'llm'|'audio')`).
+- Stored model values use scoped IDs (`Server Name :: model-id`) so runtime server/API-key routing stays deterministic.
+
 ## Prerequisites
 
 | Requirement | Version | Notes |

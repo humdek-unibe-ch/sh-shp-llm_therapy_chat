@@ -2,6 +2,19 @@
 
 All notable changes to the **sh-shp-llm_therapy_chat** plugin are documented in this file.
 
+## [1.0.2] - 2026-03-10
+
+### Changed
+
+- Unified model identifier handling with the base `sh-shp-llm` plugin by reusing the shared canonical model normalization path.
+- Therapy conversation model persistence now uses the base plugin's scoped model format (`Server Name :: model-id`) for consistent server routing.
+- Fixed therapist dashboard fallback model resolution to use `llm_default_model` from the base plugin config (instead of the wrong `llm_model` key).
+- Kept all LLM execution and server/API-key resolution centralized in the base plugin service layer.
+
+### Dependency
+
+- Requires `sh-shp-llm` **v1.1.0+**.
+
 ## [1.0.1] - 2026-03-04
 
 ### Changed

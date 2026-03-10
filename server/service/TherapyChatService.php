@@ -81,6 +81,7 @@ class TherapyChatService extends LlmService
         // Get LLM config for model
         $config = $this->getLlmConfig();
         $modelToUse = $model ?: $config['llm_default_model'];
+        $modelToUse = $this->normalizeModelIdentifierForStorage($modelToUse, $config);
 
         // Create base LLM conversation using parent method
         $conversationId = $this->createConversation(
@@ -309,6 +310,7 @@ class TherapyChatService extends LlmService
         // Get LLM config for model
         $config = $this->getLlmConfig();
         $modelToUse = $model ?: $config['llm_default_model'];
+        $modelToUse = $this->normalizeModelIdentifierForStorage($modelToUse, $config);
 
         // Create base LLM conversation owned by the patient
         $conversationId = $this->createConversation(

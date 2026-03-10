@@ -1116,7 +1116,7 @@ class TherapyMessageService extends TherapyAlertService
             'id_users' => $therapistId,
             'id_sections' => $sectionId,
             'title' => $title,
-            'model' => $config['llm_default_model'],
+            'model' => $this->normalizeModelIdentifierForStorage($config['llm_default_model'], $config),
             'temperature' => $config['llm_temperature'],
             'max_tokens' => $config['llm_max_tokens']
         ));

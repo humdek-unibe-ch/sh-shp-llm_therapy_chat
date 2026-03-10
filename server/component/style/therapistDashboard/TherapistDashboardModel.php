@@ -689,8 +689,8 @@ class TherapistDashboardModel extends StyleModel
         }
         try {
             $config = $this->messageService->getPublicLlmConfig();
-            if (!empty($config['llm_model'])) {
-                return $config['llm_model'];
+            if (!empty($config['llm_default_model'])) {
+                return $this->messageService->normalizeModelIdentifier($config['llm_default_model']);
             }
         } catch (\Exception $e) {}
         return 'gpt-4o-mini';
