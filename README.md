@@ -33,6 +33,21 @@ Model dropdown data is intentionally not duplicated in this plugin:
 - Both use the shared base catalog (`LlmService::getAvailableModels(..., 'llm'|'audio')`).
 - Stored model values use scoped IDs (`Server Name :: model-id`) so runtime server/API-key routing stays deterministic.
 
+### Prompt-Lab Datasets/Evaluations Integration (v1.1.0+)
+
+Therapy prompt fields are fully integrated with the shared prompt-lab datasets/evaluations workflow from `sh-shp-llm`:
+
+- `conversation_context` (therapy styles) uses therapy-aware runtime execution.
+- `therapy_draft_context` uses `therapy_draft_runtime`.
+- `therapy_summary_context` uses `therapy_summary_runtime`.
+- `therapy_auto_start_context` uses `therapy_chat_runtime`.
+
+This enables:
+
+- reusable therapy datasets
+- replay of imported conversation cases against therapy prompt drafts/versions
+- dataset evaluation runs for therapy prompt iterations before rollout
+
 ## Prerequisites
 
 | Requirement | Version | Notes |
