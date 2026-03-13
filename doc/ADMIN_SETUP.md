@@ -17,14 +17,16 @@ Copy the `sh-shp-llm_therapy_chat` folder to `server/plugins/`.
 
 ```bash
 mysql -u <user> -p <database> < server/plugins/sh-shp-llm_therapy_chat/server/db/v1.0.0.sql
+mysql -u <user> -p <database> < server/plugins/sh-shp-llm_therapy_chat/server/db/v1.1.0.sql
 ```
 
-This creates all required tables, views, lookups, hooks, and configuration fields. All schema changes are consolidated in this single migration file.
+`v1.0.0.sql` creates base tables/views/lookups/styles/hooks.  
+`v1.1.0.sql` upgrades therapy prompt fields to the shared `llm_prompt` type for versioning/diff tooling.
 
-If you already have an existing `v1.0.0` installation, also run:
+If you already have an existing `v1.0.x` installation, run:
 
 ```bash
-mysql -u <user> -p <database> < server/plugins/sh-shp-llm_therapy_chat/server/db/v1.0.1.sql
+mysql -u <user> -p <database> < server/plugins/sh-shp-llm_therapy_chat/server/db/v1.1.0.sql
 ```
 
 ### 3. Build React Frontend

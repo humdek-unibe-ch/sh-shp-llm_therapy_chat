@@ -46,7 +46,12 @@
 
 ## Future Versions
 
-### v1.1.0 (Planned)
+### v1.1.0 (Released)
+- Shared prompt-versioning integration for therapy prompt fields via `llm_prompt`
+- Prompt history/diff/restore tooling in CMS for therapy context fields
+- Migration `server/db/v1.1.0.sql` for field-type upgrade
+
+### v1.1.x (Planned)
 - WebSocket support for real-time messaging
 - Message search
 - Conversation export

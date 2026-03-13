@@ -22,12 +22,12 @@ The plugin registers page type `sh_module_llm_therapy_chat` with these fields:
 
 Most therapy behavior is configured on the `therapyChat` section (not the module page):
 
-- AI and prompt fields: `therapy_enable_ai`, `llm_model`, `llm_temperature`, `llm_max_tokens`, `conversation_context`
+- AI and prompt fields: `therapy_enable_ai`, `llm_model`, `llm_temperature`, `llm_max_tokens`, `conversation_context` (`llm_prompt`)
 - Safety fields: `enable_danger_detection`, `danger_keywords`, `danger_notification_emails`, `danger_blocked_message`
 - Tagging fields: `therapy_chat_enable_tagging`, `therapy_tag_reasons`, `therapy_chat_help_text`
 - Polling and UX fields: `therapy_chat_polling_interval`, message labels/placeholders
 - Speech input fields: `enable_speech_to_text`, `speech_to_text_model`, `speech_to_text_language`
-- Auto-start fields: `therapy_auto_start`, `therapy_auto_start_context`
+- Auto-start fields: `therapy_auto_start`, `therapy_auto_start_context` (`llm_prompt`)
 - Notification templates (patient -> therapist): email and push template fields
 
 ## `therapistDashboard` Style Fields
@@ -36,9 +36,9 @@ The dashboard style owns therapist-facing UI/config:
 
 - Dashboard labels and headings (including stats + group tab labels)
 - Feature toggles (`dashboard_show_*`, `dashboard_enable_*`)
-- Draft/summary LLM fields (`llm_*`, `conversation_context`, `therapy_draft_context`, `therapy_summary_context`)
+- Draft/summary LLM fields (`llm_*`, `conversation_context`, `therapy_draft_context`, `therapy_summary_context`; prompt fields use `llm_prompt`)
 - Speech input fields: `enable_speech_to_text`, `speech_to_text_model`, `speech_to_text_language`
-- Auto-start fields: `therapy_auto_start`, `therapy_auto_start_context`
+- Auto-start fields: `therapy_auto_start`, `therapy_auto_start_context` (`llm_prompt`)
 - Notification templates (therapist -> patient and therapist alert channels)
 
 ## Access Model

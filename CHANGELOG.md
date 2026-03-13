@@ -2,6 +2,26 @@
 
 All notable changes to the **sh-shp-llm_therapy_chat** plugin are documented in this file.
 
+## [1.1.0] - 2026-03-13
+
+### Added
+
+- Added migration `server/db/v1.1.0.sql` to enable therapy prompt fields on the shared `llm_prompt` field type from `sh-shp-llm`.
+- Therapy prompt fields now use the shared prompt-lab UX (version history, diff, restore, save-comment metadata) via base-plugin hooks and services.
+
+### Changed
+
+- Updated plugin DB/runtime version to `v1.1.0`.
+- Switched the following field definitions to `llm_prompt`:
+  - `conversation_context`
+  - `therapy_draft_context`
+  - `therapy_summary_context`
+  - `therapy_auto_start_context`
+
+### Dependency
+
+- Requires `sh-shp-llm` **v1.1.0+** (provides `llm_prompt` field type, prompt registry tables, and prompt-lab hooks/endpoints).
+
 ## [1.0.2] - 2026-03-10
 
 ### Changed

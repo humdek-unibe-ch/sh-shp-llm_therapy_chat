@@ -212,6 +212,18 @@ The "Generate AI Draft" feature allows therapists to get AI-suggested responses:
 - **Undo**: Restores the last draft text from before the most recent regeneration
 - Draft text is tracked as plain text; markdown is rendered as HTML only in the editor view
 
+## Prompt Versioning (v1.1.0+)
+
+Therapy prompt fields now use the shared `llm_prompt` field type from `sh-shp-llm`:
+
+- `conversation_context`
+- `therapy_draft_context`
+- `therapy_summary_context`
+- `therapy_auto_start_context`
+
+This enables prompt history, diff, restore, and save-comment flows in CMS via base-plugin hooks.
+Runtime reads still use `get_db_field(...)`, so no therapy runtime behavior changed by this migration.
+
 ## Summarization
 
 The "Summarize" feature creates a new `llmConversations` record linked to the therapist and section for full audit trail:

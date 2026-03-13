@@ -30,6 +30,7 @@ sh-shp-llm_therapy_chat/
 │   │   └── TherapyChatHooks/tpl/          # Hook templates
 │   └── db/
 │       ├── v1.0.0.sql                     # Full schema + lookups + hooks
+│       ├── v1.1.0.sql                     # Prompt-field upgrade to llm_prompt
 │       └── FUN_PRO_VIEWS/                 # Standalone view definitions
 ├── react/src/                             # React frontend
 │   ├── TherapyChat.tsx                    # Entry point & auto-mount

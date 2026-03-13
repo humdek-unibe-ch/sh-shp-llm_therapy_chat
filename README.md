@@ -62,6 +62,7 @@ server/plugins/sh-shp-llm_therapy_chat/
 
 ```bash
 mysql -u <user> -p <database> < server/plugins/sh-shp-llm_therapy_chat/server/db/v1.0.0.sql
+mysql -u <user> -p <database> < server/plugins/sh-shp-llm_therapy_chat/server/db/v1.1.0.sql
 ```
 
 This creates:
@@ -131,11 +132,11 @@ Configured on the `sh_module_llm_therapy_chat` page.
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `conversation_context` | markdown | System instructions for the AI |
+| `conversation_context` | llm_prompt | System instructions for the AI (with version history/diff) |
 | `therapy_enable_ai` | checkbox | Enable/disable AI responses for this section |
 | `therapy_chat_mode` | select | Default mode: `ai_hybrid` or `human_only` |
 | `therapy_auto_start` | checkbox | Insert welcome message on first visit |
-| `therapy_auto_start_context` | markdown | Welcome message text |
+| `therapy_auto_start_context` | llm_prompt | Welcome message text (with version history/diff) |
 | `therapy_chat_help_text` | text | Help text explaining @mention and #topic usage |
 | `therapy_tag_reasons` | textarea | Predefined #topic suggestions (one per line) |
 | `enable_speech_to_text` | checkbox | Enable voice input |
@@ -159,9 +160,9 @@ Configured on the `sh_module_llm_therapy_chat` page.
 | `llm_model` | select | Model for AI drafts and summaries |
 | `llm_temperature` | number | Temperature for AI drafts |
 | `llm_max_tokens` | number | Max tokens for AI drafts |
-| `conversation_context` | markdown | Context for AI drafts |
-| `therapy_draft_context` | markdown | Additional instructions for AI draft generation |
-| `therapy_summary_context` | markdown | Instructions for AI summarization |
+| `conversation_context` | llm_prompt | Context for AI drafts (with version history/diff) |
+| `therapy_draft_context` | llm_prompt | Additional instructions for AI draft generation (with version history/diff) |
+| `therapy_summary_context` | llm_prompt | Instructions for AI summarization (with version history/diff) |
 | `dashboard_all_groups_tab` | checkbox | Show "All" tab combining all groups |
 | `dashboard_stat_ai_enabled` | checkbox | Show AI-enabled count in stats |
 | `dashboard_stat_ai_blocked` | checkbox | Show AI-blocked count in stats |
@@ -233,7 +234,8 @@ sh-shp-llm_therapy_chat/
 │   ├── constants/TherapyLookups.php       # All lookup constants
 │   ├── ajax/AjaxTherapyChat.php           # AJAX endpoint for assignments
 │   └── db/
-│       ├── v1.0.0.sql                     # Full schema
+│       ├── v1.0.0.sql                     # Initial schema
+│       ├── v1.1.0.sql                     # Prompt-field upgrade (llm_prompt)
 │       └── FUN_PRO_VIEWS/                 # Database views
 ├── react/src/
 │   ├── TherapyChat.tsx                    # Entry point (mounts SubjectChat or TherapistDashboard)
