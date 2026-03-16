@@ -198,7 +198,7 @@ class TherapyMessageService extends TherapyAlertService
 
         $llmConversationId = $conversation['id_llmConversations'];
 
-        $sql = "SELECT lm.id, lm.role, lm.content, lm.model, lm.tokens_used,
+        $baseSelect = "SELECT lm.id, lm.role, lm.content, lm.model, lm.tokens_used,
                        lm.timestamp, lm.timestamp as created_at, lm.sent_context, lm.deleted,
                        JSON_UNQUOTE(JSON_EXTRACT(lm.sent_context, '$.therapy_sender_type')) as sender_type,
                        JSON_UNQUOTE(JSON_EXTRACT(lm.sent_context, '$.therapy_sender_id')) as sender_id,
@@ -213,11 +213,18 @@ class TherapyMessageService extends TherapyAlertService
         $params = array(':cid' => $llmConversationId);
 
         if ($afterId) {
-            $sql .= " AND lm.id > :after_id";
+            $sql = $baseSelect . " AND lm.id > :after_id
+                    ORDER BY lm.timestamp ASC LIMIT " . (int)$limit;
             $params[':after_id'] = $afterId;
+        } else {
+            // Fetch latest N messages, then present them oldest->newest for UI/context ordering.
+            $sql = "SELECT * FROM (
+                        " . $baseSelect . "
+                        ORDER BY lm.timestamp DESC
+                        LIMIT " . (int)$limit . "
+                    ) recent
+                    ORDER BY recent.timestamp ASC";
         }
-
-        $sql .= " ORDER BY lm.timestamp ASC LIMIT " . (int)$limit;
 
         $messages = $this->db->query_db($sql, $params);
 
@@ -234,6 +241,8 @@ class TherapyMessageService extends TherapyAlertService
             // Mask deleted message content
             if ($msg['is_deleted']) {
                 $msg['content'] = '[Message deleted]';
+            } else {
+                $msg['content'] = self::normalizeEscapedText((string)($msg['content'] ?? ''));
             }
         }
 
@@ -403,7 +412,7 @@ class TherapyMessageService extends TherapyAlertService
         $decoded = self::parseLlmJson($content);
 
         if ($decoded === null) {
-            return $content;
+            return self::normalizeEscapedText((string)$content);
         }
 
         // Check for safety protocol response from base plugin
@@ -435,7 +444,7 @@ class TherapyMessageService extends TherapyAlertService
             $textParts = array();
             foreach ($decoded['content']['text_blocks'] as $block) {
                 if (isset($block['content']) && is_string($block['content'])) {
-                    $textParts[] = $block['content'];
+                    $textParts[] = self::normalizeEscapedText($block['content']);
                 }
             }
 
@@ -444,7 +453,33 @@ class TherapyMessageService extends TherapyAlertService
             }
         }
 
-        return $content;
+        return self::normalizeEscapedText((string)$content);
+    }
+
+    /**
+     * Normalize escaped text sequences from model/user payloads to real characters.
+     * This keeps UI rendering and downstream context-building consistent.
+     *
+     * @param string $text
+     * @return string
+     */
+    public static function normalizeEscapedText($text)
+    {
+        $text = (string)$text;
+        if ($text === '') {
+            return '';
+        }
+
+        if (strpos($text, '\\') === false) {
+            return $text;
+        }
+
+        return strtr($text, array(
+            "\\r\\n" => "\n",
+            "\\n" => "\n",
+            "\\r" => "\r",
+            "\\t" => "\t",
+        ));
     }
 
     /**
@@ -596,6 +631,7 @@ class TherapyMessageService extends TherapyAlertService
 
         // Use edited content if available, otherwise AI content
         $content = $draft['edited_content'] ?: $draft['ai_generated_content'];
+        $content = self::normalizeEscapedText((string)$content);
         if (empty($content)) {
             return array('error' => 'Draft has no content');
         }

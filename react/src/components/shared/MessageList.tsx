@@ -19,6 +19,7 @@
 import React, { useRef, useEffect, useMemo } from 'react';
 import type { Message, SenderType, TherapyChatColors, ChatColorEntry } from '../../types';
 import { MarkdownRenderer } from './MarkdownRenderer';
+import { normalizeEscapedText } from '../../utils/text';
 
 // ---------------------------------------------------------------------------
 // Props
@@ -247,6 +248,7 @@ export const MessageList: React.FC<MessageListProps> = ({
 
         const own = isOwnMessage(msg, isTherapistView, currentUserId);
         const colorStyle = getColorForMessage(msg, isTherapistView, currentUserId, chatColors, therapistMap);
+        const renderedContent = normalizeEscapedText(msg.content || '');
 
         return (
           <div key={msg.id} className={bubbleClass(msg, isTherapistView, currentUserId)} style={colorStyle}>
@@ -264,9 +266,9 @@ export const MessageList: React.FC<MessageListProps> = ({
             {/* Content */}
             <div className="tc-msg__body">
               {msg.sender_type === 'ai' || msg.role === 'assistant' || msg.sender_type === 'system' ? (
-                <MarkdownRenderer content={msg.content} />
+                <MarkdownRenderer content={renderedContent} />
               ) : (
-                <span style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{msg.content}</span>
+                <span style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{renderedContent}</span>
               )}
             </div>
 

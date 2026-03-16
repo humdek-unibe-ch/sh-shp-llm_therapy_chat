@@ -11,6 +11,7 @@ import React from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import rehypeRaw from 'rehype-raw';
+import { normalizeEscapedText } from '../../utils/text';
 
 interface MarkdownRendererProps {
   content: string;
@@ -18,11 +19,12 @@ interface MarkdownRendererProps {
 
 export const MarkdownRenderer: React.FC<MarkdownRendererProps> = ({ content }) => {
   if (!content) return null;
+  const normalized = normalizeEscapedText(content);
 
   return (
     <div className="tc-markdown">
       <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeRaw]}>
-        {content}
+        {normalized}
       </ReactMarkdown>
     </div>
   );
