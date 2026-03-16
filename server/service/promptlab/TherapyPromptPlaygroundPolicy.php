@@ -7,8 +7,11 @@ class TherapyPromptPlaygroundPolicy
 {
     public function getRuntimeType($profile)
     {
-        if (in_array($profile, array('therapy_chat_runtime', 'therapy_draft_runtime', 'therapy_summary_runtime'), true)) {
+        if ($profile === 'therapy_chat_runtime' || $profile === 'therapy_draft_runtime') {
             return 'chat';
+        }
+        if ($profile === 'therapy_summary_runtime') {
+            return 'form';
         }
 
         return 'none';
@@ -16,19 +19,16 @@ class TherapyPromptPlaygroundPolicy
 
     public function isChatLikeProfile($profile)
     {
-        return in_array($profile, array('therapy_chat_runtime', 'therapy_draft_runtime', 'therapy_summary_runtime'), true);
+        return $profile === 'therapy_chat_runtime' || $profile === 'therapy_draft_runtime';
     }
 
     public function getDefaultChatPrompt($profile)
     {
-        if ($profile === 'therapy_draft_runtime') {
-            return 'Create a therapist-facing reply draft for the latest patient message.';
-        }
-        if ($profile === 'therapy_summary_runtime') {
-            return 'Summarize this therapy conversation with key themes, risks, and next steps.';
-        }
         if ($profile === 'therapy_chat_runtime') {
             return 'Test this therapy chat prompt in playground mode.';
+        }
+        if ($profile === 'therapy_draft_runtime') {
+            return 'Create a therapist-facing reply draft for the latest patient message.';
         }
 
         return '';
