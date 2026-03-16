@@ -27,6 +27,8 @@ The two roles interact through the same conversation stored in the base plugin's
 ### Dependency
 
 This plugin **requires** `sh-shp-llm` **v1.1.0+** to be installed first. It extends the base plugin's `LlmService` and uses its conversation, message, and speech-to-text infrastructure.
+This dependency is one-way: `sh-shp-llm_therapy_chat` depends on `sh-shp-llm`, while `sh-shp-llm` has no runtime dependency on this plugin.
+Therapy prompt-lab runtime mappings are owned by this plugin through hook-based extensions to the base prompt-lab service layer.
 
 Model dropdown data is intentionally not duplicated in this plugin:
 - `select-llm-model` and `select-audio-model` are populated by base plugin hooks.
@@ -35,7 +37,7 @@ Model dropdown data is intentionally not duplicated in this plugin:
 
 ### Prompt-Lab Datasets/Evaluations Integration (v1.1.0+)
 
-Therapy prompt fields are fully integrated with the shared prompt-lab datasets/evaluations workflow from `sh-shp-llm`:
+Therapy prompt fields are fully integrated with the shared prompt-lab datasets/evaluations workflow from `sh-shp-llm`, and therapy-specific runtime behavior is registered by this plugin:
 
 - `conversation_context` (therapy styles) uses therapy-aware runtime execution.
 - `therapy_draft_context` uses `therapy_draft_runtime`.
@@ -47,6 +49,11 @@ This enables:
 - reusable therapy datasets
 - replay of imported conversation cases against therapy prompt drafts/versions
 - dataset evaluation runs for therapy prompt iterations before rollout
+
+Runtime ownership implementation lives in this plugin via:
+
+- `server/component/TherapyPromptLabHooks.php`
+- `server/service/promptlab/*` extension modules
 
 ## Prerequisites
 

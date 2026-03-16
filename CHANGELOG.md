@@ -2,7 +2,7 @@
 
 All notable changes to the **sh-shp-llm_therapy_chat** plugin are documented in this file.
 
-## [1.1.0] - 2026-03-13
+## [1.1.0] - 2026-03-16
 
 ### Added
 
@@ -15,6 +15,22 @@ All notable changes to the **sh-shp-llm_therapy_chat** plugin are documented in 
   - `therapy_auto_start_context` resolves to `therapy_chat_runtime`
 - Added dataset/evaluation replay compatibility for therapy prompt-lab contexts (including conversation-based case import and replay).
 
+- Took ownership of therapy prompt-lab runtime mapping through therapy-plugin hook extensions:
+  - `conversation_context` (therapy styles) -> `therapy_chat_runtime` / `therapy_draft_runtime`
+  - `therapy_draft_context` -> `therapy_draft_runtime`
+  - `therapy_summary_context` -> `therapy_summary_runtime`
+  - `therapy_auto_start_context` -> `therapy_chat_runtime`
+- Added modular therapy prompt-lab extension services for:
+  - runtime profile mapping
+  - companion-field mapping
+  - playground runtime policy/default prompts
+  - dataset case/profile mapping
+- Added `TherapyPromptLabHooks` and registered hook interceptors for base prompt-lab/dataset extension seam methods.
+- Added therapy execution-profile lookup ownership in `server/db/v1.1.0.sql`:
+  - `therapy_chat_runtime`
+  - `therapy_draft_runtime`
+  - `therapy_summary_runtime`
+
 ### Changed
 
 - Updated plugin DB/runtime version to `v1.1.0`.
@@ -23,6 +39,10 @@ All notable changes to the **sh-shp-llm_therapy_chat** plugin are documented in 
   - `therapy_draft_context`
   - `therapy_summary_context`
   - `therapy_auto_start_context`
+- Moved therapy runtime/dataset replay profile ownership out of `sh-shp-llm` base plugin and into this plugin.
+- Updated dependency documentation to explicitly state one-way dependency:
+  - `sh-shp-llm_therapy_chat` depends on `sh-shp-llm`
+  - `sh-shp-llm` has no runtime dependency on `sh-shp-llm_therapy_chat`
 
 ### Dependency
 

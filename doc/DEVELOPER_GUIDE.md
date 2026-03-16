@@ -1,5 +1,11 @@
 # Developer Guide
 
+## Dependency Direction
+
+- `sh-shp-llm_therapy_chat` has a hard runtime dependency on `sh-shp-llm`.
+- `sh-shp-llm` has no runtime dependency on this plugin.
+- Therapy-specific prompt-lab runtime/dataset behavior is attached via hook-based extension seams owned in this plugin.
+
 ## Service Hierarchy
 
 ```
