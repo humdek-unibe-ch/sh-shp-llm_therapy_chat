@@ -6,6 +6,7 @@
 <?php
 
 require_once __DIR__ . '/TherapyAlertService.php';
+require_once __DIR__ . '/prompt/TherapyPromptAssetLoader.php';
 
 // Include LLM plugin services for proper JSON schema handling
 // Path: from server/service/ → ../../ = sh-shp-llm_therapy_chat/ → ../../../ = plugins/
@@ -41,10 +42,13 @@ class TherapyMessageService extends TherapyAlertService
     const SENDER_THERAPIST = 'therapist';
     const SENDER_SUBJECT = 'subject';
     const SENDER_SYSTEM = 'system';
+    /** @var TherapyPromptAssetLoader */
+    private $prompt_assets;
 
     public function __construct($services)
     {
         parent::__construct($services);
+        $this->prompt_assets = new TherapyPromptAssetLoader();
     }
 
     /* =========================================================================
@@ -988,17 +992,7 @@ class TherapyMessageService extends TherapyAlertService
      */
     private function getTherapySystemPrompt()
     {
-        return "You are a supportive AI assistant in a mental health therapy context.\n\n" .
-            "Your role:\n" .
-            "- Provide empathetic, non-judgmental responses\n" .
-            "- Use validation, reflection, and grounding techniques\n" .
-            "- Encourage the user while respecting boundaries\n\n" .
-            "Important:\n" .
-            "- You are NOT a therapist or mental health professional\n" .
-            "- You cannot provide diagnoses or treatment recommendations\n" .
-            "- Messages marked [THERAPIST] are from the real therapist - follow their clinical guidance\n" .
-            "- Always follow the response schema provided in the system context\n" .
-            "- For crisis situations, set appropriate safety flags in the response schema";
+        return $this->prompt_assets->load('therapy.chat.system');
     }
 
     /* =========================================================================

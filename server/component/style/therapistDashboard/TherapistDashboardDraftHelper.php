@@ -5,6 +5,8 @@
 ?>
 <?php
 
+require_once __DIR__ . "/../../../service/prompt/TherapyPromptAssetLoader.php";
+
 /**
  * Therapist Dashboard Draft & Summary Helper
  *
@@ -15,6 +17,18 @@
  */
 trait TherapistDashboardDraftTrait
 {
+    /** @var TherapyPromptAssetLoader|null */
+    private $promptAssets = null;
+
+    private function getPromptAssets()
+    {
+        if ($this->promptAssets === null) {
+            $this->promptAssets = new TherapyPromptAssetLoader();
+        }
+
+        return $this->promptAssets;
+    }
+
     /**
      * Generate an AI draft response for a conversation.
      *
@@ -34,10 +48,12 @@ trait TherapistDashboardDraftTrait
 
         // Add a draft-specific instruction using the configurable context field
         $draftContext = $this->get_db_field('therapy_draft_context', '');
-        $draftInstruction = 'Generate a thoughtful, empathetic therapeutic response draft for the therapist to review and edit before sending to the patient. Focus on being supportive and clinically appropriate.';
+        $draftContextBlock = 'No additional therapist context.';
         if (!empty($draftContext)) {
-            $draftInstruction .= "\n\nAdditional context and instructions from the therapist:\n" . $draftContext;
+            $draftContextBlock = "Additional context and instructions from the therapist:\n" . $draftContext;
         }
+        $draftTemplate = $this->getPromptAssets()->load('therapy.dashboard.draft_instruction');
+        $draftInstruction = strtr($draftTemplate, array('{{draft_context_block}}' => $draftContextBlock));
         $contextMessages[] = array(
             'role' => 'system',
             'content' => $draftInstruction
@@ -190,11 +206,12 @@ trait TherapistDashboardDraftTrait
         $llmMessages = array();
 
         // System instruction for summarization
-        $systemPrompt = "You are a clinical summarization assistant. Your task is to produce a concise, professional therapeutic summary of the conversation below.\n\n";
+        $summaryContextBlock = 'No additional therapist context.';
         if (!empty($summaryContext)) {
-            $systemPrompt .= "Additional context and instructions from the therapist:\n" . $summaryContext . "\n\n";
+            $summaryContextBlock = "Additional context and instructions from the therapist:\n" . $summaryContext;
         }
-        $systemPrompt .= "Include: key topics discussed, patient emotional state, therapeutic interventions used, progress indicators, risk flags if any, and recommended next steps.";
+        $summaryTemplate = $this->getPromptAssets()->load('therapy.dashboard.summary_instruction');
+        $systemPrompt = strtr($summaryTemplate, array('{{summary_context_block}}' => $summaryContextBlock));
 
         $llmMessages[] = array('role' => 'system', 'content' => $systemPrompt);
 
@@ -221,7 +238,7 @@ trait TherapistDashboardDraftTrait
         // Final user prompt requesting the summary
         $llmMessages[] = array(
             'role' => 'user',
-            'content' => 'Please generate a clinical summary of the above therapy conversation.'
+            'content' => $this->getPromptAssets()->load('therapy.dashboard.summary_user_prompt')
         );
 
         // Inject the unified JSON response schema so the LLM returns

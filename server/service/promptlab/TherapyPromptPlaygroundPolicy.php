@@ -3,8 +3,18 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
 
+require_once __DIR__ . '/../prompt/TherapyPromptAssetLoader.php';
+
 class TherapyPromptPlaygroundPolicy
 {
+    /** @var TherapyPromptAssetLoader */
+    private $prompt_assets;
+
+    public function __construct()
+    {
+        $this->prompt_assets = new TherapyPromptAssetLoader();
+    }
+
     public function getRuntimeType($profile)
     {
         if ($profile === 'therapy_chat_runtime' || $profile === 'therapy_draft_runtime') {
@@ -25,10 +35,10 @@ class TherapyPromptPlaygroundPolicy
     public function getDefaultChatPrompt($profile)
     {
         if ($profile === 'therapy_chat_runtime') {
-            return 'Test this therapy chat prompt in playground mode.';
+            return $this->prompt_assets->load('therapy.playground.default_chat_prompt');
         }
         if ($profile === 'therapy_draft_runtime') {
-            return 'Create a therapist-facing reply draft for the latest patient message.';
+            return $this->prompt_assets->load('therapy.playground.default_draft_prompt');
         }
 
         return '';

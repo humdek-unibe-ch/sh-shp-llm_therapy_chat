@@ -4,6 +4,15 @@ All notable changes to the **sh-shp-llm_therapy_chat** plugin are documented in 
 
 ## [1.1.0] - 2026-03-16
 
+### Prompt asset externalization
+
+- Moved therapy hardcoded LLM-facing prompts/instructions to `assets/prompts/therapy/`.
+- Added key-based therapy prompt loader/registry:
+  - `server/service/prompt/TherapyPromptAssetRegistry.php`
+  - `server/service/prompt/TherapyPromptAssetLoader.php`
+- Updated therapy runtime and dashboard prompt generation paths to load prompt text from assets.
+- Added `doc/prompt-assets.md` with maintenance and troubleshooting guidance.
+
 ### Added
 
 - Added migration `server/db/v1.1.0.sql` to enable therapy prompt fields on the shared `llm_prompt` field type from `sh-shp-llm`.

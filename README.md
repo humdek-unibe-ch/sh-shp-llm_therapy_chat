@@ -8,6 +8,7 @@ Therapy chat plugin for [SelfHelp CMS](https://github.com/humdek-unibe-ch/sh-sel
 - [Prerequisites](#prerequisites)
 - [Installation](#installation)
 - [Configuration](#configuration)
+- [Prompt Assets](#prompt-assets)
 - [How It Works](#how-it-works)
 - [Architecture](#architecture)
 - [Development](#development)
@@ -54,6 +55,12 @@ Runtime ownership implementation lives in this plugin via:
 
 - `server/component/TherapyPromptLabHooks.php`
 - `server/service/promptlab/*` extension modules
+
+## Prompt Assets
+
+Therapy-specific LLM-facing prompt text is externalized to `assets/prompts/therapy/` and loaded by key through a dedicated loader/registry layer in this plugin.
+
+See [doc/prompt-assets.md](doc/prompt-assets.md) for key naming, loading, and fail-closed behavior.
 
 ## Prerequisites
 

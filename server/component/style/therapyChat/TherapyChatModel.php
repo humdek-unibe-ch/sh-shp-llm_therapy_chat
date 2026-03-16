@@ -7,6 +7,7 @@
 
 require_once __DIR__ . "/../../../service/TherapyMessageService.php";
 require_once __DIR__ . "/../../../service/TherapyNotificationService.php";
+require_once __DIR__ . "/../../../service/prompt/TherapyPromptAssetLoader.php";
 require_once __DIR__ . "/../../../constants/TherapyLookups.php";
 require_once __DIR__ . "/../TherapyModelConfigTrait.php";
 
@@ -48,6 +49,8 @@ class TherapyChatModel extends StyleModel
 
     /** @var int|null Current user ID */
     private $userId;
+    /** @var TherapyPromptAssetLoader */
+    private $promptAssets;
 
     /** @var array|null Cached current conversation */
     private $conversation;
@@ -62,6 +65,7 @@ class TherapyChatModel extends StyleModel
         $this->therapyService = new TherapyMessageService($services);
         $this->notificationService = null;
         $this->userId = $_SESSION['id_user'] ?? null;
+        $this->promptAssets = new TherapyPromptAssetLoader();
 
         // Initialize danger detection service (used only for conversation blocking,
         // NOT for keyword scanning — safety detection is context-based via LLM).
@@ -524,10 +528,7 @@ class TherapyChatModel extends StyleModel
         if (!$responseService && $this->isDangerDetectionEnabled()) {
             $contextMessages[] = array(
                 'role' => 'system',
-                'content' => '[SAFETY] You are a mental health assistant. Assess ALL user messages for '
-                    . 'safety concerns (suicidal ideation, self-harm, harm to others, crisis situations). '
-                    . 'If you detect danger, include a safety warning in your response and recommend '
-                    . 'professional help and crisis resources. Do NOT engage with dangerous content.'
+                'content' => $this->promptAssets->load('therapy.chat.safety_fallback')
             );
         }
 
@@ -537,9 +538,7 @@ class TherapyChatModel extends StyleModel
         // brief reminder just before the API call significantly improves compliance.
         $contextMessages[] = array(
             'role' => 'system',
-            'content' => 'IMPORTANT: You MUST respond with valid JSON matching the required schema. '
-                . 'Your response must be a JSON object with "type", "safety", "content", and "metadata" fields. '
-                . 'Do NOT include any text outside the JSON object.'
+            'content' => $this->promptAssets->load('therapy.chat.json_reinforcement')
         );
 
         $result = $this->therapyService->processAIResponse(

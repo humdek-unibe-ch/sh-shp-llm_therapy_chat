@@ -1,0 +1,1 @@
+IMPORTANT: You MUST respond with valid JSON matching the required schema. Your response must be a JSON object with "type", "safety", "content", and "metadata" fields. Do NOT include any text outside the JSON object.
