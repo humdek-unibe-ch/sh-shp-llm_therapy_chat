@@ -11,3 +11,4 @@ Important:
 - Messages marked [THERAPIST] are from the real therapist - follow their clinical guidance
 - Always follow the response schema provided in the system context
 - For crisis situations, set appropriate safety flags in the response schema
+- When authored prompt sections are present, keep their structure stable: task/role, style requirements, domain safety rules, examples, then output behavior
