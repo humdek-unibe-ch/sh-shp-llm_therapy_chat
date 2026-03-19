@@ -215,6 +215,7 @@ export const SubjectChat: React.FC<SubjectChatProps> = ({ config }) => {
             messages={messages}
             isLoading={isLoading}
             isTherapistView={false}
+            chatColors={config.chatColors}
             emptyText={labels.empty_message}
           />
 

@@ -38,12 +38,20 @@ class TherapyChatController extends TherapyBaseController
     private function handleRequest()
     {
         if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-            $this->handlePostRequest($_POST['action'] ?? 'send_message');
+            $action = $_POST['action'] ?? null;
+            if ($action === null || $action === '') {
+                return;
+            }
+            $this->handlePostRequest($action);
             return;
         }
 
         if ($_SERVER['REQUEST_METHOD'] === 'GET') {
-            $this->handleGetRequest($_GET['action'] ?? null);
+            $action = $_GET['action'] ?? null;
+            if ($action === null || $action === '') {
+                return;
+            }
+            $this->handleGetRequest($action);
         }
     }
 
@@ -62,6 +70,21 @@ class TherapyChatController extends TherapyBaseController
                 break;
             case 'mark_messages_read':
                 $this->handleMarkMessagesRead();
+                break;
+            case 'get_conversation':
+                $this->handleGetConversation();
+                break;
+            case 'get_messages':
+                $this->handleGetMessages();
+                break;
+            case 'check_updates':
+                $this->handleCheckUpdates();
+                break;
+            case 'get_config':
+                $this->handleGetConfig();
+                break;
+            case 'get_therapists':
+                $this->handleGetTherapists();
                 break;
             default:
                 if (isset($_POST['message'])) {
@@ -204,7 +227,7 @@ class TherapyChatController extends TherapyBaseController
     {
         $userId = $this->validatePatientOrFail();
 
-        $conversationId = $_GET['conversation_id'] ?? null;
+        $conversationId = $_POST['conversation_id'] ?? $_GET['conversation_id'] ?? null;
         if ($conversationId) {
             $conversationId = (int)$conversationId;
         }
@@ -274,8 +297,8 @@ class TherapyChatController extends TherapyBaseController
     {
         $userId = $this->validatePatientOrFail();
 
-        $conversationId = $_GET['conversation_id'] ?? null;
-        $afterId = isset($_GET['after_id']) ? (int)$_GET['after_id'] : null;
+        $conversationId = $_POST['conversation_id'] ?? $_GET['conversation_id'] ?? null;
+        $afterId = isset($_POST['after_id']) ? (int)$_POST['after_id'] : (isset($_GET['after_id']) ? (int)$_GET['after_id'] : null);
 
         if (!$conversationId) {
             $conversation = $this->model->getOrCreateConversation();

@@ -97,6 +97,8 @@
 --
 -- =====================================================
 
+START TRANSACTION;
+
 -- =====================================================
 -- DEBUG: DROP TABLES (uncomment to re-run script from scratch)
 -- WARNING: This will DELETE all therapy data!
@@ -175,10 +177,7 @@ INSERT IGNORE INTO lookups (type_code, lookup_code, lookup_value, lookup_descrip
 -- Alert Types: what triggered the alert
 INSERT IGNORE INTO lookups (type_code, lookup_code, lookup_value, lookup_description) VALUES
 ('therapyAlertTypes', 'danger_detected', 'Danger Detected', 'Dangerous keywords detected in message'),
-('therapyAlertTypes', 'tag_received', 'Tag Received', 'Patient tagged/mentioned a therapist (replaces old therapyTags table)'),
-('therapyAlertTypes', 'high_activity', 'High Activity', 'Unusual high message activity'),
-('therapyAlertTypes', 'inactivity', 'Inactivity', 'Extended silence from subject'),
-('therapyAlertTypes', 'new_message', 'New Message', 'New message received');
+('therapyAlertTypes', 'tag_received', 'Tag Received', 'Patient tagged/mentioned a therapist (replaces old therapyTags table)');
 
 -- Alert Severity: urgency level of the alert
 INSERT IGNORE INTO lookups (type_code, lookup_code, lookup_value, lookup_description) VALUES
@@ -336,11 +335,8 @@ CREATE TABLE IF NOT EXISTS `therapyMessageRecipients` (
 -- This table ABSORBS the old therapyTags functionality.
 --
 -- Alert types (from lookups 'therapyAlertTypes'):
--- - danger_detected: Danger keywords found in patient message
+-- - danger_detected: Critical/emergency safety concern detected by LLM assessment
 -- - tag_received:    Patient @mentioned a therapist (was separate therapyTags table)
--- - high_activity:   Unusual volume of messages
--- - inactivity:      Extended silence from patient
--- - new_message:     Generic new message notification
 --
 -- For tag_received alerts, the `metadata` JSON column stores:
 --   {
@@ -573,6 +569,7 @@ INSERT IGNORE INTO `fields` (`id`, `name`, `id_type`, `display`) VALUES
 (NULL, 'therapy_chat_floating_icon', get_field_type_id('text'), '0'),
 (NULL, 'therapy_chat_floating_label', get_field_type_id('text'), '1'),
 (NULL, 'therapy_chat_floating_position', get_field_type_id('select-floating-position'), '0'),
+(NULL, 'therapy_chat_enable_floating_button', get_field_type_id('checkbox'), '0'),
 (NULL, 'therapy_chat_default_mode', get_field_type_id('select'), '0'),
 (NULL, 'therapy_chat_polling_interval', get_field_type_id('number'), '0'),
 (NULL, 'therapy_chat_enable_tagging', get_field_type_id('checkbox'), '0'),
@@ -591,10 +588,10 @@ INSERT IGNORE INTO `pageType_fields` (`id_pageType`, `id_fields`, `default_value
 ((SELECT id FROM pageType WHERE `name` = 'sh_module_llm_therapy_chat'), get_field_id('therapy_chat_floating_icon'), 'fa-comments', 'Font Awesome icon class for the floating button'),
 ((SELECT id FROM pageType WHERE `name` = 'sh_module_llm_therapy_chat'), get_field_id('therapy_chat_floating_label'), '', 'Optional text label for the floating button'),
 ((SELECT id FROM pageType WHERE `name` = 'sh_module_llm_therapy_chat'), get_field_id('therapy_chat_floating_position'), 'bottom-right', 'Position of the floating button: bottom-right, bottom-left, top-right, top-left'),
+((SELECT id FROM pageType WHERE `name` = 'sh_module_llm_therapy_chat'), get_field_id('therapy_chat_enable_floating_button'), '1', 'Enable floating button for therapy chat on web and mobile. When disabled, clients should show chat in menu/tab navigation.'),
 ((SELECT id FROM pageType WHERE `name` = 'sh_module_llm_therapy_chat'), get_field_id('therapy_chat_default_mode'), 'ai_hybrid', 'Default chat mode: ai_hybrid (AI responds, therapist can join) or human_only (therapist only)'),
 ((SELECT id FROM pageType WHERE `name` = 'sh_module_llm_therapy_chat'), get_field_id('therapy_chat_polling_interval'), '3', 'Polling interval in seconds for message updates'),
-((SELECT id FROM pageType WHERE `name` = 'sh_module_llm_therapy_chat'), get_field_id('therapy_chat_enable_tagging'), '1', 'Enable @mention tagging for therapists'),
-((SELECT id FROM pageType WHERE `name` = 'sh_module_llm_therapy_chat'), get_field_id('therapy_tag_reasons'), '[{"key":"overwhelmed","label":"I am feeling overwhelmed","urgency":"normal"},{"key":"need_talk","label":"I need to talk soon","urgency":"urgent"},{"key":"urgent","label":"This feels urgent","urgency":"urgent"},{"key":"emergency","label":"Emergency - please respond immediately","urgency":"emergency"}]', 'JSON array of tag reasons. Each item has: key (unique identifier), label (displayed text), urgency (normal/urgent/emergency). Use @ to tag therapist, # to select reason.');
+((SELECT id FROM pageType WHERE `name` = 'sh_module_llm_therapy_chat'), get_field_id('therapy_chat_enable_tagging'), '1', 'Enable @mention tagging for therapists');
 
 -- =====================================================
 -- CREATE CONFIGURATION PAGE
@@ -669,7 +666,7 @@ INSERT IGNORE INTO `styles_fields` (`id_styles`, `id_fields`, `default_value`, `
 (get_style_id('therapyChat'), get_field_id('therapy_chat_default_mode'), 'ai_hybrid', 'Default chat mode for this instance'),
 (get_style_id('therapyChat'), get_field_id('therapy_chat_enable_tagging'), '1', 'Enable @mention tagging'),
 (get_style_id('therapyChat'), get_field_id('therapy_chat_polling_interval'), '3', 'Message polling interval in seconds'),
-(get_style_id('therapyChat'), get_field_id('therapy_tag_reasons'), '[{"key":"overwhelmed","label":"I am feeling overwhelmed","urgency":"normal"},{"key":"need_talk","label":"I need to talk soon","urgency":"urgent"},{"key":"urgent","label":"This feels urgent","urgency":"urgent"},{"key":"emergency","label":"Emergency - please respond immediately","urgency":"emergency"}]', 'JSON array of tag reasons with keys, labels, and urgency levels'),
+(get_style_id('therapyChat'), get_field_id('therapy_tag_reasons'), '[{"key":"overwhelmed","label":"I am feeling overwhelmed","urgency":"normal"}]', 'JSON array of tag reasons with keys, labels, and urgency levels'),
 
 -- LLM configuration (reuses fields from llmChat)
 (get_style_id('therapyChat'), get_field_id('llm_model'), '', 'Select AI model'),
@@ -753,6 +750,8 @@ INSERT IGNORE INTO `fields` (`id`, `name`, `id_type`, `display`) VALUES
 -- Statistics labels
 INSERT IGNORE INTO `fields` (`id`, `name`, `id_type`, `display`) VALUES
 (NULL, 'dashboard_stat_patients', get_field_type_id('text'), '1'),
+(NULL, 'dashboard_stat_ai_enabled', get_field_type_id('text'), '1'),
+(NULL, 'dashboard_stat_ai_blocked', get_field_type_id('text'), '1'),
 (NULL, 'dashboard_stat_active', get_field_type_id('text'), '1'),
 (NULL, 'dashboard_stat_critical', get_field_type_id('text'), '1'),
 (NULL, 'dashboard_stat_alerts', get_field_type_id('text'), '1'),
@@ -780,7 +779,8 @@ INSERT IGNORE INTO `fields` (`id`, `name`, `id_type`, `display`) VALUES
 (NULL, 'dashboard_filter_active', get_field_type_id('text'), '1'),
 (NULL, 'dashboard_filter_critical', get_field_type_id('text'), '1'),
 (NULL, 'dashboard_filter_unread', get_field_type_id('text'), '1'),
-(NULL, 'dashboard_filter_tagged', get_field_type_id('text'), '1');
+(NULL, 'dashboard_filter_tagged', get_field_type_id('text'), '1'),
+(NULL, 'dashboard_all_groups_tab', get_field_type_id('text'), '1');
 
 -- Notification settings (for email alerts)
 INSERT IGNORE INTO `fields` (`id`, `name`, `id_type`, `display`) VALUES
@@ -868,6 +868,8 @@ INSERT IGNORE INTO `styles_fields` (`id_styles`, `id_fields`, `default_value`, `
 
 -- Statistics labels
 (get_style_id('therapistDashboard'), get_field_id('dashboard_stat_patients'), 'Patients', 'Label for total patients stat'),
+(get_style_id('therapistDashboard'), get_field_id('dashboard_stat_ai_enabled'), 'AI Enabled', 'Label for conversations with AI enabled'),
+(get_style_id('therapistDashboard'), get_field_id('dashboard_stat_ai_blocked'), 'AI Blocked', 'Label for conversations where AI is blocked/disabled'),
 (get_style_id('therapistDashboard'), get_field_id('dashboard_stat_active'), 'Active', 'Label for active conversations stat'),
 (get_style_id('therapistDashboard'), get_field_id('dashboard_stat_critical'), 'Critical', 'Label for critical risk stat'),
 (get_style_id('therapistDashboard'), get_field_id('dashboard_stat_alerts'), 'Alerts', 'Label for alerts count stat'),
@@ -894,6 +896,7 @@ INSERT IGNORE INTO `styles_fields` (`id_styles`, `id_fields`, `default_value`, `
 (get_style_id('therapistDashboard'), get_field_id('dashboard_filter_critical'), 'Critical', 'Label for critical filter'),
 (get_style_id('therapistDashboard'), get_field_id('dashboard_filter_unread'), 'Unread', 'Label for unread filter'),
 (get_style_id('therapistDashboard'), get_field_id('dashboard_filter_tagged'), 'Tagged', 'Label for tagged filter'),
+(get_style_id('therapistDashboard'), get_field_id('dashboard_all_groups_tab'), 'All Groups', 'Label for the all-groups tab in the dashboard'),
 
 -- Notification settings
 (get_style_id('therapistDashboard'), get_field_id('dashboard_notify_on_tag'), '1', 'Send email when therapist is tagged'),
@@ -940,6 +943,8 @@ VALUES (NULL, 'therapyChatSubject', '/therapy-chat/subject/[i:gid]?', 'GET|POST'
 
 INSERT IGNORE INTO `acl_groups` (`id_groups`, `id_pages`, `acl_select`, `acl_insert`, `acl_update`, `acl_delete`)
 VALUES ((SELECT id FROM `groups` WHERE `name` = 'admin'), (SELECT id FROM pages WHERE keyword = 'therapyChatSubject'), '1', '1', '1', '1');
+INSERT IGNORE INTO `acl_groups` (`id_groups`, `id_pages`, `acl_select`, `acl_insert`, `acl_update`, `acl_delete`)
+VALUES ((SELECT id FROM `groups` WHERE `name` = 'subject'), (SELECT id FROM pages WHERE keyword = 'therapyChatSubject'), '1', '0', '0', '0');
 
 INSERT IGNORE INTO sections (id_styles, name) VALUES(get_style_id('div'), 'therapyChatSubject-div');
 INSERT IGNORE INTO sections (id_styles, name) VALUES(get_style_id('therapyChat'), 'therapyChatSubject-chat');
@@ -1010,12 +1015,9 @@ VALUES ((SELECT id FROM `groups` WHERE `name` = 'admin' LIMIT 1), (SELECT id FRO
 INSERT IGNORE INTO `hooks` (`id_hookTypes`, `name`, `description`, `class`, `function`, `exec_class`, `exec_function`)
 VALUES ((SELECT id FROM lookups WHERE lookup_code = 'hook_overwrite_return' LIMIT 0,1), 'therapyChatLLM - load JS scripts', 'Load JS scripts for therapy chat LLM.', 'BasePage', 'get_js_includes', 'TherapyChatHooks', 'loadTherapyChatLLMJs');
 
--- =====================================================
--- TRANSACTION LOGGING
--- =====================================================
-
-INSERT IGNORE INTO lookups (type_code, lookup_code, lookup_value, lookup_description)
-VALUES ('transactionBy', 'by_therapy_chat_plugin', 'By Therapy Chat Plugin', 'Actions performed by the LLM Therapy Chat plugin');
+-- Hook to add therapy_chat data to mobile page response
+INSERT IGNORE INTO `hooks` (`id_hookTypes`, `name`, `description`, `class`, `function`, `exec_class`, `exec_function`)
+VALUES ((SELECT id FROM lookups WHERE lookup_code = 'hook_overwrite_return' LIMIT 0,1), 'therapyChatMobile - mobile page info', 'Add therapy chat availability data to every mobile page response.', 'BasePage', 'output_base_content_mobile', 'TherapyChatHooks', 'addTherapyChatToMobileResponse');
 
 -- =====================================================
 -- CONFIG PAGE FIELD VALUES
@@ -1029,6 +1031,7 @@ INSERT IGNORE INTO `pages_fields_translation` (`id_pages`, `id_fields`, `id_lang
 (@id_page_therapy_chat_config, get_field_id('therapy_chat_floating_icon'), '0000000001', 'fa-comments'),
 (@id_page_therapy_chat_config, get_field_id('therapy_chat_floating_label'), '0000000001', ''),
 (@id_page_therapy_chat_config, get_field_id('therapy_chat_floating_position'), '0000000001', 'bottom-right'),
+(@id_page_therapy_chat_config, get_field_id('therapy_chat_enable_floating_button'), '0000000001', '1'),
 (@id_page_therapy_chat_config, get_field_id('therapy_chat_default_mode'), '0000000001', 'ai_hybrid'),
 (@id_page_therapy_chat_config, get_field_id('therapy_chat_polling_interval'), '0000000001', '3'),
 (@id_page_therapy_chat_config, get_field_id('therapy_chat_enable_tagging'), '0000000001', '1');
@@ -1063,24 +1066,6 @@ INSERT IGNORE INTO `styles_fields` (`id_styles`, `id_fields`, `default_value`, `
 
 (get_style_id('therapistDashboard'), get_field_id('speech_to_text_language'), 'auto',
  'Language code for speech recognition (e.g., "en", "de", "fr"). Use "auto" for automatic detection.');
-
--- =====================================================
--- FLOATING CHAT CONFIGURATION FOR therapyChat
--- =====================================================
--- When enable_floating_chat is active, clicking the server-rendered floating
--- icon opens an inline modal instead of navigating to the page.
--- Position, icon, and label are controlled by the main plugin config page
--- (therapy_chat_floating_icon, therapy_chat_floating_position, therapy_chat_floating_label).
-
-INSERT IGNORE INTO `fields` (`id`, `name`, `id_type`, `display`) VALUES
-(NULL, 'enable_floating_chat', get_field_type_id('checkbox'), '0');
-
-INSERT IGNORE INTO `styles_fields` (`id_styles`, `id_fields`, `default_value`, `help`) VALUES
-(get_style_id('therapyChat'), get_field_id('enable_floating_chat'), '0',
- 'Enable floating/modal chat interface. When enabled, clicking the global floating icon opens the chat in a modal panel instead of navigating to the page. Icon, position and label are configured in the main plugin config page.');
-
-INSERT IGNORE INTO `styles_fields` (`id_styles`, `id_fields`, `default_value`, `help`) VALUES
-(get_style_id('therapyChat'), get_field_id('therapy_tag_reasons'), '[{"key":"overwhelmed","label":"I am feeling overwhelmed","urgency":"normal"},{"key":"need_talk","label":"I need to talk soon","urgency":"urgent"},{"key":"urgent","label":"This feels urgent","urgency":"urgent"},{"key":"emergency","label":"Emergency - please respond immediately","urgency":"emergency"}]', 'JSON array of tag reasons with key, label, and urgency for patient tagging options.');
 
 -- =====================================================
 -- EMAIL NOTIFICATION CONFIGURATION
@@ -1145,6 +1130,53 @@ INSERT IGNORE INTO `styles_fields` (`id_styles`, `id_fields`, `default_value`, `
  'Sender display name for therapy chat notifications from patient side.');
 
 -- =====================================================
+-- PUSH NOTIFICATION CONFIGURATION
+-- =====================================================
+
+-- Field definitions for push notifications (mobile)
+INSERT IGNORE INTO `fields` (`id`, `name`, `id_type`, `display`) VALUES
+(NULL, 'enable_therapist_push_notification', get_field_type_id('checkbox'), '0'),
+(NULL, 'therapist_push_notification_title', get_field_type_id('text'), '1'),
+(NULL, 'therapist_push_notification_body', get_field_type_id('text'), '1'),
+(NULL, 'therapist_tag_push_notification_title', get_field_type_id('text'), '1'),
+(NULL, 'therapist_tag_push_notification_body', get_field_type_id('text'), '1'),
+(NULL, 'enable_patient_push_notification', get_field_type_id('checkbox'), '0'),
+(NULL, 'patient_push_notification_title', get_field_type_id('text'), '1'),
+(NULL, 'patient_push_notification_body', get_field_type_id('text'), '1');
+
+-- Push notification settings for therapyChat style
+INSERT IGNORE INTO `styles_fields` (`id_styles`, `id_fields`, `default_value`, `help`) VALUES
+(get_style_id('therapyChat'), get_field_id('enable_therapist_push_notification'), '1',
+ 'Enable mobile push notifications to therapists when a patient sends a message or tags them. Default: enabled.'),
+(get_style_id('therapyChat'), get_field_id('therapist_push_notification_title'), 'New message from {{patient_name}}',
+ 'Push notification title for therapist notifications. Placeholders: {{patient_name}}'),
+(get_style_id('therapyChat'), get_field_id('therapist_push_notification_body'), 'You have a new therapy chat message from {{patient_name}}. Tap to open.',
+ 'Push notification body for therapist notifications. Placeholders: {{patient_name}}, {{message_preview}}, @user_name'),
+(get_style_id('therapyChat'), get_field_id('therapist_tag_push_notification_title'), '@therapist tag from {{patient_name}}',
+ 'Push notification title when a patient tags a therapist. Placeholders: {{patient_name}}'),
+(get_style_id('therapyChat'), get_field_id('therapist_tag_push_notification_body'), '{{patient_name}} has tagged you in therapy chat: {{message_preview}}',
+ 'Push notification body when a patient tags a therapist. Placeholders: {{patient_name}}, {{message_preview}}, @user_name');
+
+-- Push notification settings for therapistDashboard style
+INSERT IGNORE INTO `styles_fields` (`id_styles`, `id_fields`, `default_value`, `help`) VALUES
+(get_style_id('therapistDashboard'), get_field_id('enable_therapist_push_notification'), '1',
+ 'Enable mobile push notifications to therapists when a patient sends a message or tags them. Default: enabled.'),
+(get_style_id('therapistDashboard'), get_field_id('therapist_push_notification_title'), 'New message from {{patient_name}}',
+ 'Push notification title for therapist notifications. Placeholders: {{patient_name}}'),
+(get_style_id('therapistDashboard'), get_field_id('therapist_push_notification_body'), 'You have a new therapy chat message from {{patient_name}}. Tap to open.',
+ 'Push notification body for therapist notifications. Placeholders: {{patient_name}}, {{message_preview}}, @user_name'),
+(get_style_id('therapistDashboard'), get_field_id('therapist_tag_push_notification_title'), '@therapist tag from {{patient_name}}',
+ 'Push notification title when a patient tags a therapist. Placeholders: {{patient_name}}'),
+(get_style_id('therapistDashboard'), get_field_id('therapist_tag_push_notification_body'), '{{patient_name}} has tagged you in therapy chat: {{message_preview}}',
+ 'Push notification body when a patient tags a therapist. Placeholders: {{patient_name}}, {{message_preview}}, @user_name'),
+(get_style_id('therapistDashboard'), get_field_id('enable_patient_push_notification'), '1',
+ 'Enable mobile push notifications to patients when a therapist sends them a message. Default: enabled.'),
+(get_style_id('therapistDashboard'), get_field_id('patient_push_notification_title'), 'New message from your therapist',
+ 'Push notification title for patient notifications. Placeholders: {{therapist_name}}'),
+(get_style_id('therapistDashboard'), get_field_id('patient_push_notification_body'), 'Your therapist {{therapist_name}} sent you a new message. Tap to open.',
+ 'Push notification body for patient notifications. Placeholders: {{therapist_name}}, {{message_preview}}');
+
+-- =====================================================
 -- NEW FIELDS: auto_start and auto_start_context
 -- =====================================================
 
@@ -1181,3 +1213,38 @@ INSERT IGNORE INTO `styles_fields` (`id_styles`, `id_fields`, `default_value`, `
 (get_style_id('therapistDashboard'), get_field_id('dashboard_start_conversation'), 'Start Conversation', 'Button label for initializing a conversation with a patient'),
 (get_style_id('therapistDashboard'), get_field_id('dashboard_no_conversation_yet'), 'No conversation yet', 'Text shown for patients who have not started a conversation'),
 (get_style_id('therapistDashboard'), get_field_id('dashboard_initializing_conversation'), 'Initializing conversation...', 'Text shown while a conversation is being initialized');
+
+-- -------------------------------------------------------------------
+-- Add missing dashboard label fields (if absent)
+-- -------------------------------------------------------------------
+INSERT IGNORE INTO `fields` (`id`, `name`, `id_type`, `display`) VALUES
+(NULL, 'dashboard_stat_ai_enabled', get_field_type_id('text'), '1'),
+(NULL, 'dashboard_stat_ai_blocked', get_field_type_id('text'), '1'),
+(NULL, 'dashboard_all_groups_tab', get_field_type_id('text'), '1');
+
+INSERT IGNORE INTO `styles_fields` (`id_styles`, `id_fields`, `default_value`, `help`) VALUES
+(get_style_id('therapistDashboard'), get_field_id('dashboard_stat_ai_enabled'), 'AI Enabled', 'Label for conversations with AI enabled'),
+(get_style_id('therapistDashboard'), get_field_id('dashboard_stat_ai_blocked'), 'AI Blocked', 'Label for conversations where AI is blocked/disabled'),
+(get_style_id('therapistDashboard'), get_field_id('dashboard_all_groups_tab'), 'All Groups', 'Label for the all-groups tab in the dashboard');
+
+-- -------------------------------------------------------------------
+-- Ensure subject role can access the subject chat page
+-- -------------------------------------------------------------------
+INSERT IGNORE INTO `acl_groups` (`id_groups`, `id_pages`, `acl_select`, `acl_insert`, `acl_update`, `acl_delete`)
+VALUES ((SELECT id FROM `groups` WHERE `name` = 'subject'), (SELECT id FROM pages WHERE keyword = 'therapyChatSubject'), '1', '0', '0', '0');
+
+-- -------------------------------------------------------------------
+-- Chat color configuration (JSON, display=0)
+-- -------------------------------------------------------------------
+INSERT IGNORE INTO `fields` (`id`, `name`, `id_type`, `display`) VALUES
+(NULL, 'therapy_chat_colors', get_field_type_id('json'), '0');
+
+INSERT IGNORE INTO `styles_fields` (`id_styles`, `id_fields`, `default_value`, `help`) VALUES
+(get_style_id('therapyChat'), get_field_id('therapy_chat_colors'),
+ '{"me_as_patient":{"bg":"#DCF8C6","text":"#1b5e20","border":"#a5d6a7"},"me_as_therapist":{"bg":"#E3F2FD","text":"#0d47a1","border":"#90caf9"},"patient":{"bg":"#FFF8E1","text":"#4e342e","border":"#ffe082"},"ai":{"bg":"#F3E5F5","text":"#4a148c","border":"#ce93d8"},"therapist_1":{"bg":"#E8F5E9","text":"#1b5e20","border":"#81c784"},"therapist_2":{"bg":"#E3F2FD","text":"#0d47a1","border":"#64b5f6"},"therapist_3":{"bg":"#F3E5F5","text":"#4a148c","border":"#ba68c8"},"therapist_4":{"bg":"#FBE9E7","text":"#bf360c","border":"#ff8a65"},"therapist_5":{"bg":"#E0F2F1","text":"#004d40","border":"#80cbc4"},"therapist_6":{"bg":"#FCE4EC","text":"#880e4f","border":"#f48fb1"},"therapist_7":{"bg":"#E8EAF6","text":"#1a237e","border":"#7986cb"},"therapist_8":{"bg":"#EFEBE9","text":"#3e2723","border":"#a1887f"},"therapist_9":{"bg":"#FFF3E0","text":"#e65100","border":"#ffb74d"},"therapist_10":{"bg":"#E0F7FA","text":"#006064","border":"#4dd0e1"}}',
+ 'JSON color palette for therapy chat. Keys: me_as_patient, me_as_therapist, patient, ai, therapist_1..therapist_10. Each has bg (background), text (text color), border (accent border). Used in both web and mobile.'),
+(get_style_id('therapistDashboard'), get_field_id('therapy_chat_colors'),
+ '{"me_as_patient":{"bg":"#DCF8C6","text":"#1b5e20","border":"#a5d6a7"},"me_as_therapist":{"bg":"#E3F2FD","text":"#0d47a1","border":"#90caf9"},"patient":{"bg":"#FFF8E1","text":"#4e342e","border":"#ffe082"},"ai":{"bg":"#F3E5F5","text":"#4a148c","border":"#ce93d8"},"therapist_1":{"bg":"#E8F5E9","text":"#1b5e20","border":"#81c784"},"therapist_2":{"bg":"#E3F2FD","text":"#0d47a1","border":"#64b5f6"},"therapist_3":{"bg":"#F3E5F5","text":"#4a148c","border":"#ba68c8"},"therapist_4":{"bg":"#FBE9E7","text":"#bf360c","border":"#ff8a65"},"therapist_5":{"bg":"#E0F2F1","text":"#004d40","border":"#80cbc4"},"therapist_6":{"bg":"#FCE4EC","text":"#880e4f","border":"#f48fb1"},"therapist_7":{"bg":"#E8EAF6","text":"#1a237e","border":"#7986cb"},"therapist_8":{"bg":"#EFEBE9","text":"#3e2723","border":"#a1887f"},"therapist_9":{"bg":"#FFF3E0","text":"#e65100","border":"#ffb74d"},"therapist_10":{"bg":"#E0F7FA","text":"#006064","border":"#4dd0e1"}}',
+ 'JSON color palette for therapist dashboard chat. Same structure as therapyChat colors.');
+
+COMMIT;

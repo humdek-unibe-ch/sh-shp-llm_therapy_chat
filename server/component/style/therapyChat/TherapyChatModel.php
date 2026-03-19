@@ -6,8 +6,10 @@
 <?php
 
 require_once __DIR__ . "/../../../service/TherapyMessageService.php";
-require_once __DIR__ . "/../../../service/TherapyEmailHelper.php";
+require_once __DIR__ . "/../../../service/TherapyNotificationService.php";
+require_once __DIR__ . "/../../../service/prompt/TherapyPromptAssetLoader.php";
 require_once __DIR__ . "/../../../constants/TherapyLookups.php";
+require_once __DIR__ . "/../TherapyModelConfigTrait.php";
 
 // Include LLM plugin services - only if LLM plugin is available
 $llmDangerDetectionPath = __DIR__ . "/../../../../../sh-shp-llm/server/service/LlmDangerDetectionService.php";
@@ -34,14 +36,21 @@ if (file_exists($llmResponseServicePath)) {
  */
 class TherapyChatModel extends StyleModel
 {
+    use TherapyModelConfigTrait;
+
     /** @var TherapyMessageService */
     private $therapyService;
+
+    /** @var TherapyNotificationService|null */
+    private $notificationService;
 
     /** @var LlmDangerDetectionService|null */
     private $dangerDetection;
 
     /** @var int|null Current user ID */
     private $userId;
+    /** @var TherapyPromptAssetLoader */
+    private $promptAssets;
 
     /** @var array|null Cached current conversation */
     private $conversation;
@@ -54,7 +63,9 @@ class TherapyChatModel extends StyleModel
         parent::__construct($services, $id, $params, $id_page, $entry_record);
 
         $this->therapyService = new TherapyMessageService($services);
+        $this->notificationService = null;
         $this->userId = $_SESSION['id_user'] ?? null;
+        $this->promptAssets = new TherapyPromptAssetLoader();
 
         // Initialize danger detection service (used only for conversation blocking,
         // NOT for keyword scanning — safety detection is context-based via LLM).
@@ -137,11 +148,9 @@ class TherapyChatModel extends StyleModel
      */
     public function getMessageLabelOverrides()
     {
-        return array(
-            'ai' => $this->get_db_field('therapy_ai_label', 'AI Assistant'),
-            'therapist' => $this->get_db_field('therapy_therapist_label', 'Therapist'),
-            'subject' => 'Patient',
-            'system' => 'System',
+        return $this->buildMessageLabelOverrides(
+            'therapy_ai_label',
+            'therapy_therapist_label'
         );
     }
 
@@ -228,19 +237,17 @@ class TherapyChatModel extends StyleModel
 
     public function isSpeechToTextEnabled()
     {
-        $enabled = (bool)$this->get_db_field('enable_speech_to_text', '0');
-        $model = $this->get_db_field('speech_to_text_model', '');
-        return $enabled && !empty($model);
+        return $this->isSpeechToTextConfigured();
     }
 
     public function getSpeechToTextModel()
     {
-        return $this->get_db_field('speech_to_text_model', '');
+        return $this->getSpeechToTextConfiguredModel();
     }
 
     public function getSpeechToTextLanguage()
     {
-        return $this->get_db_field('speech_to_text_language', 'auto');
+        return $this->getSpeechToTextConfiguredLanguage();
     }
 
     /* =========================================================================
@@ -267,6 +274,55 @@ class TherapyChatModel extends StyleModel
             'loading' => $this->get_db_field('loading_text', 'Loading...'),
             'chat_help_text' => $this->get_db_field('therapy_chat_help_text', 'Use @therapist to request your therapist, or #topic to tag a predefined topic.')
         );
+    }
+
+    /**
+     * Get chat color palette from the database field.
+     * Returns a decoded JSON object with keys like me_as_patient, ai, therapist_1..10, etc.
+     */
+    public function getChatColors()
+    {
+        $defaultPalette = array(
+            'me_as_patient' => array('bg' => '#DCF8C6', 'text' => '#1b5e20', 'border' => '#a5d6a7'),
+            'me_as_therapist' => array('bg' => '#E3F2FD', 'text' => '#0d47a1', 'border' => '#90caf9'),
+            'patient' => array('bg' => '#FFF8E1', 'text' => '#4e342e', 'border' => '#ffe082'),
+            'ai' => array('bg' => '#F3E5F5', 'text' => '#4a148c', 'border' => '#ce93d8'),
+            'therapist_1' => array('bg' => '#E8F5E9', 'text' => '#1b5e20', 'border' => '#81c784'),
+            'therapist_2' => array('bg' => '#E3F2FD', 'text' => '#0d47a1', 'border' => '#64b5f6'),
+            'therapist_3' => array('bg' => '#F3E5F5', 'text' => '#4a148c', 'border' => '#ba68c8'),
+            'therapist_4' => array('bg' => '#FBE9E7', 'text' => '#bf360c', 'border' => '#ff8a65'),
+            'therapist_5' => array('bg' => '#E0F2F1', 'text' => '#004d40', 'border' => '#80cbc4'),
+            'therapist_6' => array('bg' => '#FCE4EC', 'text' => '#880e4f', 'border' => '#f48fb1'),
+            'therapist_7' => array('bg' => '#E8EAF6', 'text' => '#1a237e', 'border' => '#7986cb'),
+            'therapist_8' => array('bg' => '#EFEBE9', 'text' => '#3e2723', 'border' => '#a1887f'),
+            'therapist_9' => array('bg' => '#FFF3E0', 'text' => '#e65100', 'border' => '#ffb74d'),
+            'therapist_10' => array('bg' => '#E0F7FA', 'text' => '#006064', 'border' => '#4dd0e1')
+        );
+
+        $default = '{}';
+        $raw = $this->get_db_field('therapy_chat_colors', $default);
+        if (empty($raw)) return $defaultPalette;
+
+        $decoded = array();
+        if (is_string($raw)) {
+            $parsed = json_decode($raw, true);
+            $decoded = is_array($parsed) ? $parsed : array();
+        } elseif (is_array($raw)) {
+            $decoded = $raw;
+        }
+
+        $merged = $defaultPalette;
+        foreach ($defaultPalette as $key => $fallback) {
+            if (!isset($decoded[$key]) || !is_array($decoded[$key])) continue;
+            $entry = $decoded[$key];
+            $merged[$key] = array(
+                'bg' => isset($entry['bg']) ? $entry['bg'] : $fallback['bg'],
+                'text' => isset($entry['text']) ? $entry['text'] : $fallback['text'],
+                'border' => isset($entry['border']) ? $entry['border'] : $fallback['border']
+            );
+        }
+
+        return $merged;
     }
 
     /* =========================================================================
@@ -333,21 +389,6 @@ class TherapyChatModel extends StyleModel
     }
 
     /* =========================================================================
-     * FLOATING CHAT CONFIGURATION
-     * ========================================================================= */
-
-    /**
-     * Whether the chat should render as a floating modal.
-     * When enabled, the server-rendered floating icon opens an inline modal
-     * instead of navigating to the page. Icon/position/label are in the
-     * main plugin config (therapy_chat_floating_icon, etc.).
-     */
-    public function isFloatingChatEnabled()
-    {
-        return (bool)$this->get_db_field('enable_floating_chat', '0');
-    }
-
-    /* =========================================================================
      * BUSINESS LOGIC — message sending
      * ========================================================================= */
 
@@ -372,7 +413,7 @@ class TherapyChatModel extends StyleModel
         // can still send messages. These go to therapists only (manual mode)
         // because ai_enabled is set to false by handlePostLlmSafetyDetection().
         // The isConversationAIActive() check below ensures no AI response is
-        // generated, and notifyTherapistsNewMessage() delivers the message to
+        // generated, and notifyTherapists() delivers the message to
         // the assigned therapists.
 
         // Send user message (normal flow)
@@ -400,7 +441,7 @@ class TherapyChatModel extends StyleModel
 
         // Notify therapists when tagged or when AI is off
         if ($isTag || !$aiActive) {
-            $this->notifyTherapistsNewMessage($conversationId, $userId, $message, $isTag);
+            $this->notifyTherapists($conversationId, $userId, $message, $isTag);
         }
 
         // Process AI response only if active and no tag
@@ -414,6 +455,7 @@ class TherapyChatModel extends StyleModel
                     'content' => $aiResponse['content'],
                     'sender_type' => 'ai',
                     'label' => $messageLabels['ai'] ?? 'AI Assistant',
+                    'created_at' => date('c'),
                     'timestamp' => date('c')
                 );
             }
@@ -486,10 +528,7 @@ class TherapyChatModel extends StyleModel
         if (!$responseService && $this->isDangerDetectionEnabled()) {
             $contextMessages[] = array(
                 'role' => 'system',
-                'content' => '[SAFETY] You are a mental health assistant. Assess ALL user messages for '
-                    . 'safety concerns (suicidal ideation, self-harm, harm to others, crisis situations). '
-                    . 'If you detect danger, include a safety warning in your response and recommend '
-                    . 'professional help and crisis resources. Do NOT engage with dangerous content.'
+                'content' => $this->promptAssets->load('therapy.chat.safety_fallback')
             );
         }
 
@@ -499,9 +538,7 @@ class TherapyChatModel extends StyleModel
         // brief reminder just before the API call significantly improves compliance.
         $contextMessages[] = array(
             'role' => 'system',
-            'content' => 'IMPORTANT: You MUST respond with valid JSON matching the required schema. '
-                . 'Your response must be a JSON object with "type", "safety", "content", and "metadata" fields. '
-                . 'Do NOT include any text outside the JSON object.'
+            'content' => $this->promptAssets->load('therapy.chat.json_reinforcement')
         );
 
         $result = $this->therapyService->processAIResponse(
@@ -706,8 +743,8 @@ class TherapyChatModel extends StyleModel
             $msgResult['message_id']
         );
 
-        // Send email notification to therapists (tag type)
-        $this->notifyTherapistsNewMessage($conversationId, $userId, $tagMessage, true);
+        // Send notifications to therapists (tag type)
+        $this->notifyTherapists($conversationId, $userId, $tagMessage, true);
 
         return array(
             'success' => true,
@@ -746,62 +783,61 @@ class TherapyChatModel extends StyleModel
      */
     public function notifyTherapistsNewMessage($conversationId, $patientId, $messageContent, $isTag = false)
     {
-        $enabled = (bool)$this->get_db_field('enable_therapist_email_notification', '1');
-        if (!$enabled) return;
+        $this->getNotificationService()->notifyTherapistsForPatientMessage(
+            $conversationId,
+            $patientId,
+            $messageContent,
+            $isTag,
+            true,
+            false
+        );
+    }
 
-        $conversation = $this->therapyService->getTherapyConversation($conversationId);
-        if (!$conversation) return;
+    /**
+     * Send push notification to therapist(s) when patient sends a message.
+     *
+     * @param int $conversationId
+     * @param int $patientId
+     * @param string $messageContent
+     * @param bool $isTag
+     */
+    public function notifyTherapistsPush($conversationId, $patientId, $messageContent, $isTag = false)
+    {
+        $this->getNotificationService()->notifyTherapistsForPatientMessage(
+            $conversationId,
+            $patientId,
+            $messageContent,
+            $isTag,
+            false,
+            true
+        );
+    }
 
-        $services = $this->get_services();
-        $db = $services->get_db();
-        $jobScheduler = $services->get_job_scheduler();
+    /**
+     * Send email + push therapist notifications in one pass.
+     */
+    private function notifyTherapists($conversationId, $patientId, $messageContent, $isTag = false)
+    {
+        $this->getNotificationService()->notifyTherapistsForPatientMessage(
+            $conversationId,
+            $patientId,
+            $messageContent,
+            $isTag,
+            true,
+            true
+        );
+    }
 
-        // Get patient info
-        $patient = $db->select_by_uid('users', $patientId);
-        $patientName = $patient ? $patient['name'] : 'Patient';
-
-        // Get all assigned therapists
-        $therapists = $this->therapyService->getTherapistsForPatient($patientId);
-        if (empty($therapists)) return;
-
-        $subjectTemplate = $isTag
-            ? $this->get_db_field('therapist_tag_email_subject', '[Therapy Chat] @therapist tag from {{patient_name}}')
-            : $this->get_db_field('therapist_notification_email_subject', '[Therapy Chat] New message from {{patient_name}}');
-
-        $bodyTemplate = $isTag
-            ? $this->get_db_field('therapist_tag_email_body',
-                '<p>Hello,</p><p><strong>{{patient_name}}</strong> has tagged you (@therapist) in their therapy chat.</p><p><em>Message preview:</em> {{message_preview}}</p><p>Please log in to the Therapist Dashboard to respond.</p>')
-            : $this->get_db_field('therapist_notification_email_body',
-                '<p>Hello,</p><p>You have received a new message from <strong>{{patient_name}}</strong> in therapy chat.</p><p>Please log in to the Therapist Dashboard to review.</p>');
-
-        $fromEmail = $this->get_db_field('notification_from_email', 'noreply@selfhelp.local');
-        $fromName = $this->get_db_field('notification_from_name', 'Therapy Chat');
-
-        $preview = mb_substr(strip_tags($messageContent), 0, 200);
-        if (mb_strlen($messageContent) > 200) $preview .= '...';
-
-        foreach ($therapists as $therapist) {
-            if (empty($therapist['email'])) continue;
-
-            $subject = str_replace('{{patient_name}}', htmlspecialchars($patientName), $subjectTemplate);
-            $body = str_replace(
-                array('{{patient_name}}', '{{message_preview}}', '@user_name'),
-                array(htmlspecialchars($patientName), htmlspecialchars($preview), htmlspecialchars($therapist['name'] ?? '')),
-                $bodyTemplate
-            );
-
-            TherapyEmailHelper::scheduleEmail(
-                $db,
-                $jobScheduler,
-                $therapist['email'],
-                $subject,
-                $body,
-                $fromEmail,
-                $fromName,
-                ($isTag ? "Therapy Chat: tag" : "Therapy Chat: message") . " notification to therapist #" . $therapist['id'],
-                array($therapist['id'])
+    private function getNotificationService()
+    {
+        if ($this->notificationService === null) {
+            $this->notificationService = new TherapyNotificationService(
+                $this->get_services(),
+                $this->therapyService,
+                array($this, 'get_db_field')
             );
         }
+        return $this->notificationService;
     }
 
     /* =========================================================================
@@ -850,6 +886,9 @@ class TherapyChatModel extends StyleModel
             'speechToTextEnabled' => $this->isSpeechToTextEnabled(),
             'speechToTextModel' => $this->getSpeechToTextModel(),
             'speechToTextLanguage' => $this->getSpeechToTextLanguage(),
+
+            // Chat colors
+            'chatColors' => $this->getChatColors(),
         );
     }
 

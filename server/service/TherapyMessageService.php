@@ -6,6 +6,7 @@
 <?php
 
 require_once __DIR__ . '/TherapyAlertService.php';
+require_once __DIR__ . '/prompt/TherapyPromptAssetLoader.php';
 
 // Include LLM plugin services for proper JSON schema handling
 // Path: from server/service/ → ../../ = sh-shp-llm_therapy_chat/ → ../../../ = plugins/
@@ -41,10 +42,13 @@ class TherapyMessageService extends TherapyAlertService
     const SENDER_THERAPIST = 'therapist';
     const SENDER_SUBJECT = 'subject';
     const SENDER_SYSTEM = 'system';
+    /** @var TherapyPromptAssetLoader */
+    private $prompt_assets;
 
     public function __construct($services)
     {
         parent::__construct($services);
+        $this->prompt_assets = new TherapyPromptAssetLoader();
     }
 
     /* =========================================================================
@@ -193,8 +197,8 @@ class TherapyMessageService extends TherapyAlertService
 
         $llmConversationId = $conversation['id_llmConversations'];
 
-        $sql = "SELECT lm.id, lm.role, lm.content, lm.model, lm.tokens_used,
-                       lm.timestamp, lm.sent_context, lm.deleted,
+        $baseSelect = "SELECT lm.id, lm.role, lm.content, lm.model, lm.tokens_used,
+                       lm.timestamp, lm.timestamp as created_at, lm.sent_context, lm.deleted,
                        JSON_UNQUOTE(JSON_EXTRACT(lm.sent_context, '$.therapy_sender_type')) as sender_type,
                        JSON_UNQUOTE(JSON_EXTRACT(lm.sent_context, '$.therapy_sender_id')) as sender_id,
                        JSON_UNQUOTE(JSON_EXTRACT(lm.sent_context, '$.edited_at')) as edited_at,
@@ -208,11 +212,18 @@ class TherapyMessageService extends TherapyAlertService
         $params = array(':cid' => $llmConversationId);
 
         if ($afterId) {
-            $sql .= " AND lm.id > :after_id";
+            $sql = $baseSelect . " AND lm.id > :after_id
+                    ORDER BY lm.timestamp ASC LIMIT " . (int)$limit;
             $params[':after_id'] = $afterId;
+        } else {
+            // Fetch latest N messages, then present them oldest->newest for UI/context ordering.
+            $sql = "SELECT * FROM (
+                        " . $baseSelect . "
+                        ORDER BY lm.timestamp DESC
+                        LIMIT " . (int)$limit . "
+                    ) recent
+                    ORDER BY recent.timestamp ASC";
         }
-
-        $sql .= " ORDER BY lm.timestamp ASC LIMIT " . (int)$limit;
 
         $messages = $this->db->query_db($sql, $params);
 
@@ -229,6 +240,8 @@ class TherapyMessageService extends TherapyAlertService
             // Mask deleted message content
             if ($msg['is_deleted']) {
                 $msg['content'] = '[Message deleted]';
+            } else {
+                $msg['content'] = self::normalizeEscapedText((string)($msg['content'] ?? ''));
             }
         }
 
@@ -331,13 +344,23 @@ class TherapyMessageService extends TherapyAlertService
             $llmConversationId = $conversation['id_llmConversations'];
 
             // callLlmApi auto-logs the assistant message to llmMessages.
-            // We pass the conversation_id so the message is stored, then
-            // update the content with the human-readable display text.
-            $response = $this->callLlmApi($contextMessages, $model, $temperature, $maxTokens, [
-                'conversation_id' => $llmConversationId,
-                'sent_context' => $contextMessages,
-                'is_validated' => true
-            ]);
+            $sentContext = array(
+                'therapy_sender_type' => self::SENDER_AI,
+                'therapy_sender_id' => 0,
+                'llm_context' => $contextMessages
+            );
+
+            $response = $this->callLlmApi(
+                $contextMessages,
+                $model,
+                $temperature,
+                $maxTokens,
+                array(
+                    'conversation_id' => $llmConversationId,
+                    'sent_context' => $sentContext,
+                    'is_validated' => true
+                )
+            );
 
             if (!$response || empty($response['content'])) {
                 return array('error' => 'No response from AI');
@@ -350,16 +373,17 @@ class TherapyMessageService extends TherapyAlertService
             // addAssistantMessageFromApiResponse(). Update the stored
             // content with the extracted display text so the chat shows
             // human-readable text instead of raw JSON.
-            $messageId = $response['logged_message_id'] ?? null;
-            if ($messageId) {
-                $this->updateMessage($messageId, [
-                    'content' => $displayContent
-                ]);
+            $messageId = isset($response['logged_message_id']) ? (int)$response['logged_message_id'] : 0;
+            if ($messageId <= 0) {
+                return array('error' => 'AI response could not be logged');
             }
 
-            if ($messageId) {
-                $this->createMessageRecipients($messageId, $conversation, self::SENDER_AI, 0);
-            }
+            // Centralized logger stores raw model content by default.
+            // For therapy UI, persist the extracted human-readable content.
+            $this->updateMessage($messageId, array('content' => $displayContent));
+
+            // Create recipient for patient
+            $this->createMessageRecipients($messageId, $conversation, self::SENDER_AI, 0);
 
             return array(
                 'success' => true,
@@ -388,7 +412,7 @@ class TherapyMessageService extends TherapyAlertService
         $decoded = self::parseLlmJson($content);
 
         if ($decoded === null) {
-            return $content;
+            return self::normalizeEscapedText((string)$content);
         }
 
         if (isset($decoded['safety']) && isset($decoded['safety']['is_safe']) && !$decoded['safety']['is_safe']) {
@@ -409,7 +433,7 @@ class TherapyMessageService extends TherapyAlertService
             $textParts = array();
             foreach ($decoded['content']['text_blocks'] as $block) {
                 if (isset($block['content']) && is_string($block['content'])) {
-                    $textParts[] = $block['content'];
+                    $textParts[] = self::normalizeEscapedText($block['content']);
                 }
             }
 
@@ -418,7 +442,33 @@ class TherapyMessageService extends TherapyAlertService
             }
         }
 
-        return $content;
+        return self::normalizeEscapedText((string)$content);
+    }
+
+    /**
+     * Normalize escaped text sequences from model/user payloads to real characters.
+     * This keeps UI rendering and downstream context-building consistent.
+     *
+     * @param string $text
+     * @return string
+     */
+    public static function normalizeEscapedText($text)
+    {
+        $text = (string)$text;
+        if ($text === '') {
+            return '';
+        }
+
+        if (strpos($text, '\\') === false) {
+            return $text;
+        }
+
+        return strtr($text, array(
+            "\\r\\n" => "\n",
+            "\\n" => "\n",
+            "\\r" => "\r",
+            "\\t" => "\t",
+        ));
     }
 
     /**
@@ -605,6 +655,7 @@ class TherapyMessageService extends TherapyAlertService
 
         // Use edited content if available, otherwise AI content
         $content = $draft['edited_content'] ?: $draft['ai_generated_content'];
+        $content = self::normalizeEscapedText((string)$content);
         if (empty($content)) {
             return array('error' => 'Draft has no content');
         }
@@ -1001,17 +1052,7 @@ class TherapyMessageService extends TherapyAlertService
      */
     private function getTherapySystemPrompt()
     {
-        return "You are a supportive AI assistant in a mental health therapy context.\n\n" .
-            "Your role:\n" .
-            "- Provide empathetic, non-judgmental responses\n" .
-            "- Use validation, reflection, and grounding techniques\n" .
-            "- Encourage the user while respecting boundaries\n\n" .
-            "Important:\n" .
-            "- You are NOT a therapist or mental health professional\n" .
-            "- You cannot provide diagnoses or treatment recommendations\n" .
-            "- Messages marked [THERAPIST] are from the real therapist - follow their clinical guidance\n" .
-            "- Always follow the response schema provided in the system context\n" .
-            "- For crisis situations, set appropriate safety flags in the response schema";
+        return $this->prompt_assets->load('therapy.chat.system');
     }
 
     /* =========================================================================
@@ -1129,7 +1170,7 @@ class TherapyMessageService extends TherapyAlertService
             'id_users' => $therapistId,
             'id_sections' => $sectionId,
             'title' => $title,
-            'model' => $config['llm_default_model'],
+            'model' => $this->normalizeModelIdentifierForStorage($config['llm_default_model'], $config),
             'temperature' => $config['llm_temperature'],
             'max_tokens' => $config['llm_max_tokens']
         ));
@@ -1149,19 +1190,15 @@ class TherapyMessageService extends TherapyAlertService
      * ========================================================================= */
 
     /**
-     * Store a summary request/response in the therapist's tools conversation.
-     * All summaries for the same therapist + section are appended to the
-     * same conversation instead of creating a new one each time.
+     * Ensure summary user prompt is logged in therapist tools conversation.
+     * The assistant response is logged centrally by callLlmApi.
      *
      * @param int $therapyConvId The therapy conversation being summarized
      * @param int $therapistId
      * @param int $sectionId The therapist dashboard section
-     * @param string $summaryContent The AI-generated summary
-     * @param array $requestMessages The messages sent to the LLM
-     * @param array $response The raw LLM response
      * @return int|null The LLM conversation ID
      */
-    public function createSummaryConversation($therapyConvId, $therapistId, $sectionId, $summaryContent, $requestMessages, $response)
+    public function createSummaryConversation($therapyConvId, $therapistId, $sectionId)
     {
         // Use the shared therapist tools conversation
         $llmConvId = $this->getOrCreateTherapistToolsConversation($therapistId, $sectionId, 'summary');
@@ -1180,28 +1217,10 @@ class TherapyMessageService extends TherapyAlertService
             )
         );
 
-        // Log the AI response (the generated summary)
-        $this->addMessage(
-            $llmConvId,
-            'assistant',
-            $summaryContent,
-            null,
-            $response['model'] ?? null,
-            $response['tokens_used'] ?? null,
-            $response,
-            array(
-                'therapy_sender_type' => self::SENDER_AI,
-                'summary_for_conversation' => $therapyConvId
-            ),
-            $response['reasoning'] ?? null,
-            true,
-            $response['request_payload'] ?? null
-        );
-
         // Log transaction
         $this->logTransaction(
             transactionTypes_insert, 'llmMessages', $llmConvId, $therapistId,
-            'Summary appended for therapy conversation #' . $therapyConvId
+            'Summary request logged for therapy conversation #' . $therapyConvId
         );
 
         return $llmConvId;

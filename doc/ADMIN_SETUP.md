@@ -3,7 +3,7 @@
 ## Prerequisites
 
 1. **SelfHelp** platform installed and running
-2. **sh-shp-llm** plugin installed (provides base LLM functionality)
+2. **sh-shp-llm v1.1.0+** plugin installed (provides base LLM functionality)
 3. PHP 8.2+ with `uopz` extension (for hooks)
 4. MySQL 8.0+
 
@@ -17,9 +17,17 @@ Copy the `sh-shp-llm_therapy_chat` folder to `server/plugins/`.
 
 ```bash
 mysql -u <user> -p <database> < server/plugins/sh-shp-llm_therapy_chat/server/db/v1.0.0.sql
+mysql -u <user> -p <database> < server/plugins/sh-shp-llm_therapy_chat/server/db/v1.1.0.sql
 ```
 
-This creates all required tables, views, lookups, hooks, and configuration fields. All schema changes are consolidated in this single migration file.
+`v1.0.0.sql` creates base tables/views/lookups/styles/hooks.  
+`v1.1.0.sql` upgrades therapy prompt fields to the shared `llm_prompt` type for versioning/diff tooling.
+
+If you already have an existing `v1.0.x` installation, run:
+
+```bash
+mysql -u <user> -p <database> < server/plugins/sh-shp-llm_therapy_chat/server/db/v1.1.0.sql
+```
 
 ### 3. Build React Frontend
 
@@ -40,7 +48,6 @@ This generates `js/ext/therapy-chat.umd.js` and `css/ext/therapy-chat.css`.
    - **Therapist Group**: Select the group containing your therapists
    - **Subject Page**: The page where the patient chat component lives
    - **Therapist Page**: The page where the therapist dashboard component lives
-   - **Danger Keywords (topic hints)**: Comma-separated safety topics for LLM context (e.g., suicide, self-harm). The LLM uses these to focus its contextual safety assessment — no server-side keyword matching is performed
    - **Floating Position**: Where the floating button appears (e.g., `bottom-right`)
 
 ### 5. Create Chat Pages
@@ -48,7 +55,10 @@ This generates `js/ext/therapy-chat.umd.js` and `css/ext/therapy-chat.css`.
 #### Patient Chat Page
 1. Create a new page accessible to subjects
 2. Add a section with style **therapyChat**
-3. Configure style fields (AI model, polling interval, etc.)
+3. Configure style fields (AI model, polling interval, etc.), including:
+   - **Danger Keywords / Danger Message / Danger Notification Emails**
+   - **Tag Reasons** and chat help text
+   - **Speech-to-Text** and optional auto-start message
 
 #### Therapist Dashboard Page
 1. Create a new page accessible to therapists
@@ -93,7 +103,7 @@ This generates `js/ext/therapy-chat.umd.js` and `css/ext/therapy-chat.css`.
 
 ### Therapist sees no conversations
 - Verify the therapist has group assignments in `therapyTherapistAssignments`
-- Check that patients are in the assigned groups via `users_groups`
+- Check that patients are in the assigned groups via `user_groups`
 - Verify patients have active conversations
 
 ### AI not responding

@@ -59,7 +59,7 @@ const TherapistDashboardInner: React.FC<{ config: TherapistDashboardConfig }> = 
     [chat.conversation],
   );
 
-  // ---- Conversation actions (risk, status, AI, mark read) ----
+  // ---- Conversation actions (risk, AI, mark read) ----
   const convActions = useConversationActions({
     api,
     getConversation: () => chat.conversation,
@@ -157,7 +157,15 @@ const TherapistDashboardInner: React.FC<{ config: TherapistDashboardConfig }> = 
                   title={labels.title}
                   stats={stats}
                   unreadCounts={unreadCounts}
-                  labels={{ title: labels.title, riskCritical: labels.riskCritical }}
+                  labels={{
+                    title: labels.title,
+                    statPatients: labels.statPatients,
+                    statAiEnabled: labels.statAiEnabled,
+                    statAiBlocked: labels.statAiBlocked,
+                    filterUnread: labels.filterUnread,
+                    statCritical: labels.statCritical,
+                    statAlerts: labels.statAlerts,
+                  }}
                 />
               )
             }

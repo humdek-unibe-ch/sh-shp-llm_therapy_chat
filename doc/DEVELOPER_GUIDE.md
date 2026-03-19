@@ -1,5 +1,11 @@
 # Developer Guide
 
+## Dependency Direction
+
+- `sh-shp-llm_therapy_chat` has a hard runtime dependency on `sh-shp-llm`.
+- `sh-shp-llm` has no runtime dependency on this plugin.
+- Therapy-specific prompt-lab runtime/dataset behavior is attached via hook-based extension seams owned in this plugin.
+
 ## Service Hierarchy
 
 ```
@@ -10,6 +16,15 @@ TherapyMessageService   ← Use this in controllers
 ```
 
 Controllers only instantiate `TherapyMessageService` — it inherits all methods from the chain.
+
+## Centralized LLM Logging (Required)
+
+`sh-shp-llm` v1.1.0+ enforces strict centralized API logging:
+
+- Always call `callLlmApi($messages, $model, $temperature, $maxTokens, $logOptions)` with `conversation_id`.
+- Do not manually add assistant messages after `callLlmApi`; the service auto-logs them.
+- Log user prompts first (if needed), then call `callLlmApi` so message order remains user -> assistant.
+- Include therapy metadata in `sent_context` (`therapy_sender_type`, `therapy_sender_id`) and optionally `llm_context` for audit/debugging.
 
 ## Adding a New Feature
 
@@ -161,24 +176,9 @@ AI response messages (`llmMessages` with `role = 'assistant'`) store the full co
 
 The React source CSS lives in `react/src/styles/therapy-chat.css` with `tc-` prefixed custom rules only. The build process (Vite) outputs the compiled CSS to `css/ext/therapy-chat.css`. Bootstrap 4.6 is **not** bundled — it's loaded globally by SelfHelp. The `css/ext/therapy-chat.css` file is ~6KB of custom styles.
 
-## Floating Chat Modal
+## Floating Chat Button
 
-When `enable_floating_chat` is enabled on the `therapyChat` style:
-
-**Inline chat suppression**: `TherapyChatView::output_content()` returns early when `isFloatingChatEnabled()` is true. This prevents the inline chat from rendering on the page — the floating modal panel is the sole chat interface in this mode.
-
-1. **Hook renders a `<button>`** instead of an `<a>` link
-2. **On click**: Panel opens, AJAX request fetches full config from chat page endpoint (`?action=get_config&section_id=X`)
-3. **React mount**: After config is loaded, the `.therapy-chat-root` element's `data-config` is updated and React is mounted via `window.__TherapyChatMount()` or `window.TherapyChat.mount()`
-4. **Config check**: `isFloatingChatModalEnabled()` checks `sections_fields_translation.content` first (actual runtime value), then falls back to `styles_fields.default_value`
-5. **CSS loading**: The floating panel loads `therapy-chat.css` explicitly via a `<link>` tag in `floating_chat_icon.php` so styles work on any page (not just the chat page). Flex layout rules ensure proper scrolling and height in the floating panel; bubble background colors use `!important` for the floating modal context.
-
-**Floating panel layout** (in `floating_chat_icon.php`):
-- Panel height: `calc(100vh - 80px)` with `top: 40px` for equal top/bottom spacing
-- Panel left-positioned at `12px` (hardcoded in inline style)
-- Message bubbles: explicit `margin-left`/`margin-right` and `align-self` for proper alignment
-  - Own (patient) messages: `align-self: flex-end` + `margin-left: auto` → right side
-  - Other messages (AI, therapist, subject in therapist view): `align-self: flex-start` + `margin-right: auto` → left side
+When `therapy_chat_enable_floating_button` is enabled in the module config, the hook renders a fixed-position floating icon that navigates to the chat page. When disabled, the chat appears as a navigation bar item instead. Icon, position, and label are configured in the module config page (`therapy_chat_floating_icon`, `therapy_chat_floating_position`, `therapy_chat_floating_label`).
 
 ## Unread Count for Therapists
 
@@ -218,6 +218,18 @@ The "Generate AI Draft" feature allows therapists to get AI-suggested responses:
 - **Undo**: Restores the last draft text from before the most recent regeneration
 - Draft text is tracked as plain text; markdown is rendered as HTML only in the editor view
 
+## Prompt Versioning (v1.1.0+)
+
+Therapy prompt fields now use the shared `llm_prompt` field type from `sh-shp-llm`:
+
+- `conversation_context`
+- `therapy_draft_context`
+- `therapy_summary_context`
+- `therapy_auto_start_context`
+
+This enables prompt history, diff, restore, and save-comment flows in CMS via base-plugin hooks.
+Runtime reads still use `get_db_field(...)`, so no therapy runtime behavior changed by this migration.
+
 ## Summarization
 
 The "Summarize" feature creates a new `llmConversations` record linked to the therapist and section for full audit trail:
@@ -245,6 +257,12 @@ The plugin uses these hooks:
 |------|-------|--------|---------|
 | `outputTherapyChatIcon` | `NavView` | `output_profile` | Floating chat/dashboard button |
 | `outputTherapistGroupAssignments` | `UserSelectView` | `output_user_manipulation` | Admin user page: group assignment UI |
+| `field-select-page-edit` | `CmsView` | `create_field_form_item` | Custom module field editor for select-page |
+| `field-select-page-view` | `CmsView` | `create_field_item` | Custom module field renderer for select-page |
+| `field-select-floating-position-edit` | `CmsView` | `create_field_form_item` | Custom floating position field editor |
+| `field-select-floating-position-view` | `CmsView` | `create_field_item` | Custom floating position field renderer |
+| `therapyChatLLM - load JS scripts` | `BasePage` | `get_js_includes` | Inject therapy chat JS assets |
+| `therapyChatMobile - mobile page info` | `BasePage` | `output_base_content_mobile` | Inject `therapy_chat` metadata into mobile response |
 
 Assignments are saved via AJAX endpoint `/request/AjaxTherapyChat/saveTherapistAssignments`, not via a hook on user save.
 

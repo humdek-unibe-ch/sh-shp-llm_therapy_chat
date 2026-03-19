@@ -17,7 +17,9 @@
 class TherapyEmailHelper
 {
     /**
-     * Schedule an email notification via the SelfHelp JobScheduler.
+     * Schedule and immediately execute an email notification via the SelfHelp
+     * JobScheduler. Uses add_and_execute_job() so the email is sent within
+     * the current request instead of waiting for the cron queue.
      *
      * @param object $db         Database service
      * @param object $jobScheduler JobScheduler service
@@ -49,10 +51,10 @@ class TherapyEmailHelper
         );
 
         try {
-            $jobScheduler->schedule_job($mailData, transactionBy_by_system);
+            $jobScheduler->add_and_execute_job($mailData, transactionBy_by_system);
             return true;
         } catch (\Exception $e) {
-            error_log("TherapyEmailHelper: Failed to schedule email to $recipientEmail: " . $e->getMessage());
+            error_log("TherapyEmailHelper: Failed to send email to $recipientEmail: " . $e->getMessage());
             return false;
         }
     }

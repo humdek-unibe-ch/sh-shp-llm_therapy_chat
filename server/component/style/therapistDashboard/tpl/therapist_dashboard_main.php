@@ -11,7 +11,7 @@
  */
 ?>
 <!-- Therapist Dashboard React App Container -->
-<div class="therapist-dashboard-root"
+<div class="therapist-dashboard-root <?php echo $this->css; ?>"
      data-user-id="<?php echo htmlspecialchars($user_id, ENT_QUOTES, 'UTF-8'); ?>"
      data-section-id="<?php echo htmlspecialchars($section_id, ENT_QUOTES, 'UTF-8'); ?>"
      data-selected-conversation-id="<?php echo htmlspecialchars($selected_conversation_id ?? '', ENT_QUOTES, 'UTF-8'); ?>"

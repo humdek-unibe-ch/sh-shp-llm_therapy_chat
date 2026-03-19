@@ -50,6 +50,11 @@ class TherapyChatService extends LlmService
         $this->job_scheduler = $services->get_job_scheduler();
     }
 
+    public function getPublicLlmConfig()
+    {
+        return $this->getLlmConfig();
+    }
+
     /* =========================================================================
      * CONVERSATION MANAGEMENT
      * ========================================================================= */
@@ -73,6 +78,7 @@ class TherapyChatService extends LlmService
 
         $config = $this->getLlmConfig();
         $modelToUse = $model ?: $config['llm_default_model'];
+        $modelToUse = $this->normalizeModelIdentifierForStorage($modelToUse, $config);
 
         try {
             $this->db->begin_transaction();
@@ -212,7 +218,6 @@ class TherapyChatService extends LlmService
                     ELSE 0 END as unread_alerts,
                     CASE WHEN vtc.id IS NULL THEN 1 ELSE 0 END as no_conversation
                 FROM users u
-                INNER JOIN users_groups ug ON ug.id_users = u.id
                 LEFT JOIN (
                     SELECT vtc_inner.*
                     FROM view_therapyConversations vtc_inner
@@ -225,8 +230,18 @@ class TherapyChatService extends LlmService
                               AND vtc_inner.created_at = latest.max_created
                     WHERE (vtc_inner.deleted = 0 OR vtc_inner.deleted IS NULL)
                 ) vtc ON vtc.id_users = u.id
-                LEFT JOIN validation_codes vc ON vc.id_users = u.id AND vc.consumed IS NULL
-                WHERE ug.id_groups IN ($groupPlaceholders)";
+                LEFT JOIN (
+                    SELECT id_users, MIN(code) as code
+                    FROM validation_codes
+                    WHERE consumed IS NULL
+                    GROUP BY id_users
+                ) vc ON vc.id_users = u.id
+                WHERE EXISTS (
+                    SELECT 1
+                    FROM users_groups ug
+                    WHERE ug.id_users = u.id
+                      AND ug.id_groups IN ($groupPlaceholders)
+                )";
 
         // First param is therapist ID for alert count
         $params = array($therapistId);
@@ -246,7 +261,12 @@ class TherapyChatService extends LlmService
             $params[] = $filters['risk_level'];
         }
         if (!empty($filters['group_id'])) {
-            $sql .= " AND ug.id_groups = ?";
+            $sql .= " AND EXISTS (
+                        SELECT 1
+                        FROM users_groups ugf
+                        WHERE ugf.id_users = u.id
+                          AND ugf.id_groups = ?
+                      )";
             $params[] = $filters['group_id'];
         }
 
@@ -299,6 +319,7 @@ class TherapyChatService extends LlmService
 
         $config = $this->getLlmConfig();
         $modelToUse = $model ?: $config['llm_default_model'];
+        $modelToUse = $this->normalizeModelIdentifierForStorage($modelToUse, $config);
 
         try {
             $this->db->begin_transaction();

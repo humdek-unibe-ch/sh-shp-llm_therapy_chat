@@ -5,6 +5,8 @@
 ?>
 <?php
 
+require_once __DIR__ . "/../../../service/prompt/TherapyPromptAssetLoader.php";
+
 /**
  * Therapist Dashboard Draft & Summary Helper
  *
@@ -15,12 +17,24 @@
  */
 trait TherapistDashboardDraftTrait
 {
+    /** @var TherapyPromptAssetLoader|null */
+    private $promptAssets = null;
+
+    private function getPromptAssets()
+    {
+        if ($this->promptAssets === null) {
+            $this->promptAssets = new TherapyPromptAssetLoader();
+        }
+
+        return $this->promptAssets;
+    }
+
     /**
      * Generate an AI draft response for a conversation.
      *
      * Builds context from conversation history, calls the LLM API using
      * the model configured on this style, and saves both to llmMessages
-     * (via the parent LLM plugin's addMessage) and to therapyDraftMessages.
+     * (via centralized callLlmApi logging) and to therapyDraftMessages.
      *
      * @param int $conversationId
      * @param int $therapistId
@@ -34,10 +48,12 @@ trait TherapistDashboardDraftTrait
 
         // Add a draft-specific instruction using the configurable context field
         $draftContext = $this->get_db_field('therapy_draft_context', '');
-        $draftInstruction = 'Generate a thoughtful, empathetic therapeutic response draft for the therapist to review and edit before sending to the patient. Focus on being supportive and clinically appropriate.';
+        $draftContextBlock = 'No additional therapist context.';
         if (!empty($draftContext)) {
-            $draftInstruction .= "\n\nAdditional context and instructions from the therapist:\n" . $draftContext;
+            $draftContextBlock = "Additional context and instructions from the therapist:\n" . $draftContext;
         }
+        $draftTemplate = $this->getPromptAssets()->load('therapy.dashboard.draft_instruction');
+        $draftInstruction = strtr($draftTemplate, array('{{draft_context_block}}' => $draftContextBlock));
         $contextMessages[] = array(
             'role' => 'system',
             'content' => $draftInstruction
@@ -54,14 +70,15 @@ trait TherapistDashboardDraftTrait
 
         // Get the tools conversation BEFORE calling the API so we can pass it
         // as log_options (callLlmApi auto-logs the assistant message).
+        // Save to llmMessages via the therapist's tools conversation (NOT the patient's).
         $toolsConvId = $this->messageService->getOrCreateTherapistToolsConversation(
             $therapistId, $this->getSectionId(), 'draft'
         );
         if (!$toolsConvId) {
-            return array('error' => 'Failed to create tools conversation for draft.');
+            return array('error' => 'Failed to prepare therapist tools conversation for draft logging.');
         }
 
-        // Log the user prompt in the tools conversation
+        // Log user instruction first so message order is always user -> assistant.
         $this->messageService->addMessage(
             $toolsConvId,
             'user',
@@ -69,17 +86,31 @@ trait TherapistDashboardDraftTrait
             null, null, null, null,
             array(
                 'therapy_sender_type' => 'therapist',
+                'therapy_sender_id' => $therapistId,
                 'draft_for_conversation' => $conversationId,
                 'is_draft' => true
             )
         );
 
-        // callLlmApi auto-logs the assistant message to llmMessages
-        $response = $this->messageService->callLlmApi($contextMessages, $model, $temperature, $maxTokens, [
-            'conversation_id' => $toolsConvId,
-            'sent_context' => $contextMessages,
-            'is_validated' => true
-        ]);
+        // Call LLM API with centralized assistant logging.
+        $response = $this->messageService->callLlmApi(
+            $contextMessages,
+            $model,
+            $temperature,
+            $maxTokens,
+            array(
+                'conversation_id' => $toolsConvId,
+                'sent_context' => array(
+                    'therapy_sender_type' => 'ai',
+                    'therapy_sender_id' => 0,
+                    'draft_for_therapist' => $therapistId,
+                    'draft_for_conversation' => $conversationId,
+                    'is_draft' => true,
+                    'llm_context' => $contextMessages
+                ),
+                'is_validated' => true
+            )
+        );
 
         if (!$response || empty($response['content'])) {
             return array('error' => 'AI did not generate a response. Please try again.');
@@ -89,12 +120,11 @@ trait TherapistDashboardDraftTrait
         $rawContent = $response['content'];
         $aiContent = $this->messageService->extractDisplayContent($rawContent);
 
-        // Update the auto-logged message with human-readable content
-        $messageId = $response['logged_message_id'] ?? null;
-        if ($messageId) {
-            $this->messageService->updateMessage($messageId, [
-                'content' => $aiContent
-            ]);
+        // Centralized logger stores raw model content by default.
+        // For therapist UI, persist the extracted human-readable draft.
+        $loggedMessageId = isset($response['logged_message_id']) ? (int)$response['logged_message_id'] : 0;
+        if ($loggedMessageId > 0) {
+            $this->messageService->updateMessage($loggedMessageId, array('content' => $aiContent));
         }
 
         // Also save in therapyDraftMessages for draft workflow tracking
@@ -130,11 +160,12 @@ trait TherapistDashboardDraftTrait
     {
         $result = $this->messageService->sendDraft($draftId, $therapistId, $conversationId);
 
-        // Send email notification to patient when draft is sent
+        // Notify patient (email + push) when draft is sent
         if (isset($result['success'])) {
             $draft = $this->messageService->getActiveDraft($conversationId, $therapistId);
             $content = $draft ? ($draft['edited_content'] ?: $draft['ai_generated_content']) : '';
             $this->notifyPatientNewMessage($conversationId, $therapistId, $content);
+            $this->notifyPatientPush($conversationId, $therapistId, $content);
         }
 
         return $result;
@@ -174,11 +205,12 @@ trait TherapistDashboardDraftTrait
         $llmMessages = array();
 
         // System instruction for summarization
-        $systemPrompt = "You are a clinical summarization assistant. Your task is to produce a concise, professional therapeutic summary of the conversation below.\n\n";
+        $summaryContextBlock = 'No additional therapist context.';
         if (!empty($summaryContext)) {
-            $systemPrompt .= "Additional context and instructions from the therapist:\n" . $summaryContext . "\n\n";
+            $summaryContextBlock = "Additional context and instructions from the therapist:\n" . $summaryContext;
         }
-        $systemPrompt .= "Include: key topics discussed, patient emotional state, therapeutic interventions used, progress indicators, risk flags if any, and recommended next steps.";
+        $summaryTemplate = $this->getPromptAssets()->load('therapy.dashboard.summary_instruction');
+        $systemPrompt = strtr($summaryTemplate, array('{{summary_context_block}}' => $summaryContextBlock));
 
         $llmMessages[] = array('role' => 'system', 'content' => $systemPrompt);
 
@@ -205,7 +237,7 @@ trait TherapistDashboardDraftTrait
         // Final user prompt requesting the summary
         $llmMessages[] = array(
             'role' => 'user',
-            'content' => 'Please generate a clinical summary of the above therapy conversation.'
+            'content' => $this->getPromptAssets()->load('therapy.dashboard.summary_user_prompt')
         );
 
         // Inject the unified JSON response schema so the LLM returns
@@ -217,32 +249,33 @@ trait TherapistDashboardDraftTrait
         $temperature = $this->getLlmTemperature();
         $maxTokens = $this->getLlmMaxTokens();
 
-        // Get the tools conversation BEFORE calling the API
-        $toolsConvId = $this->messageService->getOrCreateTherapistToolsConversation(
-            $therapistId, $this->getSectionId(), 'summary'
+        // Get the summary conversation BEFORE calling the API.
+        $summaryConvId = $this->messageService->createSummaryConversation(
+            $conversationId,
+            $therapistId,
+            $this->getSectionId()
         );
-        if (!$toolsConvId) {
-            return array('error' => 'Failed to create tools conversation for summary.');
+        if (!$summaryConvId) {
+            return array('error' => 'Failed to prepare summary conversation.');
         }
 
-        // Log the user prompt in the tools conversation
-        $this->messageService->addMessage(
-            $toolsConvId,
-            'user',
-            'Generate clinical summary for therapy conversation #' . $conversationId,
-            null, null, null, null,
+        // Call LLM API with centralized assistant logging.
+        $response = $this->messageService->callLlmApi(
+            $llmMessages,
+            $model,
+            $temperature,
+            $maxTokens,
             array(
-                'therapy_sender_type' => 'therapist',
-                'summary_for_conversation' => $conversationId
+                'conversation_id' => $summaryConvId,
+                'sent_context' => array(
+                    'therapy_sender_type' => 'ai',
+                    'therapy_sender_id' => 0,
+                    'summary_for_conversation' => $conversationId,
+                    'llm_context' => $llmMessages
+                ),
+                'is_validated' => true
             )
         );
-
-        // callLlmApi auto-logs the assistant response
-        $response = $this->messageService->callLlmApi($llmMessages, $model, $temperature, $maxTokens, [
-            'conversation_id' => $toolsConvId,
-            'sent_context' => $llmMessages,
-            'is_validated' => true
-        ]);
 
         if (!$response || empty($response['content'])) {
             return array('error' => 'AI did not generate a summary. Please try again.');
@@ -252,18 +285,17 @@ trait TherapistDashboardDraftTrait
         $rawContent = $response['content'];
         $displayContent = $this->messageService->extractDisplayContent($rawContent);
 
-        // Update the auto-logged message with human-readable content
-        $messageId = $response['logged_message_id'] ?? null;
-        if ($messageId) {
-            $this->messageService->updateMessage($messageId, [
-                'content' => $displayContent
-            ]);
+        // Centralized logger stores raw model content by default.
+        // For therapist UI, persist the extracted human-readable summary.
+        $loggedMessageId = isset($response['logged_message_id']) ? (int)$response['logged_message_id'] : 0;
+        if ($loggedMessageId > 0) {
+            $this->messageService->updateMessage($loggedMessageId, array('content' => $displayContent));
         }
 
         return array(
             'success' => true,
             'summary' => $displayContent,
-            'summary_conversation_id' => $toolsConvId,
+            'summary_conversation_id' => $summaryConvId,
             'tokens_used' => $response['tokens_used'] ?? null
         );
     }

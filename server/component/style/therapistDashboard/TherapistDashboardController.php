@@ -38,9 +38,17 @@ class TherapistDashboardController extends TherapyBaseController
     private function handleRequest()
     {
         if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-            $this->handlePostRequest($_POST['action'] ?? null);
+            $action = $_POST['action'] ?? null;
+            if ($action === null || $action === '') {
+                return;
+            }
+            $this->handlePostRequest($action);
         } elseif ($_SERVER['REQUEST_METHOD'] === 'GET') {
-            $this->handleGetRequest($_GET['action'] ?? null);
+            $action = $_GET['action'] ?? null;
+            if ($action === null || $action === '') {
+                return;
+            }
+            $this->handleGetRequest($action);
         }
     }
 
@@ -80,7 +88,6 @@ class TherapistDashboardController extends TherapyBaseController
 
             case 'toggle_ai':
             case 'set_risk':
-            case 'set_status':
                 $this->handleControlAction($action, $data);
                 break;
 
@@ -91,6 +98,40 @@ class TherapistDashboardController extends TherapyBaseController
             case 'speech_transcribe':
                 $this->validateTherapistOrFail();
                 $this->processSpeechTranscription();
+                break;
+
+            case 'get_unread_counts':
+            case 'check_updates':
+                $this->handlePollingAction($action, $data);
+                break;
+
+            case 'get_conversations':
+            case 'get_conversation':
+                $this->handleConversationAction($action, $data);
+                break;
+
+            case 'get_messages':
+                $this->handleGetMessages();
+                break;
+
+            case 'get_alerts':
+                $this->handleGetAlerts();
+                break;
+
+            case 'get_stats':
+                $this->handleGetStats();
+                break;
+
+            case 'get_notes':
+                $this->handleGetNotes();
+                break;
+
+            case 'get_config':
+                $this->handleGetConfig();
+                break;
+
+            case 'get_groups':
+                $this->handleGetGroups();
                 break;
         }
     }
@@ -246,9 +287,6 @@ class TherapistDashboardController extends TherapyBaseController
             case 'set_risk':
                 $this->handleSetRisk();
                 break;
-            case 'set_status':
-                $this->handleSetStatus();
-                break;
         }
     }
 
@@ -306,69 +344,43 @@ class TherapistDashboardController extends TherapyBaseController
     private function handleToggleAI()
     {
         $uid = $this->validateTherapistOrFail();
-        $cid = $_POST['conversation_id'] ?? null;
-        $enabled = isset($_POST['enabled']) ? (bool)$_POST['enabled'] : true;
+        $cid = $this->requireConversationId($uid, true);
+        $enabled = isset($_POST['enabled'])
+            ? filter_var($_POST['enabled'], FILTER_VALIDATE_BOOLEAN)
+            : true;
 
-        if (!$cid) { $this->json(['error' => 'Conversation ID is required'], 400); return; }
-        if (!$this->model->canAccessConversation($uid, $cid)) { $this->json(['error' => 'Access denied'], 403); return; }
-
-        try {
+        $this->runJsonAction(function () use ($cid, $enabled) {
             $this->json(['success' => $this->model->toggleAI($cid, $enabled), 'ai_enabled' => $enabled]);
-        } catch (Exception $e) {
-            $this->json(['error' => $e->getMessage()], 500);
-        }
+        });
     }
 
     private function handleSetRisk()
     {
         $uid = $this->validateTherapistOrFail();
-        $cid = $_POST['conversation_id'] ?? null;
+        $cid = $this->requireConversationId($uid, true);
         $risk = $_POST['risk_level'] ?? null;
 
-        if (!$cid || !$risk) { $this->json(['error' => 'Conversation ID and risk level are required'], 400); return; }
+        if (!$risk) { $this->json(['error' => 'Risk level is required'], 400); return; }
         if (!in_array($risk, THERAPY_VALID_RISK_LEVELS)) { $this->json(['error' => 'Invalid risk level'], 400); return; }
-        if (!$this->model->canAccessConversation($uid, $cid)) { $this->json(['error' => 'Access denied'], 403); return; }
 
-        try {
+        $this->runJsonAction(function () use ($cid, $risk) {
             $this->json(['success' => $this->model->setRiskLevel($cid, $risk), 'risk_level' => $risk]);
-        } catch (Exception $e) {
-            $this->json(['error' => $e->getMessage()], 500);
-        }
-    }
-
-    private function handleSetStatus()
-    {
-        $uid = $this->validateTherapistOrFail();
-        $cid = $_POST['conversation_id'] ?? null;
-        $status = $_POST['status'] ?? null;
-
-        if (!$cid || !$status) { $this->json(['error' => 'Conversation ID and status are required'], 400); return; }
-        if (!in_array($status, THERAPY_VALID_STATUSES)) { $this->json(['error' => 'Invalid status'], 400); return; }
-        if (!$this->model->canAccessConversation($uid, $cid)) { $this->json(['error' => 'Access denied'], 403); return; }
-
-        try {
-            $this->json(['success' => $this->model->setStatus($cid, $status), 'status' => $status]);
-        } catch (Exception $e) {
-            $this->json(['error' => $e->getMessage()], 500);
-        }
+        });
     }
 
     private function handleAddNote()
     {
         $uid = $this->validateTherapistOrFail();
-        $cid = $_POST['conversation_id'] ?? null;
+        $cid = $this->requireConversationId($uid, true);
         $content = trim($_POST['content'] ?? '');
         $noteType = $_POST['note_type'] ?? THERAPY_NOTE_MANUAL;
 
-        if (!$cid || empty($content)) { $this->json(['error' => 'Conversation ID and content are required'], 400); return; }
-        if (!$this->model->canAccessConversation($uid, $cid)) { $this->json(['error' => 'Access denied'], 403); return; }
+        if (empty($content)) { $this->json(['error' => 'Content is required'], 400); return; }
 
-        try {
+        $this->runJsonAction(function () use ($cid, $uid, $content, $noteType) {
             $noteId = $this->model->addNote($cid, $uid, $content, $noteType);
             $this->json(['success' => (bool)$noteId, 'note_id' => $noteId]);
-        } catch (Exception $e) {
-            $this->json(['error' => $e->getMessage()], 500);
-        }
+        });
     }
 
     private function handleEditNote()
@@ -427,19 +439,14 @@ class TherapistDashboardController extends TherapyBaseController
     private function handleMarkMessagesRead()
     {
         $uid = $this->validateTherapistOrFail();
-        $cid = $_POST['conversation_id'] ?? null;
+        $cid = $this->requireConversationId($uid, true);
 
-        if (!$cid) { $this->json(['error' => 'Conversation ID is required'], 400); return; }
-        if (!$this->model->canAccessConversation($uid, $cid)) { $this->json(['error' => 'Access denied'], 403); return; }
-
-        try {
+        $this->runJsonAction(function () use ($cid, $uid) {
             $this->model->markMessagesRead($cid, $uid);
             $unreadCount = $this->model->getTherapyService()
                 ->getUnreadCountForUser($uid, true);
             $this->json(['success' => true, 'unread_count' => $unreadCount]);
-        } catch (Exception $e) {
-            $this->json(['error' => $e->getMessage()], 500);
-        }
+        });
     }
 
     /* ---- Drafts ---- */
@@ -447,18 +454,13 @@ class TherapistDashboardController extends TherapyBaseController
     private function handleCreateDraft()
     {
         $uid = $this->validateTherapistOrFail();
-        $cid = $_POST['conversation_id'] ?? null;
+        $cid = $this->requireConversationId($uid, true);
 
-        if (!$cid) { $this->json(['error' => 'Conversation ID is required'], 400); return; }
-        if (!$this->model->canAccessConversation($uid, $cid)) { $this->json(['error' => 'Access denied'], 403); return; }
-
-        try {
+        $this->runJsonAction(function () use ($cid, $uid) {
             $result = $this->model->generateDraft($cid, $uid);
             if (isset($result['error'])) { $this->json(['error' => $result['error']], 500); return; }
             $this->json($result);
-        } catch (Exception $e) {
-            $this->json(['error' => $e->getMessage()], 500);
-        }
+        });
     }
 
     private function handleUpdateDraft()
@@ -523,9 +525,12 @@ class TherapistDashboardController extends TherapyBaseController
         $this->validateTherapistOrFail();
         try {
             $filters = [];
-            if (isset($_GET['status'])) $filters['status'] = $_GET['status'];
-            if (isset($_GET['risk_level'])) $filters['risk_level'] = $_GET['risk_level'];
-            if (isset($_GET['group_id'])) $filters['group_id'] = (int)$_GET['group_id'];
+            $status = $_POST['status'] ?? $_GET['status'] ?? null;
+            $risk = $_POST['risk_level'] ?? $_GET['risk_level'] ?? null;
+            $gid = $_POST['group_id'] ?? $_GET['group_id'] ?? null;
+            if ($status) $filters['status'] = $status;
+            if ($risk) $filters['risk_level'] = $risk;
+            if ($gid) $filters['group_id'] = (int)$gid;
             $this->json(['conversations' => $this->model->getConversations($filters)]);
         } catch (Exception $e) {
             $this->json(['error' => $e->getMessage()], 500);
@@ -535,35 +540,26 @@ class TherapistDashboardController extends TherapyBaseController
     private function handleGetConversation()
     {
         $uid = $this->validateTherapistOrFail();
-        $cid = $_GET['conversation_id'] ?? null;
-        if (!$cid) { $this->json(['error' => 'Conversation ID is required'], 400); return; }
-        if (!$this->model->canAccessConversation($uid, $cid)) { $this->json(['error' => 'Access denied'], 403); return; }
+        $cid = $this->requireConversationId($uid, true);
 
-        try {
+        $this->runJsonAction(function () use ($cid, $uid) {
             $data = $this->model->loadFullConversation($cid, $uid);
             if (!$data) { $this->json(['error' => 'Conversation not found'], 404); return; }
             $this->json($data);
-        } catch (Exception $e) {
-            $this->json(['error' => $e->getMessage()], 500);
-        }
+        });
     }
 
     private function handleGetMessages()
     {
         $uid = $this->validateTherapistOrFail();
-        $cid = $_GET['conversation_id'] ?? null;
-        $afterId = isset($_GET['after_id']) ? (int)$_GET['after_id'] : null;
+        $cid = $this->requireConversationId($uid, true);
+        $afterId = isset($_POST['after_id']) ? (int)$_POST['after_id'] : (isset($_GET['after_id']) ? (int)$_GET['after_id'] : null);
 
-        if (!$cid) { $this->json(['error' => 'Conversation ID is required'], 400); return; }
-        if (!$this->model->canAccessConversation($uid, $cid)) { $this->json(['error' => 'Access denied'], 403); return; }
-
-        try {
+        $this->runJsonAction(function () use ($cid, $uid, $afterId) {
             $messages = $this->model->getMessages($cid, 100, $afterId);
             $this->model->markMessagesRead($cid, $uid);
             $this->json(['messages' => $messages, 'conversation_id' => $cid]);
-        } catch (Exception $e) {
-            $this->json(['error' => $e->getMessage()], 500);
-        }
+        });
     }
 
     private function handleGetAlerts()
@@ -571,8 +567,10 @@ class TherapistDashboardController extends TherapyBaseController
         $uid = $this->validateTherapistOrFail();
         try {
             $filters = [];
-            if (isset($_GET['unread_only']) && $_GET['unread_only']) $filters['unread_only'] = true;
-            if (isset($_GET['alert_type'])) $filters['alert_type'] = $_GET['alert_type'];
+            $unread = $_POST['unread_only'] ?? $_GET['unread_only'] ?? null;
+            $type = $_POST['alert_type'] ?? $_GET['alert_type'] ?? null;
+            if ($unread) $filters['unread_only'] = true;
+            if ($type) $filters['alert_type'] = $type;
             $this->json(['alerts' => $this->model->getAlerts($filters)]);
         } catch (Exception $e) {
             $this->json(['error' => $e->getMessage()], 500);
@@ -592,15 +590,11 @@ class TherapistDashboardController extends TherapyBaseController
     private function handleGetNotes()
     {
         $uid = $this->validateTherapistOrFail();
-        $cid = $_GET['conversation_id'] ?? null;
-        if (!$cid) { $this->json(['error' => 'Conversation ID is required'], 400); return; }
-        if (!$this->model->canAccessConversation($uid, $cid)) { $this->json(['error' => 'Access denied'], 403); return; }
+        $cid = $this->requireConversationId($uid, true);
 
-        try {
+        $this->runJsonAction(function () use ($cid) {
             $this->json(['notes' => $this->model->getNotes($cid)]);
-        } catch (Exception $e) {
-            $this->json(['error' => $e->getMessage()], 500);
-        }
+        });
     }
 
     private function handleGetUnreadCounts()
@@ -636,17 +630,13 @@ class TherapistDashboardController extends TherapyBaseController
     private function handleGenerateSummary()
     {
         $uid = $this->validateTherapistOrFail();
-        $cid = $_POST['conversation_id'] ?? null;
-        if (!$cid) { $this->json(['error' => 'Conversation ID is required'], 400); return; }
-        if (!$this->model->canAccessConversation($uid, $cid)) { $this->json(['error' => 'Access denied'], 403); return; }
+        $cid = $this->requireConversationId($uid, true);
 
-        try {
+        $this->runJsonAction(function () use ($cid, $uid) {
             $result = $this->model->generateSummary($cid, $uid);
             if (isset($result['error'])) { $this->json(['error' => $result['error']], 500); return; }
             $this->json($result);
-        } catch (Exception $e) {
-            $this->json(['error' => $e->getMessage()], 500);
-        }
+        });
     }
 
     private function handleInitializeConversation()
@@ -721,6 +711,32 @@ class TherapistDashboardController extends TherapyBaseController
     /* =========================================================================
      * VALIDATION
      * ========================================================================= */
+
+    private function requestValue($name)
+    {
+        return $_POST[$name] ?? $_GET[$name] ?? null;
+    }
+
+    private function requireConversationId($therapistId = null, $enforceAccess = false)
+    {
+        $conversationId = $this->requestValue('conversation_id');
+        if (!$conversationId) {
+            $this->json(['error' => 'Conversation ID is required'], 400);
+        }
+        if ($enforceAccess && $therapistId !== null && !$this->model->canAccessConversation($therapistId, $conversationId)) {
+            $this->json(['error' => 'Access denied'], 403);
+        }
+        return $conversationId;
+    }
+
+    private function runJsonAction($callback)
+    {
+        try {
+            $callback();
+        } catch (Exception $e) {
+            $this->json(['error' => $e->getMessage()], 500);
+        }
+    }
 
     private function validateTherapistOrFail()
     {
