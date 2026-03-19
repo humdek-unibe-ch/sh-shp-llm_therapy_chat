@@ -646,6 +646,11 @@ INSERT IGNORE INTO `fields` (`id`, `name`, `id_type`, `display`) VALUES
 (NULL, 'therapy_mode_indicator_ai', get_field_type_id('text'), '1'),
 (NULL, 'therapy_mode_indicator_human', get_field_type_id('text'), '1');
 
+-- Emergency resources text shown when danger is detected.
+-- Configurable per instance so deployments outside the US can set local hotlines.
+INSERT IGNORE INTO `fields` (`id`, `name`, `id_type`, `display`) VALUES
+(NULL, 'therapy_emergency_resources', get_field_type_id('markdown'), '1');
+
 -- Add enable_ai field: when false, AI is completely disabled and it becomes
 -- a pure therapist-patient chat (no AI involvement at all).
 INSERT IGNORE INTO `fields` (`id`, `name`, `id_type`, `display`) VALUES
@@ -675,6 +680,7 @@ INSERT IGNORE INTO `styles_fields` (`id_styles`, `id_fields`, `default_value`, `
 (get_style_id('therapyChat'), get_field_id('danger_keywords'), 'suicide,selbstmord,kill myself,mich umbringen,self-harm,selbstverletzung,harm myself,mir schaden,end my life,mein leben beenden,overdose,überdosis', 'Danger keywords'),
 (get_style_id('therapyChat'), get_field_id('danger_notification_emails'), '', 'Alert email addresses'),
 (get_style_id('therapyChat'), get_field_id('danger_blocked_message'), 'I noticed some concerning content in your message. While I want to help, please consider reaching out to a trusted person or crisis hotline. Your well-being is important.', 'Message shown when danger detected'),
+(get_style_id('therapyChat'), get_field_id('therapy_emergency_resources'), 'Emergency Resources:\n• Contact your therapist or healthcare provider immediately\n• Call emergency services (112 in Europe, 911 in the US, or your local emergency number)\n• Contact a crisis hotline:\n  - Die Dargebotene Hand: 143 (Switzerland)\n  - Telefonseelsorge: 0800 111 0 111 (Germany)\n  - National Suicide Prevention Lifeline: 988 (US)\n  - Crisis Text Line: Text HOME to 741741 (US)\n  - International: Find local resources at befrienders.org\n\nYour safety is the top priority. Please seek professional help right away.', 'Emergency resources text appended to safety messages when danger is detected. Customize with local hotline numbers and resources for your deployment region. Supports markdown formatting and multilingual translations.'),
 
 -- Therapy-specific labels
 (get_style_id('therapyChat'), get_field_id('therapy_ai_label'), 'AI Assistant', 'Label for AI messages'),

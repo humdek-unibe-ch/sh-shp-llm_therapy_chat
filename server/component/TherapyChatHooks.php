@@ -25,13 +25,27 @@ require_once __DIR__ . "/../constants/TherapyLookups.php";
  */
 class TherapyChatHooks extends BaseHooks
 {
-    /** @var TherapyMessageService */
-    private $messageService;
+    /** @var TherapyMessageService|null Lazy-initialized */
+    private $messageService = null;
 
     public function __construct($services, $params = array())
     {
         parent::__construct($services, $params);
-        $this->messageService = new TherapyMessageService($services);
+    }
+
+    /**
+     * Get the TherapyMessageService instance (lazy-initialized).
+     * Avoids instantiating the full service chain on every request;
+     * only created when a hook actually needs it.
+     *
+     * @return TherapyMessageService
+     */
+    private function getMessageService()
+    {
+        if ($this->messageService === null) {
+            $this->messageService = new TherapyMessageService($this->services);
+        }
+        return $this->messageService;
     }
 
     /* =========================================================================
@@ -56,8 +70,8 @@ class TherapyChatHooks extends BaseHooks
         // Don't show in CMS admin
         if ($this->isCmsPage()) return;
 
-        $isSubject = $this->messageService->isSubject($userId);
-        $isTherapist = $this->messageService->isTherapist($userId);
+        $isSubject = $this->getMessageService()->isSubject($userId);
+        $isTherapist = $this->getMessageService()->isTherapist($userId);
 
         // Additional group check from config
         $subjectGroupId = $this->getConfigValue('therapy_chat_subject_group');
@@ -78,42 +92,21 @@ class TherapyChatHooks extends BaseHooks
         $subjectPageUrl = $this->getPageUrl($subjectPageId, 'home');
         $therapistPageUrl = $this->getPageUrl($therapistPageId, 'home');
 
-        // Check if floating modal mode is enabled for subjects
-        $enableFloatingModal = false;
-        $floatingModalConfig = '';
-        if ($isSubject) {
-            $enableFloatingModal = $this->isFloatingChatModalEnabled();
-            if ($enableFloatingModal) {
-                $floatingModalConfig = $this->buildFloatingModalConfig($userId, $subjectPageUrl);
-            }
-        }
-
+        // Determine chat URL and title based on role
         if ($isTherapist) {
-            // For therapists: count alerts + patient messages only (exclude AI)
-            $unreadCount = $this->messageService->getUnreadAlertCount($userId)
-                + $this->messageService->getUnreadCountForUser($userId, true);
+            $unreadCount = $this->getMessageService()->getUnreadAlertCount($userId)
+                + $this->getMessageService()->getUnreadCountForUser($userId, true);
             $chatUrl = $therapistPageUrl;
             $iconTitle = 'Therapist Dashboard';
         } else {
-            $unreadCount = $this->messageService->getUnreadCountForUser($userId);
+            $unreadCount = $this->getMessageService()->getUnreadCountForUser($userId);
             $chatUrl = $subjectPageUrl;
             $iconTitle = 'Therapy Chat';
         }
 
-        // Config
         $icon = $this->getConfigValue('therapy_chat_floating_icon', 'fa-comments');
-        $position = $this->getConfigValue('therapy_chat_floating_position', 'bottom-right');
-        $label = $this->getConfigValue('therapy_chat_floating_label', '');
 
-        $badgeClass = $unreadCount > 0 ? 'badge-danger' : 'badge-secondary';
-        $badgeHtml = $unreadCount > 0 ? "<span class=\"badge $badgeClass badge-pill position-absolute therapy-chat-badge\">$unreadCount</span>" : "<span class=\"badge badge-secondary badge-pill position-absolute therapy-chat-badge\" style=\"display:none\"></span>";
-        $positionCss = $this->getPositionCss($position);
-
-        // Build polling config for the floating icon JS (works for both modes).
-        // The JS will poll check_updates (subject) or get_unread_counts (therapist)
-        // to keep the badge count fresh without React.
-        // For therapists, use the therapistDashboard section ID (polls that controller).
-        // For subjects, use the therapyChat section ID.
+        // Build polling config (shared by both floating and profile icon modes)
         $pollSectionId = $isTherapist
             ? $this->getSectionIdForStyle('therapistDashboard')
             : $this->getTherapyChatSectionId();
@@ -121,8 +114,35 @@ class TherapyChatHooks extends BaseHooks
             'role' => $isTherapist ? 'therapist' : 'subject',
             'baseUrl' => $chatUrl,
             'sectionId' => $pollSectionId,
-            'interval' => 3000 // 3 seconds
+            'interval' => 3000
         ));
+
+        // Check if floating mode is enabled
+        $isFloatingEnabled = $this->isFloatingChatModalEnabled();
+
+        if (!$isFloatingEnabled) {
+            // Non-floating mode: render a small inline icon next to the profile
+            $badgeHtml = $unreadCount > 0
+                ? '<span class="badge badge-danger badge-pill therapy-chat-badge" style="font-size:0.6rem;position:absolute;top:-2px;right:-4px;">' . $unreadCount . '</span>'
+                : '<span class="badge badge-secondary badge-pill therapy-chat-badge" style="display:none;font-size:0.6rem;position:absolute;top:-2px;right:-4px;"></span>';
+            include __DIR__ . '/TherapyChatHooks/tpl/profile_chat_icon.php';
+            return;
+        }
+
+        // Floating mode: render the full floating button + modal panel
+        $enableFloatingModal = false;
+        $floatingModalConfig = '';
+        if ($isSubject) {
+            $enableFloatingModal = true;
+            $floatingModalConfig = $this->buildFloatingModalConfig($userId, $subjectPageUrl);
+        }
+
+        $position = $this->getConfigValue('therapy_chat_floating_position', 'bottom-right');
+        $label = $this->getConfigValue('therapy_chat_floating_label', '');
+
+        $badgeClass = $unreadCount > 0 ? 'badge-danger' : 'badge-secondary';
+        $badgeHtml = $unreadCount > 0 ? "<span class=\"badge $badgeClass badge-pill position-absolute therapy-chat-badge\">$unreadCount</span>" : "<span class=\"badge badge-secondary badge-pill position-absolute therapy-chat-badge\" style=\"display:none\"></span>";
+        $positionCss = $this->getPositionCss($position);
 
         include __DIR__ . '/TherapyChatHooks/tpl/floating_chat_icon.php';
     }
@@ -236,8 +256,8 @@ class TherapyChatHooks extends BaseHooks
         if (!$targetUserId) return;
 
         // Get all groups and current assignments
-        $allGroups = $this->messageService->getAllGroups();
-        $assignedGroups = $this->messageService->getTherapistAssignedGroups($targetUserId);
+        $allGroups = $this->getMessageService()->getAllGroups();
+        $assignedGroups = $this->getMessageService()->getTherapistAssignedGroups($targetUserId);
         $assignedGroupIds = array_map(function ($g) {
             return (int)$g['id_groups'];
         }, $assignedGroups);
@@ -271,6 +291,12 @@ class TherapyChatHooks extends BaseHooks
 
     /**
      * Load JS scripts for therapy chat LLM.
+     *
+     * Only loads the heavy React UMD bundle when the current page actually
+     * contains a therapyChat or therapistDashboard section, or the user is a
+     * subject/therapist who will see the floating chat icon.
+     * The lightweight floating-icon poller is loaded whenever a floating icon
+     * is needed; the assignment helper only on admin user pages.
      */
     public function loadTherapyChatLLMJs($args = null)
     {
@@ -278,13 +304,83 @@ class TherapyChatHooks extends BaseHooks
         if (!is_array($includes)) {
             $includes = array();
         }
+
         $router = $this->services->get_router();
+
+        // Admin user page: lightweight assignment helper only
         if ($router->is_active('userSelect') || $router->is_active('userUpdate')) {
             $includes[] = '/server/plugins/sh-shp-llm_therapy_chat/js/ext/therapy_assignments.js';
         }
-        $includes[] = '/server/plugins/sh-shp-llm_therapy_chat/js/ext/therapy-chat.umd.js';
-        $includes[] = '/server/plugins/sh-shp-llm_therapy_chat/js/ext/therapy_chat_floating.js';
+
+        if ($this->currentPageNeedsTherapyJs()) {
+            $includes[] = '/server/plugins/sh-shp-llm_therapy_chat/js/ext/therapy-chat.umd.js';
+            $includes[] = '/server/plugins/sh-shp-llm_therapy_chat/js/ext/therapy_chat_floating.js';
+        }
+
         return $includes;
+    }
+
+    /**
+     * Determine whether the current request requires therapy chat JS.
+     *
+     * Returns true when:
+     *  - The page contains a therapyChat or therapistDashboard section, OR
+     *  - The logged-in user is a subject or therapist (needs floating icon + poller).
+     *
+     * @return bool
+     */
+    private function currentPageNeedsTherapyJs()
+    {
+        if ($this->currentPageHasTherapyComponent()) {
+            return true;
+        }
+
+        $userId = $_SESSION['id_user'] ?? null;
+        if (!$userId) {
+            return false;
+        }
+
+        if ($this->isCmsPage()) {
+            return false;
+        }
+
+        $subjectGroupId = $this->getConfigValue('therapy_chat_subject_group');
+        $therapistGroupId = $this->getConfigValue('therapy_chat_therapist_group');
+
+        if ($subjectGroupId && $this->isUserInGroup($userId, $subjectGroupId)) {
+            return true;
+        }
+        if ($therapistGroupId && $this->isUserInGroup($userId, $therapistGroupId)) {
+            return true;
+        }
+
+        return false;
+    }
+
+    /**
+     * Check if the current page has a section using therapyChat or therapistDashboard style.
+     *
+     * @return bool
+     */
+    private function currentPageHasTherapyComponent()
+    {
+        try {
+            $router = $this->services->get_router();
+            $pageKeyword = $router->route['name'] ?? null;
+            if (!$pageKeyword) {
+                return false;
+            }
+            $sql = "SELECT COUNT(*) as cnt
+                    FROM sections sec
+                    INNER JOIN pages_sections ps ON ps.id_sections = sec.id
+                    INNER JOIN pages p ON ps.id_pages = p.id
+                    INNER JOIN styles st ON sec.id_styles = st.id
+                    WHERE p.keyword = ? AND st.name IN ('therapyChat', 'therapistDashboard')";
+            $result = $this->db->query_db_first($sql, array($pageKeyword));
+            return $result && (int)$result['cnt'] > 0;
+        } catch (Exception $e) {
+            return false;
+        }
     }
 
     /* =========================================================================

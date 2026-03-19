@@ -66,43 +66,49 @@ class TherapyChatService extends LlmService
      */
     public function getOrCreateTherapyConversation($userId, $sectionId = null, $mode = THERAPY_MODE_AI_HYBRID, $model = null, $aiEnabled = true, $autoStartContext = null)
     {
-        // Try to find existing active therapy conversation for this user
         $existing = $this->getTherapyConversationBySubject($userId);
-
         if ($existing) {
             return $existing;
         }
 
-        // Get LLM config for model
         $config = $this->getLlmConfig();
         $modelToUse = $model ?: $config['llm_default_model'];
 
-        // Create base LLM conversation using parent method
-        $conversationId = $this->createConversation(
-            $userId,
-            'Therapy Chat',
-            $modelToUse,
-            $config['llm_temperature'],
-            $config['llm_max_tokens'],
-            $sectionId
-        );
+        try {
+            $this->db->begin_transaction();
 
-        if (!$conversationId) {
-            return null;
-        }
+            $conversationId = $this->createConversation(
+                $userId,
+                'Therapy Chat',
+                $modelToUse,
+                $config['llm_temperature'],
+                $config['llm_max_tokens'],
+                $sectionId
+            );
 
-        $therapyMetaId = $this->createTherapyMetadata(
-            $conversationId, $mode, $aiEnabled, $userId, 'Therapy conversation created'
-        );
+            if (!$conversationId) {
+                $this->db->rollback();
+                return null;
+            }
 
-        if (!$therapyMetaId) {
+            $therapyMetaId = $this->createTherapyMetadata(
+                $conversationId, $mode, $aiEnabled, $userId, 'Therapy conversation created'
+            );
+
+            if (!$therapyMetaId) {
+                $this->db->rollback();
+                return null;
+            }
+
+            $this->db->commit();
+        } catch (Exception $e) {
+            $this->db->rollback();
+            $this->logError('Failed to create therapy conversation', ['error' => $e->getMessage()]);
             return null;
         }
 
         $conversation = $this->getTherapyConversation($therapyMetaId);
 
-        // If auto-start context is provided, insert it as the first message.
-        // This is a plain text insert — no LLM calls.
         if ($conversation && !empty($autoStartContext)) {
             $this->sendAutoStartMessage($conversation, $autoStartContext, $userId);
         }
@@ -244,14 +250,19 @@ class TherapyChatService extends LlmService
             $params[] = $filters['group_id'];
         }
 
+        $params[] = THERAPY_RISK_CRITICAL;
+        $params[] = THERAPY_RISK_HIGH;
+        $params[] = THERAPY_RISK_MEDIUM;
+        $params[] = THERAPY_RISK_LOW;
+
         $sql .= " GROUP BY u.id
                    ORDER BY
                     no_conversation ASC,
                     CASE vtc.risk_level
-                        WHEN '" . THERAPY_RISK_CRITICAL . "' THEN 1
-                        WHEN '" . THERAPY_RISK_HIGH . "' THEN 2
-                        WHEN '" . THERAPY_RISK_MEDIUM . "' THEN 3
-                        WHEN '" . THERAPY_RISK_LOW . "' THEN 4
+                        WHEN ? THEN 1
+                        WHEN ? THEN 2
+                        WHEN ? THEN 3
+                        WHEN ? THEN 4
                         ELSE 5
                     END ASC,
                     vtc.updated_at DESC,
@@ -277,47 +288,54 @@ class TherapyChatService extends LlmService
      */
     public function initializeConversationForPatient($patientId, $therapistId, $sectionId = null, $mode = THERAPY_MODE_AI_HYBRID, $model = null, $aiEnabled = true, $autoStartContext = null)
     {
-        // Check if patient already has an active conversation
         $existing = $this->getTherapyConversationBySubject($patientId);
         if ($existing) {
             return $existing;
         }
 
-        // Verify therapist has access to this patient
         if (!$this->canTherapistAccessPatient($therapistId, $patientId)) {
             return null;
         }
 
-        // Get LLM config for model
         $config = $this->getLlmConfig();
         $modelToUse = $model ?: $config['llm_default_model'];
 
-        // Create base LLM conversation owned by the patient
-        $conversationId = $this->createConversation(
-            $patientId,
-            'Therapy Chat',
-            $modelToUse,
-            $config['llm_temperature'],
-            $config['llm_max_tokens'],
-            $sectionId
-        );
+        try {
+            $this->db->begin_transaction();
 
-        if (!$conversationId) {
-            return null;
-        }
+            $conversationId = $this->createConversation(
+                $patientId,
+                'Therapy Chat',
+                $modelToUse,
+                $config['llm_temperature'],
+                $config['llm_max_tokens'],
+                $sectionId
+            );
 
-        $therapyMetaId = $this->createTherapyMetadata(
-            $conversationId, $mode, $aiEnabled, $therapistId,
-            'Therapy conversation initialized by therapist for patient #' . $patientId
-        );
+            if (!$conversationId) {
+                $this->db->rollback();
+                return null;
+            }
 
-        if (!$therapyMetaId) {
+            $therapyMetaId = $this->createTherapyMetadata(
+                $conversationId, $mode, $aiEnabled, $therapistId,
+                'Therapy conversation initialized by therapist for patient #' . $patientId
+            );
+
+            if (!$therapyMetaId) {
+                $this->db->rollback();
+                return null;
+            }
+
+            $this->db->commit();
+        } catch (Exception $e) {
+            $this->db->rollback();
+            $this->logError('Failed to initialize conversation for patient', ['error' => $e->getMessage()]);
             return null;
         }
 
         $conversation = $this->getTherapyConversation($therapyMetaId);
 
-        // If auto-start context is provided, send an initial system message
         if ($conversation && !empty($autoStartContext)) {
             $this->sendAutoStartMessage($conversation, $autoStartContext, $therapistId);
         }

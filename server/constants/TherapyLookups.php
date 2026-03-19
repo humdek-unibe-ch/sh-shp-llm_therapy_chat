@@ -245,4 +245,18 @@ define('THERAPY_DEFAULT_MAX_TOKENS', 2048);
 
 /** Default LLM temperature */
 define('THERAPY_DEFAULT_TEMPERATURE', 0.7);
+
+/** Default emergency resources text (used when CMS field is empty) */
+define('THERAPY_DEFAULT_EMERGENCY_RESOURCES',
+    "Emergency Resources:\n" .
+    "• Contact your therapist or healthcare provider immediately\n" .
+    "• Call emergency services (112 in Europe, 911 in the US, or your local emergency number)\n" .
+    "• Contact a crisis hotline:\n" .
+    "  - Die Dargebotene Hand: 143 (Switzerland)\n" .
+    "  - Telefonseelsorge: 0800 111 0 111 (Germany)\n" .
+    "  - National Suicide Prevention Lifeline: 988 (US)\n" .
+    "  - Crisis Text Line: Text HOME to 741741 (US)\n" .
+    "  - International: Find local resources at befrienders.org\n\n" .
+    "Your safety is the top priority. Please seek professional help right away."
+);
 ?>

@@ -1,5 +1,26 @@
 # Changelog
 
+## v1.0.1 (2026-03-19) - Bug Fixes
+
+### Fixed
+- **`callLlmApi` strict mode error in therapist dashboard**: `generateDraft()` and `generateSummary()` in `TherapistDashboardDraftHelper.php` were calling `callLlmApi()` without the required `log_options` parameter (introduced in `sh-shp-llm` v1.1.0 strict logging). Both methods now:
+  1. Get/create the therapist tools conversation **before** the API call
+  2. Log the user prompt via `addMessage()`
+  3. Pass `log_options` with `conversation_id` to `callLlmApi()` which auto-logs the assistant response
+  4. Update the auto-logged message with extracted human-readable display content
+  - This also removes duplicate manual `addMessage()` calls for the assistant response that would have caused double messages
+  - `createSummaryConversation()` is no longer called from `generateSummary()` since `callLlmApi()` handles message logging
+- **`processAIResponse()` in `TherapyMessageService`**: Updated to pass `log_options` to `callLlmApi()` and use `logged_message_id` from the response to update the content with display text, preventing duplicate messages
+- **Therapy chat icon not visible when floating disabled**: `outputTherapyChatIcon()` now branches into two distinct rendering modes:
+  - **Floating OFF** (`enable_floating_chat` disabled): renders a compact inline `<a>` icon next to the user profile via `profile_chat_icon.php`. The link has `id="therapy-chat-floating-link"` and `data-poll-config` so `therapy_chat_floating.js` can find it for badge polling
+  - **Floating ON**: renders the full floating button + modal panel as before
+- **Polling for unread messages lost on non-floating icon**: The `$pollConfig` JSON is now computed before the floating/non-floating branch so both rendering modes include it. The `profile_chat_icon.php` template includes `data-poll-config` and the `therapy-chat-floating-link` ID, enabling `therapy_chat_floating.js` to poll and update the badge
+- **SQL `LIMIT`/`OFFSET` quoting error**: Fixed `TherapyChatService::getTherapyConversationsByTherapist()` where PDO quoted integer LIMIT/OFFSET values as strings. Now cast to `(int)` and concatenated directly
+- **Missing `pages_sections` join**: Fixed `TherapyChatHooks::currentPageHasTherapyComponent()` query that incorrectly joined `sections` directly with `pages` on `sec.id_pages`, missing the required `pages_sections` join table
+
+### Added
+- **`profile_chat_icon.php` template**: New template for the non-floating inline therapy chat icon, rendered next to the user profile in the navigation bar
+
 ## v1.0.0 (2026-02-13) - Initial Release
 
 ### Breaking Changes

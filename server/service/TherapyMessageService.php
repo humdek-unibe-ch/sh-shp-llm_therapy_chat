@@ -121,7 +121,6 @@ class TherapyMessageService extends TherapyAlertService
         $role = $this->mapSenderTypeToRole($senderType);
         $model = ($senderType === self::SENDER_AI) ? $conversation['model'] : null;
 
-        // Build sent_context with sender info
         $sentContext = array(
             'therapy_sender_type' => $senderType,
             'therapy_sender_id' => $senderId
@@ -133,38 +132,38 @@ class TherapyMessageService extends TherapyAlertService
         $llmConversationId = $conversation['id_llmConversations'];
 
         try {
+            $this->db->begin_transaction();
+
             $messageId = $this->addMessage(
                 $llmConversationId,
                 $role,
                 $content,
-                null, // attachments
+                null,
                 $model,
-                null, // tokens
-                null, // raw response
+                null,
+                null,
                 $sentContext
             );
+
+            if ($senderType === self::SENDER_THERAPIST) {
+                $this->updateLastSeen($conversationId, 'therapist');
+            } elseif ($senderType === self::SENDER_SUBJECT) {
+                $this->updateLastSeen($conversationId, 'subject');
+            }
+
+            $taggedTherapistIds = array();
+            if ($senderType === self::SENDER_SUBJECT) {
+                $taggedTherapistIds = $this->processTagsInMessage($messageId, $conversation, $content);
+            }
+
+            $aiEnabled = !empty($conversation['ai_enabled']);
+            $this->createMessageRecipients($messageId, $conversation, $senderType, $senderId, $aiEnabled, $taggedTherapistIds);
+
+            $this->db->commit();
         } catch (Exception $e) {
+            $this->db->rollback();
             return array('error' => 'Failed to save message: ' . $e->getMessage());
         }
-
-        // Update last seen
-        if ($senderType === self::SENDER_THERAPIST) {
-            $this->updateLastSeen($conversationId, 'therapist');
-        } elseif ($senderType === self::SENDER_SUBJECT) {
-            $this->updateLastSeen($conversationId, 'subject');
-        }
-
-        // Process @mentions BEFORE creating recipients so we know which
-        // therapists were explicitly tagged (affects who gets notified).
-        $taggedTherapistIds = array();
-        if ($senderType === self::SENDER_SUBJECT) {
-            $taggedTherapistIds = $this->processTagsInMessage($messageId, $conversation, $content);
-        }
-
-        // Create recipients — pass AI state + tagged IDs so the method can
-        // decide which therapists (if any) should see the message as unread.
-        $aiEnabled = !empty($conversation['ai_enabled']);
-        $this->createMessageRecipients($messageId, $conversation, $senderType, $senderId, $aiEnabled, $taggedTherapistIds);
 
         return array(
             'success' => true,
@@ -329,46 +328,38 @@ class TherapyMessageService extends TherapyAlertService
         }
 
         try {
-            // Call LLM API directly — context already includes schema/safety
-            // instructions injected by the caller (TherapyChatModel).
-            $response = $this->callLlmApi($contextMessages, $model, $temperature, $maxTokens);
+            $llmConversationId = $conversation['id_llmConversations'];
+
+            // callLlmApi auto-logs the assistant message to llmMessages.
+            // We pass the conversation_id so the message is stored, then
+            // update the content with the human-readable display text.
+            $response = $this->callLlmApi($contextMessages, $model, $temperature, $maxTokens, [
+                'conversation_id' => $llmConversationId,
+                'sent_context' => $contextMessages,
+                'is_validated' => true
+            ]);
 
             if (!$response || empty($response['content'])) {
                 return array('error' => 'No response from AI');
             }
 
-            // Extract displayable text from structured JSON responses.
-            // When LlmResponseService schema is injected, the LLM returns JSON
-            // with content.text_blocks[]. We need the human-readable text for
-            // the message, while the raw JSON is kept in the response metadata.
             $rawContent = $response['content'];
             $displayContent = $this->extractDisplayContent($rawContent);
 
-            $llmConversationId = $conversation['id_llmConversations'];
+            // callLlmApi already saved the raw assistant message via
+            // addAssistantMessageFromApiResponse(). Update the stored
+            // content with the extracted display text so the chat shows
+            // human-readable text instead of raw JSON.
+            $messageId = $response['logged_message_id'] ?? null;
+            if ($messageId) {
+                $this->updateMessage($messageId, [
+                    'content' => $displayContent
+                ]);
+            }
 
-            // Build sent_context: full context messages sent to the LLM.
-            // This matches the parent sh-shp-llm plugin's behavior where
-            // LlmContextService::getContextForTracking() returns the full
-            // context array. Stored as JSON in llmMessages.sent_context
-            // for debugging and audit purposes.
-            $sentContext = $contextMessages;
-
-            $messageId = $this->addMessage(
-                $llmConversationId,
-                'assistant',
-                $displayContent,
-                null,
-                $model,
-                $response['tokens_used'] ?? null,
-                $response,
-                $sentContext,
-                $response['reasoning'] ?? null,
-                true,
-                $response['request_payload'] ?? null
-            );
-
-            // Create recipient for patient
-            $this->createMessageRecipients($messageId, $conversation, self::SENDER_AI, 0);
+            if ($messageId) {
+                $this->createMessageRecipients($messageId, $conversation, self::SENDER_AI, 0);
+            }
 
             return array(
                 'success' => true,
@@ -400,32 +391,21 @@ class TherapyMessageService extends TherapyAlertService
             return $content;
         }
 
-        // Check for safety protocol response from base plugin
         if (isset($decoded['safety']) && isset($decoded['safety']['is_safe']) && !$decoded['safety']['is_safe']) {
             $safetyText = $decoded['safety']['safety_message'] ?? 'Safety protocol activated due to detected concerns.';
 
-            // Check danger level
             $dangerLevel = $decoded['safety']['danger_level'] ?? '';
             if ($dangerLevel === 'emergency') {
                 $safetyText .= "\n\nEMERGENCY: Immediate professional help is required.";
             }
 
-            // Add emergency resources
-            $safetyText .= "\n\nEmergency Resources:\n" .
-                "• Contact your therapist or healthcare provider immediately\n" .
-                "• Call emergency services (911 in the US, or your local emergency number)\n" .
-                "• Contact a crisis hotline:\n" .
-                "  - National Suicide Prevention Lifeline: 988 (US)\n" .
-                "  - Crisis Text Line: Text HOME to 741741 (US)\n" .
-                "  - International: Find local resources at befrienders.org\n\n" .
-                "Your safety is the top priority. Please seek professional help right away.";
+            $emergencyResources = $this->getEmergencyResourcesText();
+            $safetyText .= "\n\n" . $emergencyResources;
 
             return $safetyText;
         }
 
-        // Standard response: extract from text_blocks
         if (isset($decoded['content']['text_blocks'])) {
-            // Extract text from text_blocks
             $textParts = array();
             foreach ($decoded['content']['text_blocks'] as $block) {
                 if (isset($block['content']) && is_string($block['content'])) {
@@ -439,6 +419,41 @@ class TherapyMessageService extends TherapyAlertService
         }
 
         return $content;
+    }
+
+    /**
+     * Load the emergency resources text from the therapyChat CMS field.
+     * Falls back to a built-in default when no CMS value is configured.
+     *
+     * @return string
+     */
+    private function getEmergencyResourcesText()
+    {
+        static $cached = null;
+        if ($cached !== null) {
+            return $cached;
+        }
+
+        try {
+            $sql = "SELECT sft.content
+                    FROM sections_fields_translation sft
+                    INNER JOIN sections s ON sft.id_sections = s.id
+                    INNER JOIN styles st ON s.id_styles = st.id
+                    INNER JOIN fields f ON sft.id_fields = f.id
+                    WHERE st.name = 'therapyChat' AND f.name = 'therapy_emergency_resources'
+                    AND sft.content IS NOT NULL AND sft.content != ''
+                    LIMIT 1";
+            $result = $this->db->query_db_first($sql);
+            if ($result && !empty($result['content'])) {
+                $cached = $result['content'];
+                return $cached;
+            }
+        } catch (Exception $e) {
+            // fall through to default
+        }
+
+        $cached = THERAPY_DEFAULT_EMERGENCY_RESOURCES;
+        return $cached;
     }
 
     /**
