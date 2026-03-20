@@ -3,13 +3,13 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
 
-require_once __DIR__ . "/../../../../component/BaseHooks.php";
+require_once __DIR__ . "/TherapyPluginHooksBase.php";
 require_once __DIR__ . "/../service/promptlab/TherapyPromptProfileMapper.php";
 require_once __DIR__ . "/../service/promptlab/TherapyPromptCompanionFields.php";
 require_once __DIR__ . "/../service/promptlab/TherapyPromptPlaygroundPolicy.php";
 require_once __DIR__ . "/../service/promptlab/TherapyDatasetProfileMapper.php";
 
-class TherapyPromptLabHooks extends BaseHooks
+class TherapyPromptLabHooks extends TherapyPluginHooksBase
 {
     /** @var TherapyPromptProfileMapper */
     private $profile_mapper;
@@ -102,5 +102,6 @@ class TherapyPromptLabHooks extends BaseHooks
         $mapped = $this->dataset_mapper->resolveConversationImportRuntimeProfile((string)($args['execution_profile'] ?? ''));
         return $mapped !== '' ? $mapped : $res;
     }
+
 }
 ?>

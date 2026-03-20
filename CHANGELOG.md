@@ -2,6 +2,18 @@
 
 All notable changes to the **sh-shp-llm_therapy_chat** plugin are documented in this file.
 
+## [1.1.1] - 2026-03-20
+
+### Fixed
+
+- Fixed CMS plugin-version rendering when a plugin exposes multiple `*Hooks.php` classes.
+- Ensured all therapy hook classes resolve the same plugin DB version (`llm_therapy_chat`) for `version` component output.
+
+### Changed
+
+- Introduced shared hook base class `server/component/TherapyPluginHooksBase.php`.
+- Refactored `TherapyChatHooks` and `TherapyPromptLabHooks` to inherit from the shared therapy base instead of duplicating plugin-version logic.
+
 ## [1.1.0] - 2026-03-16
 
 ### Prompt asset externalization

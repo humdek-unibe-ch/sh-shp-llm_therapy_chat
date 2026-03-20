@@ -5,7 +5,7 @@
 ?>
 <?php
 
-require_once __DIR__ . "/../../../../component/BaseHooks.php";
+require_once __DIR__ . "/TherapyPluginHooksBase.php";
 require_once __DIR__ . "/../../../../component/style/BaseStyleComponent.php";
 require_once __DIR__ . "/../service/TherapyMessageService.php";
 require_once __DIR__ . "/../constants/TherapyLookups.php";
@@ -23,7 +23,7 @@ require_once __DIR__ . "/../constants/TherapyLookups.php";
  *
  * @package LLM Therapy Chat Plugin
  */
-class TherapyChatHooks extends BaseHooks
+class TherapyChatHooks extends TherapyPluginHooksBase
 {
     /** @var TherapyMessageService|null Lazy-initialized */
     private $messageService = null;
@@ -802,12 +802,5 @@ class TherapyChatHooks extends BaseHooks
         }
     }
 
-    /**
-     * Get the plugin version
-     */
-    public function get_plugin_db_version($plugin_name = 'llm_therapy_chat')
-    {
-        return parent::get_plugin_db_version($plugin_name);
-    }
 }
 ?>
