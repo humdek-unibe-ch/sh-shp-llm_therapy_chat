@@ -2,6 +2,10 @@
 
 All notable changes to the **sh-shp-llm_therapy_chat** plugin are documented in this file.
 
+## [1.1.2] - 2026-03-24 - Not released yet
+
+ - Fixed loading floaitng mod icon for therepy chats
+
 ## [1.1.1] - 2026-03-20
 
 ### Fixed

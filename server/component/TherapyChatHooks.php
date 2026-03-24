@@ -117,15 +117,6 @@ class TherapyChatHooks extends TherapyPluginHooksBase
         ));
 
         if ($this->isFloatingButtonEnabled()) {
-            $enableFloatingModal = false;
-            $floatingModalConfig = '';
-            if ($isSubject) {
-                $enableFloatingModal = $this->isFloatingChatModalEnabled();
-                if ($enableFloatingModal) {
-                    $floatingModalConfig = $this->buildFloatingModalConfig($userId, $subjectPageUrl);
-                }
-            }
-
             $badgeClass = $unreadCount > 0 ? 'badge-danger' : 'badge-secondary';
             $badgeHtml = $unreadCount > 0 ? "<span class=\"badge $badgeClass badge-pill position-absolute therapy-chat-badge\">$unreadCount</span>" : "<span class=\"badge badge-secondary badge-pill position-absolute therapy-chat-badge\" style=\"display:none\"></span>";
             $positionCss = $this->getPositionCss($position);
