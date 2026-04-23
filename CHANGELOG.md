@@ -4,7 +4,18 @@ All notable changes to the **sh-shp-llm_therapy_chat** plugin are documented in 
 
 ## [1.1.2] - 2026-03-24 - Not released yet
 
- - Fixed loading floaitng mod icon for therepy chats
+### Fixed
+
+- Fixed loading the floating-mode icon for therapy chats.
+- **Fatal `Call to a member function isSubject() on null` on mobile page
+  responses.** `TherapyChatHooks::addTherapyChatToMobileResponse()` and the
+  surrounding notification / role-detection helpers accessed
+  `$this->messageService` directly, but the property is lazily instantiated
+  via `getMessageService()`. On requests where the lazy getter had not run
+  yet (typical for mobile page responses) the property was `null` and the
+  first `isSubject()` call crashed the whole mobile response. All eight
+  call sites in `TherapyChatHooks.php` now consistently go through
+  `getMessageService()` so the service is guaranteed to be initialized.
 
 ## [1.1.1] - 2026-03-20
 

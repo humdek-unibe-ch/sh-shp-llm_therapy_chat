@@ -91,12 +91,12 @@ class TherapyChatHooks extends TherapyPluginHooksBase
         $therapistPageUrl = $this->getPageUrl($therapistPageId, 'home');
 
         if ($isTherapist) {
-            $unreadCount = $this->messageService->getUnreadAlertCount($userId)
-                + $this->messageService->getUnreadCountForUser($userId, true);
+            $unreadCount = $this->getMessageService()->getUnreadAlertCount($userId)
+                + $this->getMessageService()->getUnreadCountForUser($userId, true);
             $chatUrl = $therapistPageUrl;
             $iconTitle = 'Therapist Dashboard';
         } else {
-            $unreadCount = $this->messageService->getUnreadCountForUser($userId);
+            $unreadCount = $this->getMessageService()->getUnreadCountForUser($userId);
             $chatUrl = $subjectPageUrl;
             $iconTitle = 'Therapy Chat';
         }
@@ -237,8 +237,8 @@ class TherapyChatHooks extends TherapyPluginHooksBase
         }
 
         try {
-            $isSubject = $this->messageService->isSubject($userId);
-            $isTherapist = $this->messageService->isTherapist($userId);
+            $isSubject = $this->getMessageService()->isSubject($userId);
+            $isTherapist = $this->getMessageService()->isTherapist($userId);
 
             // Group membership check
             $subjectGroupId = $this->getConfigValue('therapy_chat_subject_group');
@@ -258,10 +258,10 @@ class TherapyChatHooks extends TherapyPluginHooksBase
             $unreadCount = 0;
             try {
                 if ($isTherapist) {
-                    $unreadCount = $this->messageService->getUnreadCountForUser($userId, true)
-                        + (int)$this->messageService->getUnreadAlertCount($userId);
+                    $unreadCount = $this->getMessageService()->getUnreadCountForUser($userId, true)
+                        + (int)$this->getMessageService()->getUnreadAlertCount($userId);
                 } else {
-                    $unreadCount = $this->messageService->getUnreadCountForUser($userId);
+                    $unreadCount = $this->getMessageService()->getUnreadCountForUser($userId);
                 }
             } catch (Exception $e) {}
 
